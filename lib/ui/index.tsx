@@ -15,7 +15,7 @@
  */
 
 import {
-  Box, Button, Group, Image, OnStart, Script, Slider as IvaSlider, Subpage, Text, a, d, fa, s,
+  Box, Button, Gesture, Group, Image, OnStart, Script, Slider as IvaSlider, Subpage, Text, a, d, draw, fa, s,
   type ButtonProps, type Child, type Join, type JoinRef, type VNode,
 } from 'iva';
 import { UI_RUNTIME } from './runtime.js';
@@ -219,6 +219,70 @@ export interface BlindsProps {
   y?: number;
   w?: number;
 }
+export interface DialProps {
+  /** analog join (0..65535, standing for min..max) */
+  join: Join;
+  min?: number;
+  max?: number;
+  /** where it starts, in min..max */
+  value?: number;
+  /** a touch / the -+ buttons snap to this */
+  step?: number;
+  decimals?: number;
+  unit?: string;
+  /** under the value */
+  label?: string;
+  /** serial join for the label */
+  labelJoin?: Join;
+  size?: number;
+  /** ring thickness (default: 7.5 % of the size) */
+  thickness?: number;
+  color?: string;
+  /** degrees of the ring (default 270, the gap at the bottom) */
+  sweep?: number;
+  /** arc frames drawn (default 50: every 2 %) */
+  steps?: number;
+  x?: number;
+  y?: number;
+}
+export interface KnobProps {
+  /** analog join (0..65535, standing for min..max) */
+  join: Join;
+  min?: number;
+  max?: number;
+  value?: number;
+  step?: number;
+  decimals?: number;
+  unit?: string;
+  label?: string;
+  size?: number;
+  /** the knob */
+  color?: string;
+  /** its pointer */
+  pointer?: string;
+  sweep?: number;
+  x?: number;
+  y?: number;
+}
+export interface ThermostatProps {
+  /** analog join: the setpoint (0..65535, standing for min..max) */
+  setpoint: Join;
+  value?: number;
+  /** the room temperature: text, or a serial join */
+  current?: string;
+  currentJoin?: Join;
+  min?: number;
+  max?: number;
+  step?: number;
+  unit?: string;
+  size?: number;
+  /** modes under it (Segmented), the index in `mode` */
+  modes?: string[];
+  mode?: Join;
+  modeValue?: number;
+  x?: number;
+  y?: number;
+}
 export interface NavCardProps {
   icon: string;
   title: string;
@@ -279,6 +343,9 @@ export interface Ui {
   Segmented: (p: SegmentedProps) => VNode;
   SceneBar: (p: SceneBarProps) => VNode;
   Dimmer: (p: DimmerProps) => VNode;
+  Dial: (p: DialProps) => VNode;
+  Knob: (p: KnobProps) => VNode;
+  Thermostat: (p: ThermostatProps) => VNode;
   Blinds: (p: BlindsProps) => VNode;
   NavCard: (p: NavCardProps) => VNode;
   Header: (p: HeaderProps) => VNode;
@@ -295,6 +362,13 @@ export function jsJoin(type: 'd' | 'a' | 's', j: Join): string {
 
 /** A name for joins a component makes for itself, from the join it was given. */
 const keyOf = (j: Join): string => (typeof j === 'object' ? `${j.type}${j.id}` : String(j)).replace(/[^\w]/g, '_');
+
+/** A short stable hash (file names for drawings that look the same). */
+function hash(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
 
 /** A colour lighter (amount > 0) or darker. */
 function shade(color: string, amount: number): string {
@@ -495,6 +569,94 @@ export function createUi(theme: Partial<UiTheme> = {}): Ui {
     );
   }
 
+  /**
+   * A ring the value runs round: a track, an arc (drawn frames: iViewer has no
+   * arcs), a thumb that turns with the value, the value in the middle.
+   * Touch or drag anywhere on the ring.
+   */
+  function Dial({ join, min = 0, max = 100, value, step, decimals = 0, unit = '%', label, labelJoin, size = 220, thickness, color = t.accent,
+                  sweep = 270, steps = 50, x = 0, y = 0 }: DialProps): VNode {
+    const th = thickness ?? Math.max(8, Math.round(size * 0.075));
+    const key = keyOf(join);
+    const id = JSON.stringify(key);
+    const from = -sweep / 2;
+    const prefix = `iva_dial_${hash(`${size}|${th}|${sweep}|${steps}|${color}`)}_`;
+    const frames = Array.from({ length: steps + 1 }, (_, i) => draw.arc({ size, thickness: th, from, to: from + (sweep * i) / steps, color, name: `${prefix}${i}` }));
+    const arcJoin: JoinRef = s(`ui_${key}_arc`);
+    const thumbJoin: JoinRef = s(`ui_${key}_thumb`);
+    const text: JoinRef = s(`ui_${key}_value`);
+    const touch = `IvaUI.dialTouch(${id}, gesture.x, gesture.y)`;
+    const o = { prefix, steps, sweep, size, min, max, step: step ?? 0, decimals, unit };
+    return (
+      <Group x={x} y={y}>
+        <Image w={size} h={size} src={draw.arc({ size, thickness: th, from, to: -from, color: t.raised })}>
+          <Gesture type="tap" onBegin={touch} />
+          <Gesture type="pan" onBegin={touch} onChange={touch} />
+        </Image>
+        <Image w={size} h={size} join={arcJoin} src={frames[0]} clickthrough />
+        <Image w={size} h={size} join={thumbJoin} src={draw.dot({ size, ring: size / 2 - th / 2 - 1, at: from, diameter: Math.round(th * 1.7), color: '#FFFFFF' })} clickthrough />
+        <Text y={Math.round(size * 0.33)} w={size} h={Math.round(size * 0.26)} join={text} align="center" font={font} fontSize={Math.round(size * 0.18)} />
+        {(label || labelJoin) && (
+          <Text y={Math.round(size * 0.58)} w={size} h={Math.round(size * 0.12)} text={label} join={labelJoin} align="center" color={t.muted} font={font} fontSize={Math.round(size * 0.075)} />
+        )}
+        {/* every frame in the project (iViewer ships / caches what the .gui names), out of sight */}
+        <Subpage name={`ui_frames_${prefix}`} w={1} h={1} visible={false}>
+          {frames.map((f) => <Image w={1} h={1} src={f} />)}
+        </Subpage>
+        {runtime}
+        <OnStart js={`IvaUI.dial(${id}, ${JSON.stringify(o).slice(0, -1)}, join: ${jsJoin('a', join)}, arc: ${jsJoin('s', arcJoin)}, thumb: ${jsJoin('s', thumbJoin)}, text: ${jsJoin('s', text)} });`}
+                 joins={[typeof join === 'object' ? join : a(join), arcJoin, thumbJoin, text]} />
+        {value !== undefined && <OnStart js={`IvaUI.set(${jsJoin('a', join)}, ${value}, ${min}, ${max});`} />}
+      </Group>
+    );
+  }
+
+  /** A knob that turns, tick marks round it (GUI Designer's Dial demo); the value under it. */
+  function Knob({ join, min = 0, max = 100, value, step, decimals = 0, unit = '%', label, size = 200, color = t.raised, pointer = t.accent,
+                  sweep = 270, x = 0, y = 0 }: KnobProps): VNode {
+    const key = keyOf(join);
+    const id = JSON.stringify(key);
+    const from = -sweep / 2;
+    const disc = Math.round(size * 0.72);
+    const knobJoin: JoinRef = s(`ui_${key}_knob`);
+    const text: JoinRef = s(`ui_${key}_value`);
+    const touch = `IvaUI.dialTouch(${id}, gesture.x, gesture.y)`;
+    const o = { prefix: '', steps: 0, sweep, size, min, max, step: step ?? 0, decimals, unit };
+    return (
+      <Group x={x} y={y}>
+        <Image w={size} h={size} src={draw.ticks({ size, count: 28, from, to: -from, length: Math.round(size * 0.07), width: 2, color: t.muted })}>
+          <Gesture type="tap" onBegin={touch} />
+          <Gesture type="pan" onBegin={touch} onChange={touch} />
+        </Image>
+        <Image x={(size - disc) / 2} y={(size - disc) / 2} w={disc} h={disc} join={knobJoin} clickthrough
+               src={draw.knob({ size: disc, color, pointer, at: from })} />
+        <Text y={size + 4} w={size} h={36} join={text} align="center" font={font} fontSize={24} />
+        {label && <Text y={size + 40} w={size} h={24} text={label} align="center" color={t.muted} font={font} fontSize={16} />}
+        {runtime}
+        <OnStart js={`IvaUI.dial(${id}, ${JSON.stringify(o).slice(0, -1)}, join: ${jsJoin('a', join)}, thumb: ${jsJoin('s', knobJoin)}, text: ${jsJoin('s', text)} });`}
+                 joins={[typeof join === 'object' ? join : a(join), knobJoin, text]} />
+        {value !== undefined && <OnStart js={`IvaUI.set(${jsJoin('a', join)}, ${value}, ${min}, ${max});`} />}
+      </Group>
+    );
+  }
+
+  /** A setpoint dial, the room temperature, - and + under it; modes (Segmented) below. */
+  function Thermostat({ setpoint, value, current, currentJoin, min = 16, max = 30, step = 0.5, unit = '\u00B0', size = 240, modes, mode, modeValue = 0, x = 0, y = 0 }: ThermostatProps): VNode {
+    const id = JSON.stringify(keyOf(setpoint));
+    const b = Math.round(size * 0.18);
+    const btn = { w: b, h: b, radius: b / 2, bg: t.raised, active: { bg: t.accent }, font };
+    const segW = Math.round(size * 0.85);
+    return (
+      <Group x={x} y={y}>
+        <Dial join={setpoint} value={value} min={min} max={max} step={step} decimals={1} unit={unit} size={size}
+              label={current !== undefined ? `Now ${current}` : undefined} labelJoin={currentJoin} />
+        <Button x={Math.round(size / 2 - b * 1.45)} y={size - b - 4} {...btn} icon={fa('minus', { size: Math.round(b * 0.4) })} js={`IvaUI.dialStep(${id}, -1)`} />
+        <Button x={Math.round(size / 2 + b * 0.45)} y={size - b - 4} {...btn} icon={fa('plus', { size: Math.round(b * 0.4) })} js={`IvaUI.dialStep(${id}, 1)`} />
+        {modes && mode !== undefined && <Segmented x={Math.round((size - segW) / 2)} y={size + 14} w={segW} h={44} options={modes} join={mode} value={modeValue} />}
+      </Group>
+    );
+  }
+
   function NavCard({ icon, title, text, page, x = 0, y = 0, w = 380, h = 180 }: NavCardProps): VNode {
     return (
       <Group x={x} y={y}>
@@ -578,7 +740,7 @@ export function createUi(theme: Partial<UiTheme> = {}): Ui {
     );
   }
 
-  return { theme: t, Card, Icon, IconButton, Tile, Badge, Stat, Toggle, Slider, Stepper, Segmented, SceneBar, Dimmer, Blinds, NavCard, Header, SideMenu, ConfirmDialog };
+  return { theme: t, Card, Icon, IconButton, Tile, Badge, Stat, Toggle, Slider, Stepper, Segmented, SceneBar, Dimmer, Dial, Knob, Thermostat, Blinds, NavCard, Header, SideMenu, ConfirmDialog };
 }
 
 /** The components in the default theme. */
@@ -596,6 +758,9 @@ export const Segmented: Ui['Segmented'] = ui.Segmented;
 export const SceneBar: Ui['SceneBar'] = ui.SceneBar;
 export const Dimmer: Ui['Dimmer'] = ui.Dimmer;
 export const Blinds: Ui['Blinds'] = ui.Blinds;
+export const Dial: Ui['Dial'] = ui.Dial;
+export const Knob: Ui['Knob'] = ui.Knob;
+export const Thermostat: Ui['Thermostat'] = ui.Thermostat;
 export const NavCard: Ui['NavCard'] = ui.NavCard;
 export const Header: Ui['Header'] = ui.Header;
 export const SideMenu: Ui['SideMenu'] = ui.SideMenu;

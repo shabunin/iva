@@ -90,6 +90,13 @@ version iViewer uses on retina screens):
   `fa('bell', { style: 'regular' })`, `fa('brands:spotify')`. A misspelt
   name is an error with a suggestion. (Font Awesome Free: CC BY 4.0 icons.)
 
+Other drawings for `<Image src>` (what the circular `iva/ui` controls are
+made of): `draw.arc({ size, thickness, from, to, color })`,
+`draw.dot({ size, ring, at, diameter, color })`,
+`draw.knob({ size, color, pointer, at })`,
+`draw.ticks({ size, count, from, to, length, width, color })` - angles in
+degrees clockwise from 12 o'clock; `name` fixes the file name.
+
 ## Joins
 
 | Write | Means |

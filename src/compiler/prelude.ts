@@ -5,7 +5,7 @@
 export {
   Project, Page, Landscape, Portrait, Subpage, SubpageRef, Button, Text, Image, Slider, Gauge, List, Input, Web, Video, Gesture,
   System, Command, Feedback, Capture, OnMatch, Macro, Step, Token, Script, Sound, Theme, Raw, Box, Group, OnStart,
-  d, a, s, l, cmd, macro, js, fa,
+  d, a, s, l, cmd, macro, js, fa, draw,
 } from './components.js';
 export { Fragment } from './runtime.js';
 export type * from './components.js';

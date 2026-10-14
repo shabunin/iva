@@ -51,6 +51,28 @@ export interface IconOptions {
 /** A Font Awesome (free) icon: fa('lightbulb'), fa('bell', { style: 'regular' }), fa('brands:spotify'). Names: fontawesome.com/search?m=free */
 export const fa: (name: string, opts?: IconOptions) => IconRef = (name, opts = {}) => ({ $$icon: 1, name, ...opts });
 
+/** Something iva draws into an image (draw.arc(), ...); angles: degrees clockwise from 12 o'clock. */
+export type DrawRef = { $$draw: 1; name?: string } & (
+  | { kind: 'arc'; size: number; thickness: number; from: number; to: number; color: string }
+  | { kind: 'dot'; size: number; ring: number; at: number; diameter: number; color: string }
+  | { kind: 'knob'; size: number; color: string; pointer: string; at: number }
+  | { kind: 'ticks'; size: number; count: number; from: number; to: number; length: number; width: number; color: string }
+);
+type Drawing<K extends DrawRef['kind']> = Omit<Extract<DrawRef, { kind: K }>, '$$draw' | 'kind'>;
+/** Images iva draws, for <Image src>: draw.arc({ size, thickness, from, to, color }), draw.dot(...),
+ * draw.knob(...), draw.ticks(...). `name` fixes the file name (else: from the content). */
+export const draw: {
+  arc: (o: Drawing<'arc'>) => DrawRef;
+  dot: (o: Drawing<'dot'>) => DrawRef;
+  knob: (o: Drawing<'knob'>) => DrawRef;
+  ticks: (o: Drawing<'ticks'>) => DrawRef;
+} = {
+  arc: (o) => ({ $$draw: 1, kind: 'arc', ...o }),
+  dot: (o) => ({ $$draw: 1, kind: 'dot', ...o }),
+  knob: (o) => ({ $$draw: 1, kind: 'knob', ...o }),
+  ticks: (o) => ({ $$draw: 1, kind: 'ticks', ...o }),
+};
+
 export interface ImageRef {
   /** a file, or fa('icon') */
   src: string | IconRef;
@@ -266,8 +288,8 @@ export interface TextProps extends Geom, StyleProps, XmlProp {
   children?: Child;
 }
 export interface ImageProps extends Geom, XmlProp {
-  /** a file (relative to the .jsx, or in assets/), a URL, or fa('icon') */
-  src?: string | IconRef;
+  /** a file (relative to the .jsx, or in assets/), a URL, fa('icon'), or draw.arc(...) etc. */
+  src?: string | IconRef | DrawRef;
   /** serial join holding the image file / URL */
   join?: Join;
   clickthrough?: boolean;

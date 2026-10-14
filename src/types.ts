@@ -35,7 +35,7 @@ const indent = (text: string) => text.split('\n').map((l) => (l ? `  ${l}` : l))
 const GLOBALS = [
   'Project', 'Page', 'Landscape', 'Portrait', 'Subpage', 'SubpageRef', 'Button', 'Text', 'Image', 'Slider', 'Gauge', 'List', 'Input', 'Web', 'Video',
   'Gesture', 'System', 'Command', 'Feedback', 'Capture', 'OnMatch', 'Macro', 'Step', 'Token', 'Script', 'Sound', 'Theme', 'Raw', 'Box', 'Group', 'OnStart',
-  'd', 'a', 's', 'l', 'cmd', 'macro', 'js', 'fa',
+  'd', 'a', 's', 'l', 'cmd', 'macro', 'js', 'fa', 'draw',
 ];
 
 export function typesFile(version: string): string {

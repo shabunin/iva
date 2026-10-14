@@ -11,10 +11,21 @@ import { fixedJoin, JoinAllocator, JoinSlot, typedJoin } from './joins.js';
 import { isVNode, type Child, type Source, type VNode } from './runtime.js';
 import { styleCss, Themes, type ThemeType } from './style.js';
 import { didYouMean } from './suggest.js';
-import { box, circle, generatedName, icon } from './images.js';
-import type { IconRef } from './components.js';
+import { arc, box, circle, dotOnRing, generatedName, icon, knob, ticks } from './images.js';
+import type { DrawRef, IconRef } from './components.js';
 
 const isIcon = (v: unknown): v is IconRef => !!v && typeof v === 'object' && (v as IconRef).$$icon === 1;
+const isDraw = (v: unknown): v is DrawRef => !!v && typeof v === 'object' && (v as DrawRef).$$draw === 1;
+
+/** A DrawRef drawn. */
+function drawImage(d: DrawRef, sc: number): Buffer {
+  switch (d.kind) {
+    case 'arc': return arc(d.size, d.thickness, d.from, d.to, d.color, sc);
+    case 'dot': return dotOnRing(d.size, d.ring, d.at, d.diameter, d.color, sc);
+    case 'knob': return knob(d.size, d.color, d.pointer, d.at, sc);
+    case 'ticks': return ticks(d.size, d.count, d.from, d.to, d.length, d.width, d.color, sc);
+  }
+}
 import { el, parseXml, serialize, type XNode } from './xml.js';
 
 export class CompileError extends Error {
@@ -326,7 +337,8 @@ export class Builder {
   }
 
   /** An image file: its .gui name (copied with the build); URLs stay as they are. */
-  private image(node: VNode, src: string | IconRef): string {
+  private image(node: VNode, src: string | IconRef | DrawRef): string {
+    if (isDraw(src)) return this.generated(node, src.kind, (sc) => drawImage(src, sc), src.name);
     if (isIcon(src)) {
       // an icon as a whole image: centred in the element's box
       const p = node.props;
@@ -358,7 +370,7 @@ export class Builder {
   }
 
   /** An image iva drew, at 1x and 2x (name@2x.png: iViewer's retina version), named after its content. */
-  private generated(node: VNode, kind: string, draw: (scale: number) => Buffer): string {
+  private generated(node: VNode, kind: string, draw: (scale: number) => Buffer, fixedName?: string): string {
     let data: Buffer;
     let data2: Buffer;
     try {
@@ -367,9 +379,11 @@ export class Builder {
     } catch (e: any) {
       throw this.err(node, e.message);
     }
-    const name = generatedName(kind, data);
+    const name = fixedName ? `${fixedName.replace(/\.png$/i, '')}.png` : generatedName(kind, data);
     const name2 = name.replace(/\.png$/, '@2x.png');
-    if (!this.assets.has(name.toLowerCase())) {
+    const prev = this.assets.get(name.toLowerCase());
+    if (fixedName && prev && !(prev.data ?? Buffer.alloc(0)).equals(data)) throw this.err(node, `two different drawings named ${name}`);
+    if (!prev) {
       this.assets.set(name.toLowerCase(), { name, data });
       this.assets.set(name2.toLowerCase(), { name: name2, data: data2 });
     }

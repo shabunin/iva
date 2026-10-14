@@ -1,6 +1,7 @@
 import Overview from './pages/Overview.jsx';
 import Buttons from './pages/Buttons.jsx';
 import Controls from './pages/Controls.jsx';
+import Dials from './pages/Dials.jsx';
 import Devices from './pages/Devices.jsx';
 import Navigation from './pages/Navigation.jsx';
 
@@ -9,6 +10,7 @@ export default (
     {Overview}
     {Buttons}
     {Controls}
+    {Dials}
     {Devices}
     {Navigation}
   </Project>

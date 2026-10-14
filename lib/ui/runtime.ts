@@ -7,6 +7,7 @@ export const UI_RUNTIME = `// iva/ui runtime: what iva/ui components do on the p
 var IvaUI = (function () {
   var groups = {};
   var steppers = {};
+  var dials = {};
   function pad(n) { return (n < 10 ? '0' : '') + n; }
   function fmt(v, decimals, unit) {
     var s = Number(v).toFixed(decimals || 0);
@@ -63,6 +64,45 @@ var IvaUI = (function () {
       // iViewer passes (from, to, orientation); some runtimes just (to)
       CF.watch(CF.PageFlipEvent, function (a, b) { show(typeof b === 'string' ? b : a); });
       if (CF.currentPage) show(CF.currentPage);
+    },
+    /**
+     * a dial: the value in an analog join (min..max as 0..65535); shown as an
+     * arc (one of steps + 1 drawn frames, named prefix + i + '.png', in a
+     * serial join), a rotating thumb / knob (zrotation), and a serial join text
+     */
+    dial: function (id, o) {
+      dials[id] = o;
+      CF.watch(CF.JoinChangeEvent, o.join, function (j, v) {
+        var f = clamp((Number(v) || 0) / 65535, 0, 1);
+        if (o.arc) CF.setJoin(o.arc, o.prefix + Math.round(f * o.steps) + '.png');
+        if (o.thumb) CF.setProperties({ join: o.thumb, zrotation: f * o.sweep }, 0, o.fast ? 0 : 0.12);
+        if (o.text) CF.setJoin(o.text, fmt(fromJoin(v, o.min, o.max), o.decimals, o.unit));
+      }, true);
+    },
+    /** a touch at (x, y) in the dial's square: the value there, snapped to the step */
+    dialTouch: function (id, x, y) {
+      var o = dials[id];
+      if (!o) return;
+      var c = o.size / 2;
+      var dx = x - c, dy = y - c;
+      if (dx * dx + dy * dy < c * c * 0.06) return; // the very middle: no clear angle
+      var a = Math.atan2(dx, -dy) * 180 / Math.PI; // clockwise from 12 o'clock
+      var f = clamp((a + o.sweep / 2) / o.sweep, 0, 1);
+      var v = o.min + f * (o.max - o.min);
+      if (o.step) v = Math.round(v / o.step) * o.step;
+      o.fast = true;
+      CF.setJoin(o.join, toJoin(v, o.min, o.max));
+      o.fast = false;
+    },
+    /** a dial a step up (1) or down (-1) */
+    dialStep: function (id, dir) {
+      var o = dials[id];
+      if (!o) return;
+      CF.getJoin(o.join, function (j, v) {
+        var step = o.step || (o.max - o.min) / 100;
+        var value = Math.round(fromJoin(v, o.min, o.max) / step) * step + dir * step;
+        CF.setJoin(o.join, toJoin(clamp(value, o.min, o.max), o.min, o.max));
+      });
     },
     /** a digital join off */
     off: function (join) { CF.setJoin(join, 0); }

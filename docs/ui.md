@@ -56,6 +56,9 @@ it as a value in min..max.
 | `SceneBar` | one of several scenes, icon tiles | `scenes: [{ icon, title, cmd }]`, `join`, `value` |
 | `Dimmer` | a light: icon, name, on / off, level | `label`, `icon`, `on`, `level` |
 | `Blinds` | up / stop / down and the position | `label`, `position`, `onOpen` / `onStop` / `onClose` |
+| `Dial` | a ring the value runs round: arc, thumb, the value in the middle; touch / drag the ring | `join`, `min`, `max`, `value`, `step`, `decimals`, `unit`, `label` / `labelJoin`, `size`, `thickness`, `color`, `sweep`, `steps` |
+| `Knob` | a knob that turns, tick marks round it (GUI Designer's Dial demo); the value under it | `join`, `min`, `max`, `value`, `step`, `unit`, `label`, `size`, `color`, `pointer`, `sweep` |
+| `Thermostat` | a setpoint Dial, the room temperature, − / +; modes below | `setpoint`, `value`, `current` / `currentJoin`, `min`, `max`, `step`, `unit`, `size`, `modes` + `mode` |
 | `NavCard` | a card that goes to a page | `icon`, `title`, `text`, `page` |
 | `Header` | the top bar: menu button, title, breadcrumbs, clock | `title`, `section`, `home`, `menu`, `clock` |
 | `SideMenu` | a menu over the page, marking the page shown | `title`, `subtitle`, `items: [{ icon, text, page }]`, `menu`, `slide` |
@@ -65,5 +68,17 @@ Put `Header` and `SideMenu` on every page (a small `Shell` component, as
 the gallery does): the menu's subpages are defined the same each time, so
 iva keeps one definition.
 
-Not yet: Dial, Thermostat, ColorPicker (arcs need drawn frames), forms,
-pickers, lists and tables, runtime theme switching.
+## How the circular ones work
+
+iViewer can't draw an arc, so a Dial's arc is drawn by iva as frames
+(`steps`, default 50: one every 2 %; 1x and @2x) and the panel shows the
+frame for the value (an image's serial join), as CommandFusion's
+ImageLevel demo does. The thumb (Dial) or the knob (Knob) is one image the
+panel turns with `CF.setProperties({ zrotation })`, as in their Dial demo,
+so it moves smoothly to the exact value. A touch or a drag on the ring
+(tap and pan gestures) becomes an angle, then a value, snapped to `step`.
+Dials that look the same share their frames; each look costs `steps + 1`
+small images (× 2 for retina) - fewer `steps` for lighter projects.
+
+Not yet: ColorPicker, forms, pickers, lists and tables, runtime theme
+switching.

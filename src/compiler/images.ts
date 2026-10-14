@@ -82,6 +82,56 @@ export function circle(d: number, color: string, scale = 1): Buffer {
   return render(`<circle cx="${d / 2}" cy="${d / 2}" r="${d / 2}" ${paint('fill', color)} />`, d, d, scale);
 }
 
+// ── circular things: angles are degrees clockwise from 12 o'clock ──────
+
+function polar(c: number, r: number, deg: number): [number, number] {
+  const a = (deg * Math.PI) / 180;
+  return [c + r * Math.sin(a), c - r * Math.cos(a)];
+}
+const n = (v: number) => Math.round(v * 100) / 100;
+
+/** An arc of a ring, round-capped, in a size x size square. */
+export function arc(size: number, thickness: number, from: number, to: number, color: string, scale = 1): Buffer {
+  const c = size / 2;
+  const r = c - thickness / 2 - 1;
+  if (to - from < 0.01) return render('', size, size, scale);
+  if (to - from >= 359.99) return render(`<circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke-width="${thickness}" ${paint('stroke', color)} />`, size, size, scale);
+  const [x1, y1] = polar(c, r, from);
+  const [x2, y2] = polar(c, r, to);
+  const d = `M ${n(x1)} ${n(y1)} A ${n(r)} ${n(r)} 0 ${to - from > 180 ? 1 : 0} 1 ${n(x2)} ${n(y2)}`;
+  return render(`<path d="${d}" fill="none" stroke-width="${thickness}" stroke-linecap="round" ${paint('stroke', color)} />`, size, size, scale);
+}
+
+/** A dot on a ring (a dial's thumb): `ring` = its distance from the centre. */
+export function dotOnRing(size: number, ring: number, at: number, diameter: number, color: string, scale = 1): Buffer {
+  const [x, y] = polar(size / 2, ring, at);
+  return render(`<circle cx="${n(x)}" cy="${n(y)}" r="${diameter / 2}" ${paint('fill', color)} />`, size, size, scale);
+}
+
+/** A knob: a disc and a pointer line towards `at`. */
+export function knob(size: number, color: string, pointer: string, at: number, scale = 1): Buffer {
+  const c = size / 2;
+  const [x1, y1] = polar(c, c * 0.42, at);
+  const [x2, y2] = polar(c, c * 0.8, at);
+  return render(
+    `<circle cx="${c}" cy="${c}" r="${c - 1}" ${paint('fill', color)} />` +
+      `<line x1="${n(x1)}" y1="${n(y1)}" x2="${n(x2)}" y2="${n(y2)}" stroke-width="${n(size * 0.045)}" stroke-linecap="round" ${paint('stroke', pointer)} />`,
+    size, size, scale,
+  );
+}
+
+/** Tick marks around a ring, from one angle to another. */
+export function ticks(size: number, count: number, from: number, to: number, length: number, width: number, color: string, scale = 1): Buffer {
+  const c = size / 2;
+  const lines = Array.from({ length: count }, (_, i) => {
+    const at = from + ((to - from) * i) / Math.max(1, count - 1);
+    const [x1, y1] = polar(c, c - 2, at);
+    const [x2, y2] = polar(c, c - 2 - length, at);
+    return `<line x1="${n(x1)}" y1="${n(y1)}" x2="${n(x2)}" y2="${n(y2)}" stroke-width="${width}" stroke-linecap="round" ${paint('stroke', color)} />`;
+  });
+  return render(lines.join(''), size, size, scale);
+}
+
 // ── Font Awesome (free: solid, regular, brands) ─────────────────────
 
 type IconDef = [number, number, unknown, unknown, string | string[]];
