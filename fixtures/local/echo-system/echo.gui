@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<gui>
+  <properties>
+    <project>Echo system (iva backend test)</project>
+    <size autoposition="scale">
+      <portrait width="768" height="1024" />
+      <landscape width="1024" height="768" />
+    </size>
+  </properties>
+  <themes>
+    <theme type="background" name=".Bg"><![CDATA[background-color: #20242a;]]></theme>
+    <theme type="button" name=".Btn[state='0']"><![CDATA[background-color: #2f6fd6; color: #ffffff; font-size: 24px;]]></theme>
+    <theme type="button" name=".Btn[state='1']"><![CDATA[background-color: #19a974; color: #ffffff; font-size: 24px;]]></theme>
+    <theme type="text" name=".Big"><![CDATA[color: #ffffff; font-size: 28px;]]></theme>
+  </themes>
+  <systems>
+    <!-- 127.0.0.2, not .1: cf-runtime handles 127.0.0.1 systems in-process (loopback) -->
+    <system name="Echo" ip="127.0.0.2" port="5199" protocol="tcp" alwayson="1" eom="\x0D" connectionStatus="100" disconnectionStatus="0">
+      <cmd name="Ping">hello\x0D</cmd>
+      <fb name="reply" regex="echo:(.*)">
+        <group index="1" name="" datatype="s" target="s10" />
+      </fb>
+    </system>
+  </systems>
+  <page name="Main" start="1" j="0">
+    <landscape t="Bg">
+      <btn j="0" x="80" y="80" w="240" h="80" t="Btn" sim="1" cmd="Ping">
+        <inactive s="0">Send Ping</inactive>
+        <active s="0">Send Ping</active>
+      </btn>
+      <btn j="100" x="360" y="80" w="240" h="80" t="Btn">
+        <inactive s="0">offline</inactive>
+        <active s="0">connected</active>
+      </btn>
+      <txt j="10" x="80" y="200" w="800" h="60" t="Big">(waiting for a reply)</txt>
+    </landscape>
+  </page>
+</gui>

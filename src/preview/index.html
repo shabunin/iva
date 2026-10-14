@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>iva</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header id="bar">
+      <strong>iva</strong>
+      <select id="picker" hidden></select>
+      <span id="status"></span>
+      <span id="errors" hidden></span>
+    </header>
+    <main>
+      <div id="frame">
+        <div id="chrome"></div>
+        <div id="stage"><canvas id="canvas"></canvas></div>
+      </div>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

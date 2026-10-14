@@ -1,0 +1,57 @@
+:root {
+  color-scheme: dark;
+  --bg: #15171a;
+  --panel: #1f2226;
+  --text: #d8dde3;
+  --muted: #8a939d;
+  --warn: #e0b341;
+  --err: #ef6b6b;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; overflow: hidden; }
+body {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.4 system-ui, sans-serif;
+}
+#bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid #000;
+}
+#picker { max-width: 40ch; background: var(--bg); color: var(--text); border: 1px solid #333; padding: 2px 4px; }
+#status { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#status[data-kind='warn'] { color: var(--warn); }
+#status[data-kind='err'] { color: var(--err); }
+main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+}
+#frame {
+  display: flex;
+  flex-direction: column;
+  max-width: 100%;
+  max-height: 100%;
+}
+/* as wide as the stage, never wider (the runtime menu would stretch the frame) */
+#chrome { flex-shrink: 0; position: relative; z-index: 2; width: 0; min-width: 100%; }
+#stage {
+  position: relative;
+  background: #000;
+  /* as large as fits, keeping the panel's aspect ratio */
+  width: min(calc(var(--w, 1024) * 1px), calc(100vw - 24px), calc((100vh - 110px) * var(--w, 1024) / var(--h, 768)));
+  aspect-ratio: 1024 / 768;
+}
+#stage:fullscreen { width: 100vw; height: 100vh; aspect-ratio: auto; display: flex; align-items: center; justify-content: center; }
+/* Pixi (autoDensity) sets the canvas size inline; the stage decides it */
+#canvas { display: block; width: 100% !important; height: 100% !important; object-fit: contain; }
+#errors { margin-left: auto; color: var(--err); cursor: help; white-space: nowrap; }
