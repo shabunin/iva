@@ -11,6 +11,8 @@ const GALLERY = path.resolve(import.meta.dirname, '../examples/gallery/app.jsx')
 test('the iva/ui gallery builds: one runtime script, the shared subpages once', async () => {
   const r = await compile(GALLERY);
   assert.deepEqual(r.scripts.map((s) => s.name), ['iva-joins.js', 'iva-ui.js', 'iva-start.js']);
+  // every script the panel gets is valid JavaScript
+  for (const sc of r.scripts) assert.doesNotThrow(() => new Function(sc.code!), sc.name);
   const start = r.scripts.find((s) => s.name === 'iva-start.js')!.code!;
   assert.equal(start.match(/IvaUI\.menu\(/g)!.length, 1); // the side menu is on every page, set up once
   assert.equal(start.match(/IvaUI\.clock\(/g)!.length, 1);
@@ -72,4 +74,45 @@ test('forms, lists, schedule: popups last, list rows defined, icons drawn at the
   assert.equal(icon.data!.readUInt32BE(16), 26);
   const start = r.scripts.find((s) => s.name === 'iva-start.js')!.code!;
   for (const f of ['IvaUI.fill(', 'IvaUI.days(', 'IvaUI.pin(', 'IvaUI.time(']) assert.ok(start.includes(f), f);
+});
+
+test('ColorPicker, TextField, SearchSelect: wheel and marker in a subpage, the swatch server once, inputs', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-ui-'));
+  fs.writeFileSync(path.join(dir, 'app.jsx'), `import { ColorPicker, TextField, SearchSelect } from 'iva/ui';
+export default (
+  <Project name="T" width={1280} height={800}>
+    <Page name="P">
+      <ColorPicker r="r1" g="g1" b="b1" />
+      <ColorPicker x={400} r="r2" g="g2" b="b2" value="#FF0000" swatches={false} />
+      <TextField y={400} join="name" placeholder="Your name" />
+      <SearchSelect y={500} options={['Oslo', 'Riga']} join="city" value={1} />
+    </Page>
+  </Project>
+);
+`);
+  const r = await compile(path.join(dir, 'app.jsx'));
+  // one HTTP server for both pickers, answering requests that end in a blank line
+  assert.equal((r.xml.match(/<system name="IvaUI HTTP 8890" /g) ?? []).length, 1);
+  assert.match(r.xml, /<fb name="request" regex="\(\?msi\)\^\.\*\?\\r\\n\\r\\n"/);
+  assert.match(r.xml, /<subpage name="ui_cp_r1" w="210" h="210"/);
+  assert.match(r.xml, /<web [^>]*url="http:\/\/127\.0\.0\.1:8890\/iva-color\/000000"/);
+  assert.ok(r.assets.some((a) => /^iva_wheel_\w+\.png$/.test(a.name)));
+  assert.equal((r.xml.match(/<input /g) ?? []).length, 2);
+  const start = r.scripts.find((s) => s.name === 'iva-start.js')!.code!;
+  for (const f of ['IvaUI.color(', 'IvaUI.hint(', 'IvaUI.select(']) assert.ok(start.includes(f), f);
+  for (const sc of r.scripts) assert.doesNotThrow(() => new Function(sc.code!), sc.name);
+  assert.deepEqual(r.warnings, []);
+});
+
+test('pickers: drum lists with their rows, popups last, a popup each for pickers that look different', async () => {
+  const r = await compile(GALLERY);
+  const pickers = r.xml.slice(r.xml.indexOf('<page name="Pickers"'), r.xml.indexOf('</page>', r.xml.indexOf('<page name="Pickers"')));
+  // the drum rows: defined once per width, a tap is a release (a drag isn't a tap)
+  assert.equal((r.xml.match(/<subpage name="ui_drum_84_48" w=/g) ?? []).length, 1);
+  assert.match(r.xml, /<subpage name="ui_drum_84_48"[\s\S]*?<press [^>]*js="IvaUI.rowDown\(list\)"[\s\S]*?<release [^>]*js="IvaUI.drumTap\(list, listIndex\)"/);
+  // two time pickers on the wake-up joins that look different: two popups
+  assert.equal((pickers.match(/<subpage name="ui_tp_wakeH_\w+" x=/g) ?? []).length, 2);
+  const start = r.scripts.find((s) => s.name === 'iva-start.js')!.code!;
+  for (const f of ["kind: 'time'", "kind: 'date'", 'IvaUI.num(', 'IvaUI.select(']) assert.ok(start.includes(f), f);
+  assert.deepEqual(r.warnings, []);
 });

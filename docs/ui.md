@@ -67,6 +67,12 @@ it as a value in min..max.
 | `ScrollBox` | a list of lines to drag through | `join` (list), `lines` |
 | `WeekDays` | seven day toggles; the bitmask (Mon 1 … Sun 64) and a summary ("Weekdays", "Sun, Mon") | `join` (bitmask), `value`, `first` (`mon`·`sun`), `labels`, `textJoin`, `size` |
 | `AlarmCard` | a titled card: on / off, a time stepped up / down, the days | `title`, `on`, `time` (minutes since midnight), `value` ("06:45"), `step`, `ampm`, `days`, `daysValue` |
+| `TextField` | a label, a field (an icon, a placeholder while empty), the text in a serial join | `join`, `label`, `value`, `placeholder`, `password`, `icon`, `cmd` (sent on Return) |
+| `SearchSelect` | a select box for long lists: the field opens a search field over the options, which filter as you type; a tap picks one | `options`, or `source` (a serial join with a JSON array: a script or a feedback fills it), `join` (the index), `value`, `mode`, `title`, `placeholder`, `empty`, `rows` |
+| `TimePicker` | a time field; a tap opens hour and minute drums, OK writes them | `hour` / `minute` (analog joins, as numbers: 0-23, 0-59), `value` ('07:30'), `minuteStep`, `ampm`, `now` (a button: the panel's time), `mode`, `title`, `fontSize`, `showIcon` |
+| `DatePicker` | a date field; a tap opens day, month and year drums, OK writes them (31 Feb becomes 28 / 29) | `day` / `month` / `year` (analog joins, as numbers), `value` ('2026-10-08'), `format` (D DD M MM MMM MMMM YYYY), `order` (`dmy`·`mdy`·`ymd`), `minYear` / `maxYear`, `months` (names), `today` (button text; false: none), `placeholder`, `mode` |
+| `NumberField` | a number field; a tap opens a keypad, OK checks it's in range (else a message, the keypad stays) | `join` (analog, min..max as 0..65535), `value`, `min`, `max`, `decimals`, `digits`, `unit`, `words` ({ invalid, range }), `mode`, `title` |
+| `ColorPicker` | a colour wheel, a brightness slider, a swatch with the hex, colours one tap away | `r` / `g` / `b` (analog joins, 0..255: written as you pick, followed when they change), `hex`, `value` ('#FFB000'), `swatches`, `onChange` (JS with `r`, `g`, `b`, `hex`), `size`, `port` |
 | `PinPad` | a keypad: digits, ← (hold: clear), OK; the code shown as dots | `code` (serial join OK writes), `onEnter` (JS with `code`), `length`, `mask`, `placeholder` |
 | `NavCard` | a card that goes to a page | `icon`, `title`, `text`, `page` |
 | `Header` | the top bar: menu button, title, breadcrumbs, clock | `title`, `section`, `home`, `menu`, `clock` |
@@ -89,6 +95,18 @@ so it moves smoothly to the exact value. A touch or a drag on the ring
 Dials that look the same share their frames; each look costs `steps + 1`
 small images (× 2 for retina) - fewer `steps` for lighter projects.
 
-Not yet: ColorPicker, SearchSelect (type to filter: the preview can't show
-input fields yet), TimePicker (a scroll wheel), Pager, tables, runtime theme
+The ColorPicker's swatch: iViewer can't colour anything from a script, so
+(as CommandFusion's ColorPicker2 demo does) it's a web view loading a page
+of that colour from the panel itself - the picker brings a TCP system
+accepting connections on `port` (default 8890) and answers
+`GET /iva-color/RRGGBB`. Two pickers share it. Pick a free port when the
+project has an HTTP server of its own.
+
+Pickers open as a sheet in the middle of the panel (`mode="sheet"`,
+dimmed behind) or a dropdown under the field (`mode="dropdown"`); a tap
+outside closes them. A drum is a list: drag it (it settles on a row) or tap
+a row. Two pickers on the same joins share their popup when they look the
+same, else each has its own.
+
+Not yet: Pager, tables, runtime theme
 switching.

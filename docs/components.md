@@ -24,8 +24,8 @@ injected); `import { Button } from 'iva'` works too.
 | `<Slider>` | `<slider>` + `<indicator>`×2 | `join` analog; `pressJoin` digital | `min`, `max`, `decimals`, `invert`, `feedback`, `dragCmd` / `pressCmd` / `releaseCmd`; looks: `bg`/`image` (track), `fill`/`fillImage`, `radius`, `thumb`/`activeThumb` or `thumbColor` + `thumbSize` |
 | `<Gauge>` | `<gauge>` | `join` analog | `bg`/`image`, `fill`/`fillImage`, `radius`, `theme` |
 | `<List>` | `<list>` | `join` list | `item` (subpage name or an inline `<Subpage>`), `header`, `title`, `footer`, `orientation`, `swipeDelete`, `scrollCmd`, `scrollInterval`, `listEndCmd`, `listEndOffset`, `bg` |
-| `<Input>` | `<input>` | `join` serial (`s=`) | `text` (initial), `password`, `autoFocus`, style props |
-| `<Web>` | `<web>` | `join`, `titleJoin`, `backJoin`, `forwardJoin`, `refreshJoin`, `stopJoin` (numbers) | `url` |
+| `<Input>` | `<input>` | `join` serial (`s=`): typing writes it, setting it sets the text | `text` (initial), `password`, `autoFocus`, `cmd` / `macro` (sent on Return; `[inputval]` is the text), `changeCmd` / `changeMacro` (on each change), style props |
+| `<Web>` | `<web>` | `join` serial (the URL: setting it loads it), `titleJoin` serial, `backJoin`, `forwardJoin`, `refreshJoin`, `stopJoin` digital | `url`: a URL, or a file of the project (`page.html`, in `assets/`) |
 | `<Video>` | `<video>` | `join`, `playJoin`, `stopJoin` (numbers) | `url`, `format` (`mjpeg`·`mpeg4`), `autoplay`, `controls`, `bg`, `cache`, `auth={{user, password, …}}` |
 | `<Gesture>` | `<gesture>` + `<action phase>` | in actions: `join: 'd10'` / `d(10)` | `type` (`tap`·`swipe`·`pan`·`press`·`rotate`·`pinch`), `touches`, `taps`, `direction`, `onBegin` / `onChange` / `onEnd` (js string or `{ js, join, value }`) |
 
@@ -35,7 +35,7 @@ All items take `x`, `y` (default 0), `w`, `h` (required) and `tags`.
 
 | JSX | `.gui` | Key props |
 |---|---|---|
-| `<System>` | `<systems><system>` | `name`, `host`, `port`, `protocol` (`tcp`·`udp`·`http`), `localPort`, `mode` (`alwaysOn`·`transitory`·`dialog`) + `idleTimeout` / `dialogTimeout`, `accept` (TCP: server; UDP: incoming), `acceptBroadcasts`, `eom`, `offlineQueue`, `connectJoin` / `disconnectJoin`, `heartbeat={{ mode: 'reply'\|'initiate', tx, rx }}`, `ssl`, `textEncoding`, `sendHandler`, `startupCmd`, `startupMacro`, `maxConnections`; children `<Command>`, `<Feedback>`. Defaults are GUI Designer's for a new system of the protocol |
+| `<System>` | `<systems><system>` | `name`, `host`, `port`, `protocol` (`tcp`·`udp`·`http`), `localPort`, `mode` (`alwaysOn`·`transitory`·`dialog`) + `idleTimeout` / `dialogTimeout`, `accept` (TCP: server; UDP: incoming), `acceptBroadcasts`, `eom`, `offlineQueue`, `connectJoin` / `disconnectJoin`, `heartbeat={{ mode: 'reply'\|'initiate', tx, rx }}`, `ssl`, `textEncoding`, `sendHandler`, `startupCmd`, `startupMacro`, `maxConnections`; children `<Command>`, `<Feedback>`. Defaults are GUI Designer's for a new system of the protocol. Anywhere (a component can bring one): lifted to the project, the same system once |
 | `<Command>` | `<cmd>` | `name`, `send` (or children; `\xNN`, `[tokens]`), `js` + `jsSendsCommand`, `target` + `value` (set a join), `folder` |
 | `<Feedback>` | `<fb>` | `name`, `regex` (`(?ims)` flags allowed); children `<Capture>`, `<OnMatch>` |
 | `<Capture>` | `<group>` | `join` (`d(5)`, `'s12'`, `'a:level'`), `type` (how it's read, default: the join's type: `type="a" join="s2"` = a number, transformed, into a serial join), `index`, `name`, `onVal` / `offVal`, `transform`, `min` / `max`, `unit`, `setToken` |
@@ -95,7 +95,23 @@ made of): `draw.arc({ size, thickness, from, to, color })`,
 `draw.dot({ size, ring, at, diameter, color })`,
 `draw.knob({ size, color, pointer, at })`,
 `draw.ticks({ size, count, from, to, length, width, color })` - angles in
-degrees clockwise from 12 o'clock; `name` fixes the file name.
+degrees clockwise from 12 o'clock; `draw.wheel({ size })` (a colour wheel:
+hue round it, red at 12 o'clock, white in the middle),
+`draw.ring({ size, thickness, color, outline })` (a marker),
+`draw.cutout({ w, h, radius, color })` (a frame with a rounded hole: over a
+`<Web>`, it rounds its corners). `name` fixes the file name.
+
+## Web views and input fields in the preview
+
+`iva dev` shows a `<Web>` as a real page (an iframe) and an `<Input>` as a
+real text field, stacked as on the device: an image drawn over a web view
+still covers it (CommandFusion's ColorPicker2 demo shows its colour through
+a logo cut out of an image), and the field you type into sits where the
+`<Input>` is. A web view loading from the panel's own HTTP server (a TCP
+`<System accept>`) works too: the preview's backend listens on that port.
+A browser keeps other sites' pages to themselves, so for those the title
+join stays empty, and back / forward only go through the URLs the panel
+loaded. (This needs agapi with web view and input field support.)
 
 ## Joins
 

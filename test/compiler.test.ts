@@ -263,3 +263,15 @@ test('one <OnStart> failing does not stop the rest', async () => {
   assert.match(code, /try \{ boom\(\); \} catch \(e\)/);
   assert.match(code, /try \{ fine\(\); \} catch \(e\)/);
 });
+
+test('<Input> actions, <Web> named joins, a <System> from a component: once', async () => {
+  const sys = `<System name="Srv" protocol="tcp" accept host="0.0.0.0" port={8890}><Feedback name="req" regex="x" /></System>`;
+  const r = await build(wrap(`
+    <Input w={200} h={40} join="q" cmd="Search" changeCmd="Typing" />
+    <Web y={50} w={300} h={200} url="page.html" join="url" titleJoin="title" backJoin="back" />
+    <Group>${sys}</Group>${sys}`));
+  assert.match(r.xml, /<input j="0" s="1000" [^>]*t="input_\w+" command="Search" changeCommand="Typing" l="0"/);
+  assert.match(r.xml, /<web x="0" y="50" w="300" h="200" j="1001" title="1002" back="1000" forward="0" refresh="0" stop="0" url="page.html"/);
+  assert.equal((r.xml.match(/<system name="Srv"/g) ?? []).length, 1);
+  await fails(wrap(`${sys}<Group><System name="Srv" protocol="udp" host="0.0.0.0" port={1} /></Group>`), /two different systems named "Srv"/);
+});

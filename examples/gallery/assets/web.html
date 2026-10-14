@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>A page of the project</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #2B3137; color: #E8ECEF; font: 16px/1.4 -apple-system, 'Helvetica Neue', Arial, sans-serif; }
+    body { display: flex; flex-direction: column; justify-content: center; padding: 0 20px; box-sizing: border-box; }
+    b { color: #00BC97; }
+    #clock { font-size: 28px; font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body>
+  <div>A page shipped with the project (<b>assets/web.html</b>), in a <b>&lt;Web&gt;</b> element.</div>
+  <div id="clock"></div>
+  <script>
+    function tick() { document.getElementById('clock').textContent = new Date().toLocaleTimeString(); }
+    tick();
+    setInterval(tick, 1000);
+  </script>
+</body>
+</html>

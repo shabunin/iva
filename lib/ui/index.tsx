@@ -15,7 +15,7 @@
  */
 
 import {
-  Box, Button, Gesture, Group, Image, List, OnStart, Script, Slider as IvaSlider, Subpage, Text, a, d, draw, fa, js as jsAction, l, s,
+  Box, Button, Feedback, Gesture, Group, Image, Input, List, OnStart, Script, Slider as IvaSlider, Subpage, System, Text, Web, a, d, draw, fa, js as jsAction, l, s,
   type ButtonProps, type Child, type IconRef, type Join, type JoinRef, type VNode,
 } from 'iva';
 import { UI_RUNTIME } from './runtime.js';
@@ -395,6 +395,134 @@ export interface PinPadProps {
   x?: number;
   y?: number;
 }
+export interface ColorPickerProps {
+  /** analog joins: red, green, blue, 0..255 - written as you pick, followed when they change elsewhere */
+  r: Join;
+  g: Join;
+  b: Join;
+  /** serial join: the colour as #RRGGBB */
+  hex?: Join;
+  /** the colour at start ('#FFB000'); default: what r / g / b hold */
+  value?: string;
+  /** the wheel's diameter */
+  size?: number;
+  /** colours one tap away (false: none) */
+  swatches?: string[] | false;
+  /** JavaScript run on each pick, with r, g, b (numbers) and hex */
+  onChange?: string;
+  /** the port of the panel's own HTTP server that shows the swatch (a web view loads the colour from it) */
+  port?: number;
+  /** what's behind it (the swatch's corners are drawn in it): default the card colour */
+  bg?: string;
+  x?: number;
+  y?: number;
+}
+export interface TextFieldProps {
+  /** serial join: the text (typing writes it) */
+  join: Join;
+  label?: string;
+  /** the text at start */
+  value?: string;
+  /** shown while it's empty */
+  placeholder?: string;
+  password?: boolean;
+  /** a Font Awesome icon on the left */
+  icon?: string;
+  /** a command sent on Return ([inputval]: the text) */
+  cmd?: string;
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+}
+/** Where a picker opens: 'sheet' (a dialog in the middle of the panel) or 'dropdown' (under the field). */
+type PopupMode = 'sheet' | 'dropdown';
+interface FieldProps {
+  mode?: PopupMode;
+  /** the sheet's title */
+  title?: string;
+  /** the field's text size */
+  fontSize?: number;
+  /** the icon at the field's right (default true) */
+  showIcon?: boolean;
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+}
+export interface SearchSelectProps extends FieldProps {
+  /** the options; or `source` */
+  options?: string[];
+  /** serial join with the options as a JSON array (strings, or { label }): a script or a feedback fills it */
+  source?: Join;
+  /** analog join: the index of the option picked */
+  join: Join;
+  /** the option picked at start */
+  value?: number;
+  /** the field's text while nothing is picked */
+  placeholder?: string;
+  /** shown in the list when nothing matches */
+  empty?: string;
+  /** rows shown at once */
+  rows?: number;
+  rowH?: number;
+}
+export interface TimePickerProps extends FieldProps {
+  /** analog joins: the hour (0-23) and the minute (0-59), as numbers */
+  hour: Join;
+  minute: Join;
+  /** the time at start ('07:30') */
+  value?: string;
+  /** the minutes drum in steps (5: 00, 05, 10 ...) */
+  minuteStep?: number;
+  /** 12 hours and AM / PM */
+  ampm?: boolean;
+  /** a button turning the drums to the panel's time: its text ('Now') */
+  now?: string;
+  ok?: string;
+  cancel?: string;
+}
+export interface DatePickerProps extends FieldProps {
+  /** analog joins: the day (1-31), month (1-12) and year, as numbers */
+  day: Join;
+  month: Join;
+  year: Join;
+  /** the date at start ('2026-10-08') */
+  value?: string;
+  /** the field's text: D DD M MM MMM MMMM YYYY (default 'DD.MM.YYYY') */
+  format?: string;
+  /** the drums' order */
+  order?: 'dmy' | 'mdy' | 'ymd';
+  /** the years on the drum (default: 10 years either side of this one) */
+  minYear?: number;
+  maxYear?: number;
+  /** the 12 months' names, January first (another language) */
+  months?: string[];
+  /** a button turning the drums to today: its text (default 'Today'; false: none) */
+  today?: string | false;
+  /** the field's text while no date is set */
+  placeholder?: string;
+  ok?: string;
+  cancel?: string;
+}
+export interface NumberFieldProps extends FieldProps {
+  /** analog join: the value, min..max as 0..65535 (as Slider, Stepper) */
+  join: Join;
+  /** the value at start */
+  value?: number;
+  min?: number;
+  max?: number;
+  /** digits after the point */
+  decimals?: number;
+  /** digits at most */
+  digits?: number;
+  /** after the number ('%', '\u00B0C') */
+  unit?: string;
+  ok?: string;
+  cancel?: string;
+  /** the messages for a bad number: invalid ('Not a number'), range ('From {min} to {max}') */
+  words?: { invalid?: string; range?: string };
+}
 export interface AlarmCardProps {
   title: string;
   /** digital join: the alarm on */
@@ -485,6 +613,12 @@ export interface Ui {
   ScrollBox: (p: ScrollBoxProps) => VNode;
   WeekDays: (p: WeekDaysProps) => VNode;
   PinPad: (p: PinPadProps) => VNode;
+  ColorPicker: (p: ColorPickerProps) => VNode;
+  TextField: (p: TextFieldProps) => VNode;
+  SearchSelect: (p: SearchSelectProps) => VNode;
+  TimePicker: (p: TimePickerProps) => VNode;
+  DatePicker: (p: DatePickerProps) => VNode;
+  NumberField: (p: NumberFieldProps) => VNode;
   AlarmCard: (p: AlarmCardProps) => VNode;
   Knob: (p: KnobProps) => VNode;
   Thermostat: (p: ThermostatProps) => VNode;
@@ -875,6 +1009,8 @@ export function createUi(theme: Partial<UiTheme> = {}): Ui {
             <Button w={W} h={H} feedback="none" js={close} />
             <Group x={Math.round((W - sheetW) / 2)} y={Math.round((H - sheetH) / 2)}>
               <Box w={sheetW} h={sheetH} bg={t.surface} radius={t.radius + 4} borderWidth={1} borderColor={t.raised} />
+              {/* taps on the sheet stay on it */}
+              <Button w={sheetW} h={sheetH} feedback="none" />
               <Text x={24} y={16} w={sheetW - 90} h={44} text={title ?? ''} font={font} fontSize={26} />
               <Button x={sheetW - 60} y={14} w={48} h={48} icon={fa('xmark', { size: 22, color: t.muted })} feedback="none" js={close} />
               <Group x={8} y={76}>{optionRows(sheetW - 16)}</Group>
@@ -1139,9 +1275,378 @@ export function createUi(theme: Partial<UiTheme> = {}): Ui {
     );
   }
 
+  /**
+   * A colour wheel (hue round it, white in the middle), a brightness slider,
+   * a swatch of the colour with its hex, and colours one tap away. iViewer
+   * can't colour anything from a script, so the swatch is a web view showing
+   * a page of that colour, served by the panel itself (as CommandFusion's
+   * ColorPicker2 demo does): a TCP system accepting connections on `port`.
+   */
+  function ColorPicker({ r, g, b, hex, value, size = 210, swatches = ['#FFFFFF', '#FFE2B8', '#FF3B30', '#FF9500', '#FFCC00', '#34C759', '#0A84FF', '#AF52DE'],
+                         onChange, port = 8890, bg = t.surface, x = 0, y = 0 }: ColorPickerProps): VNode {
+    const key = keyOf(r);
+    const id = JSON.stringify(key);
+    const m = Math.max(20, Math.round(size * 0.13));
+    const mark: JoinRef = s(`ui_${key}_cp_mark`);
+    const level: JoinRef = a(`ui_${key}_cp_v`);
+    const url: JoinRef = s(`ui_${key}_cp_url`);
+    const hexJoin: JoinRef = hex === undefined ? s(`ui_${key}_cp_hex`) : typeof hex === 'object' ? hex : s(hex);
+    const system = `IvaUI HTTP ${port}`;
+    const right = size + 24;
+    const rw = 160;
+    const sw = 32;
+    const gap = (rw - 4 * sw) / 3;
+    const touch = `IvaUI.colorTouch(${id}, gesture.x, gesture.y)`;
+    const o = `{ size: ${size}, markSize: ${m}, mark: ${jsJoin('s', mark)}, v: ${jsJoin('a', level)}, r: ${jsJoin('a', r)}, g: ${jsJoin('a', g)}, b: ${jsJoin('a', b)}, ` +
+      `hex: ${jsJoin('s', hexJoin)}, url: ${jsJoin('s', url)}, system: ${JSON.stringify(system)}, port: ${port}, value: ${JSON.stringify(value ?? '')} }`;
+    const ref = (j: Join): JoinRef => (typeof j === 'object' ? j : a(j));
+    return (
+      <Group x={x} y={y}>
+        {/* in a subpage of its own: the marker moves in the wheel's coordinates, wherever the wheel is */}
+        <Subpage name={`ui_cp_${key}`} w={size} h={size}>
+          <Image w={size} h={size} src={draw.wheel({ size })}>
+            <Gesture type="tap" onBegin={touch} />
+            <Gesture type="pan" onBegin={touch} onChange={touch} />
+          </Image>
+          <Image x={(size - m) / 2} y={(size - m) / 2} w={m} h={m} join={mark} clickthrough
+                 src={draw.ring({ size: m, thickness: 3, color: '#FFFFFF', outline: '#00000099' })} />
+        </Subpage>
+        <Image y={size + 22} w={18} h={18} src={fa('sun', { color: t.muted, size: 14, style: 'regular' })} />
+        <IvaSlider x={28} y={size + 25} w={size - 56} h={12} join={level} min={0} max={100} bg={t.raised} fill={t.text} radius={3} />
+        <Image x={size - 20} y={size + 20} w={22} h={22} src={fa('sun', { color: t.text, size: 20 })} />
+        <Web x={right} w={rw} h={72} join={url} url={`http://127.0.0.1:${port}/iva-color/000000`} />
+        <Image x={right} w={rw} h={72} src={draw.cutout({ w: rw, h: 72, radius: t.radius, color: bg })} clickthrough />
+        <Text x={right} y={84} w={rw} h={30} join={hexJoin} font={font} fontSize={22} />
+        {(swatches || []).slice(0, 8).map((c, i) => (
+          <Button x={right + Math.round((i % 4) * (sw + gap))} y={128 + Math.floor(i / 4) * (sw + 12)} w={sw} h={sw} radius={sw / 2} bg={c}
+                  borderWidth={1} borderColor={shade(bg, 0.25)} js={`IvaUI.colorSet(${id}, ${JSON.stringify(c)})`} />
+        ))}
+        <System name={system} protocol="tcp" accept host="0.0.0.0" port={port} localPort={port}>
+          <Feedback name="request" regex={'(?msi)^.*?\\r\\n\\r\\n'} />
+        </System>
+        {runtime}
+        <OnStart js={`IvaUI.color(${id}, ${o}, function (r, g, b, hex) { ${onChange ?? ''} });`}
+                 joins={[ref(r), ref(g), ref(b), hexJoin, mark, level, url]} />
+      </Group>
+    );
+  }
+
+  /** A text field: a label, the field (an icon, a placeholder while it's empty), the text in a serial join. */
+  function TextField({ join, label, value, placeholder, password, icon, cmd, x = 0, y = 0, w = 340, h = 48 }: TextFieldProps): VNode {
+    const key = keyOf(join);
+    const hint: JoinRef = s(`ui_${key}_hint`);
+    const top = label ? 32 : 0;
+    const left = icon ? h - 6 : 14;
+    const fontSize = Math.round(h * 0.4);
+    return (
+      <Group x={x} y={y}>
+        {label && <Text w={w} h={26} text={label} color={t.muted} font={font} fontSize={16} />}
+        <Box y={top} w={w} h={h} bg={t.raised} radius={t.radius} />
+        {icon && <Image x={Math.round((h - 20) / 2)} y={top + Math.round((h - 20) / 2)} w={20} h={20} src={fa(icon, { color: t.muted, size: 18 })} />}
+        {placeholder && <Text x={left} y={top} w={w - left - 12} h={h} join={hint} color={t.muted} font={font} fontSize={fontSize} />}
+        <Input x={left} y={top} w={w - left - 12} h={h} join={join} text={value} password={password} cmd={cmd} color={t.text} font={font} fontSize={fontSize} />
+        {placeholder && runtime}
+        {placeholder && <OnStart js={`IvaUI.hint(${jsJoin('s', join)}, ${jsJoin('s', hint)}, ${JSON.stringify(placeholder)});`} joins={[hint]} />}
+      </Group>
+    );
+  }
+
+  // ── pickers: a field, and a sheet or a dropdown it opens ─────────
+
+  const HEAD = 64; // a sheet's title row
+
+  /** A field: its text (a serial join), an icon on the right; a tap runs `js`. */
+  function field(label: JoinRef, js: string, w: number, h: number, icon: IconRef | false, fontSize: number) {
+    const size = Math.min(20, Math.round(h * 0.4));
+    return (
+      <>
+        <Box w={w} h={h} bg={t.raised} radius={t.radius} />
+        <Text x={16} w={w - (icon ? 56 : 32)} h={h} join={label} font={font} fontSize={fontSize} />
+        {icon && <Image x={w - 16 - size} y={Math.round((h - size) / 2)} w={size} h={size} src={icon} />}
+        <Button w={w} h={h} feedback="none" js={js} />
+      </>
+    );
+  }
+
+  /**
+   * What a field opens on a digital join: a sheet in the middle of the panel
+   * (dimmed behind it, a title, a close button) or a dropdown under the field.
+   * A tap outside closes it. `body` is laid out from (0, 0), `pw` x `bh`.
+   */
+  function popup(name: string, open: JoinRef, mode: PopupMode, fieldH: number, title: string, pw: number, bh: number, body: VNode) {
+    const { width: W, height: H } = t.panel;
+    const close = `IvaUI.off(${jsJoin('d', open)})`;
+    const fade = { type: 'fade' as const, time: 0.15 };
+    if (mode === 'sheet') {
+      const ph = HEAD + bh + 16;
+      return (
+        <Subpage name={name} fixed topmost w={W} h={H} join={open} bg="#000000a0" in={fade} out={fade}>
+          <Button w={W} h={H} feedback="none" js={close} />
+          <Group x={Math.round((W - pw) / 2)} y={Math.round((H - ph) / 2)}>
+            <Box w={pw} h={ph} bg={t.surface} radius={t.radius + 4} borderWidth={1} borderColor={t.raised} />
+            {/* taps on the sheet stay on it */}
+            <Button w={pw} h={ph} feedback="none" />
+            <Text x={24} y={12} w={pw - 90} h={44} text={title} font={font} fontSize={24} />
+            <Button x={pw - 60} y={10} w={48} h={48} icon={fa('xmark', { size: 22, color: t.muted })} feedback="none" js={close} />
+            <Group y={HEAD}>{body}</Group>
+          </Group>
+        </Subpage>
+      );
+    }
+    return (
+      <Group>
+        <Subpage name={`${name}_away`} fixed topmost w={W} h={H} join={open}>
+          <Button w={W} h={H} feedback="none" js={close} />
+        </Subpage>
+        <Subpage name={name} topmost y={fieldH + 6} w={pw} h={bh + 16} join={open} bg={t.surface} radius={t.radius}
+                 borderWidth={1} borderColor={t.raised} in={fade} out={fade}>
+          <Button w={pw} h={bh + 16} feedback="none" />
+          <Group y={8}>{body}</Group>
+        </Subpage>
+      </Group>
+    );
+  }
+
+  /** Buttons in a row at the foot of a popup: the last one the main one. */
+  function footer(buttons: { text: string; js: string; tone?: 'accent' | 'link' }[], pw: number, y: number, h = 52) {
+    const gap = 12;
+    const bw = Math.floor((pw - 32 - gap * (buttons.length - 1)) / buttons.length);
+    return buttons.map((b, i) => (
+      <Button x={16 + i * (bw + gap)} y={y} w={bw} h={h} text={b.text} js={b.js} radius={t.radius} font={font} fontSize={19}
+              bg={b.tone === 'accent' ? t.accent : t.raised} color={b.tone === 'link' ? t.accent : t.text}
+              active={{ bg: b.tone === 'accent' ? shade(t.accent, -0.2) : shade(t.raised, 0.12) }} />
+    ));
+  }
+
+  /**
+   * Drums: one CF list each, a row per value (two blank rows either side, so
+   * a value can reach the middle), turned by a finger and snapping to a row;
+   * a tap on a row turns it to the middle. The row in the middle (over a band)
+   * is the one picked.
+   */
+  function drums(lists: { list: JoinRef; w: number }[], rowH: number, gap: number, between: (k: number) => string | undefined = () => undefined) {
+    const visible = 5;
+    const width = lists.reduce((sum, dr) => sum + dr.w, 0) + gap * (lists.length - 1);
+    const row = (w: number) => `ui_drum_${w}_${rowH}`;
+    const fontSize = Math.round(rowH * 0.56);
+    let at = 0;
+    const placed = lists.map((dr) => {
+      const x = at;
+      at += dr.w + gap;
+      return { ...dr, x };
+    });
+    return {
+      width,
+      height: visible * rowH,
+      body: (
+        <>
+          {[...new Set(lists.map((dr) => dr.w))].map((w) => (
+            <Subpage name={row(w)} define w={w} h={rowH}>
+              <Text w={w} h={rowH} join={1} align="center" font={font} fontSize={fontSize} />
+              <Button w={w} h={rowH} feedback="none" onPress={[jsAction('IvaUI.rowDown(list)')]} onRelease={[jsAction('IvaUI.drumTap(list, listIndex)')]} />
+            </Subpage>
+          ))}
+          <Box x={-8} y={2 * rowH} w={width + 16} h={rowH} bg={t.raised} radius={t.radius} />
+          {/* what goes between two drums (the time's colon) */}
+          {placed.map((dr, k) => k > 0 && between(k) && (
+            <Text x={dr.x - gap} y={2 * rowH} w={gap} h={rowH} text={between(k)} align="center" font={font} fontSize={fontSize} />
+          ))}
+          {placed.map((dr) => <List x={dr.x} w={dr.w} h={visible * rowH} join={dr.list} item={row(dr.w)} />)}
+        </>
+      ),
+    };
+  }
+
+  /** A time field and its drums (see the runtime's IvaUI.picker). */
+  function TimePicker({ hour, minute, value, minuteStep = 1, ampm = false, now, mode = 'sheet', title = 'Time', ok = 'OK', cancel = 'Cancel',
+                        fontSize = 20, showIcon = true, x = 0, y = 0, w = 332, h = 48 }: TimePickerProps): VNode {
+    // two pickers on the same joins that look different: a popup each
+    const key = `${keyOf(hour)}_${hash(JSON.stringify([minuteStep, ampm, now, mode, title, ok, cancel, w])).slice(0, 4)}`;
+    const id = JSON.stringify(`time_${key}`);
+    const open: JoinRef = d(`ui_${key}_tp_open`);
+    const label: JoinRef = s(`ui_${key}_tp_text`);
+    const step = Math.max(1, Math.min(30, Math.round(minuteStep)));
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const values = [
+      ampm ? Array.from({ length: 12 }, (_, i) => pad(i + 1)) : Array.from({ length: 24 }, (_, i) => pad(i)),
+      Array.from({ length: Math.ceil(60 / step) }, (_, i) => pad(i * step)),
+      ...(ampm ? [['AM', 'PM']] : []),
+    ];
+    const lists = values.map((_, k) => ({ list: l(`ui_${key}_tp_${k}`), w: k === 2 ? 76 : 84 }));
+    const rowH = 48;
+    const dr = drums(lists, rowH, 28, (k) => (k === 1 ? ':' : undefined));
+    const pw = Math.max(mode === 'dropdown' ? w : 320, dr.width + 64);
+    const bh = dr.height + 16 + 52;
+    const buttons = [
+      ...(now ? [{ text: now, js: `IvaUI.pickerNow(${id})`, tone: 'link' as const }] : []),
+      { text: cancel, js: `IvaUI.off(${jsJoin('d', open)})` },
+      { text: ok, js: `IvaUI.pickerOk(${id})`, tone: 'accent' as const },
+    ];
+    const o = `{ kind: 'time', open: ${jsJoin('d', open)}, label: ${jsJoin('s', label)}, rowH: ${rowH}, watch: [${jsJoin('a', hour)}, ${jsJoin('a', minute)}], ` +
+      `step: ${step}, ampm: ${ampm}, value: ${JSON.stringify(value ?? '')}, drums: [${lists.map((ls, k) => `{ list: ${jsJoin('l', ls.list)}, values: ${JSON.stringify(values[k])} }`).join(', ')}] }`;
+    const ref = (j: Join): JoinRef => (typeof j === 'object' ? j : a(j));
+    return (
+      <Group x={x} y={y}>
+        {field(label, `IvaUI.pickerOpen(${id})`, w, h, showIcon && fa('clock', { style: 'regular', size: 18, color: t.muted }), fontSize)}
+        {popup(`ui_tp_${key}`, open, mode, h, title, pw, bh, (
+          <>
+            <Group x={Math.round((pw - dr.width) / 2)}>{dr.body}</Group>
+            {footer(buttons, pw, dr.height + 16)}
+          </>
+        ))}
+        {runtime}
+        <OnStart js={`IvaUI.picker(${id}, ${o});`} joins={[ref(hour), ref(minute), open, label, ...lists.map((ls) => ls.list)]} />
+      </Group>
+    );
+  }
+
+  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+  /** A date field and its drums (see the runtime's IvaUI.picker). */
+  function DatePicker({ day, month, year, value, format = 'DD.MM.YYYY', order = 'dmy', minYear, maxYear, months = MONTHS, today = 'Today',
+                        placeholder = 'Pick a date', mode = 'sheet', title = 'Date', ok = 'OK', cancel = 'Cancel', fontSize = 20, showIcon = true,
+                        x = 0, y = 0, w = 332, h = 48 }: DatePickerProps): VNode {
+    const key = `${keyOf(day)}_${hash(JSON.stringify([format, order, minYear, maxYear, months, today, placeholder, mode, title, ok, cancel, w])).slice(0, 4)}`;
+    const id = JSON.stringify(`date_${key}`);
+    const open: JoinRef = d(`ui_${key}_dp_open`);
+    const label: JoinRef = s(`ui_${key}_dp_text`);
+    const thisYear = new Date().getFullYear();
+    const y0 = minYear ?? thisYear - 10;
+    const y1 = Math.max(y0, maxYear ?? thisYear + 10);
+    const values: Record<string, string[]> = {
+      d: Array.from({ length: 31 }, (_, i) => String(i + 1)),
+      m: months.map((m) => m.slice(0, 3)),
+      y: Array.from({ length: y1 - y0 + 1 }, (_, i) => String(y0 + i)),
+    };
+    const kinds = [...order] as ('d' | 'm' | 'y')[];
+    const widths = { d: 72, m: 96, y: 104 };
+    const lists = kinds.map((k) => ({ list: l(`ui_${key}_dp_${k}`), w: widths[k] }));
+    const rowH = 48;
+    const dr = drums(lists, rowH, 24);
+    const pw = Math.max(mode === 'dropdown' ? w : 320, dr.width + 64, today ? 340 : 0);
+    const bh = dr.height + 16 + 52;
+    const buttons = [
+      ...(today ? [{ text: today, js: `IvaUI.pickerNow(${id})`, tone: 'link' as const }] : []),
+      { text: cancel, js: `IvaUI.off(${jsJoin('d', open)})` },
+      { text: ok, js: `IvaUI.pickerOk(${id})`, tone: 'accent' as const },
+    ];
+    const o = `{ kind: 'date', open: ${jsJoin('d', open)}, label: ${jsJoin('s', label)}, rowH: ${rowH}, watch: [${jsJoin('a', day)}, ${jsJoin('a', month)}, ${jsJoin('a', year)}], ` +
+      `order: ${JSON.stringify(order)}, minYear: ${y0}, format: ${JSON.stringify(format)}, months: ${JSON.stringify(months)}, placeholder: ${JSON.stringify(placeholder)}, ` +
+      `value: ${JSON.stringify(value ?? '')}, drums: [${lists.map((ls, i) => `{ list: ${jsJoin('l', ls.list)}, values: ${JSON.stringify(values[kinds[i]])} }`).join(', ')}] }`;
+    const ref = (j: Join): JoinRef => (typeof j === 'object' ? j : a(j));
+    return (
+      <Group x={x} y={y}>
+        {field(label, `IvaUI.pickerOpen(${id})`, w, h, showIcon && fa('calendar', { style: 'regular', size: 18, color: t.muted }), fontSize)}
+        {popup(`ui_dp_${key}`, open, mode, h, title, pw, bh, (
+          <>
+            <Group x={Math.round((pw - dr.width) / 2)}>{dr.body}</Group>
+            {footer(buttons, pw, dr.height + 16)}
+          </>
+        ))}
+        {runtime}
+        <OnStart js={`IvaUI.picker(${id}, ${o});`} joins={[ref(day), ref(month), ref(year), open, label, ...lists.map((ls) => ls.list)]} />
+      </Group>
+    );
+  }
+
+  /** A number field: a tap opens a keypad on the value; OK checks it's min..max. */
+  function NumberField({ join, value, min = 0, max = 100, decimals = 0, digits, unit = '', words = {}, mode = 'sheet', title = 'Value', ok = 'OK',
+                         cancel = 'Cancel', fontSize = 20, showIcon = true, x = 0, y = 0, w = 332, h = 48 }: NumberFieldProps): VNode {
+    const key = `${keyOf(join)}_${hash(JSON.stringify([min, max, decimals, digits, unit, words, mode, title, ok, cancel, w])).slice(0, 4)}`;
+    const id = JSON.stringify(key);
+    const open: JoinRef = d(`ui_${key}_nf_open`);
+    const label: JoinRef = s(`ui_${key}_nf_text`);
+    const display: JoinRef = s(`ui_${key}_nf_entry`);
+    const error: JoinRef = s(`ui_${key}_nf_error`);
+    const kw = 88;
+    const kh = 52;
+    const gap = 10;
+    const pw = Math.max(mode === 'dropdown' ? w : 0, 3 * kw + 2 * gap + 32);
+    const kx = Math.round((pw - (3 * kw + 2 * gap)) / 2);
+    const key4 = [min < 0 ? '±' : '', '0', decimals > 0 ? '.' : ''];
+    const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', ...key4];
+    const press = (k: string) => (k === '±' ? `IvaUI.numKey(${id}, '-')` : `IvaUI.numKey(${id}, ${JSON.stringify(k)})`);
+    const top = 52 + 26;
+    const bh = top + 4 * kh + 3 * gap + 16 + 52;
+    const btn = { radius: t.radius, bg: t.raised, active: { bg: shade(t.raised, 0.12) }, font };
+    const range = (words.range ?? 'From {min} to {max}').replace('{min}', String(min)).replace('{max}', String(max));
+    const o = { min, max, decimals, digits: digits ?? 0, unit, value, words: { invalid: words.invalid ?? 'Not a number', range } };
+    return (
+      <Group x={x} y={y}>
+        {field(label, `IvaUI.numOpen(${id})`, w, h, showIcon && fa('pen', { size: 16, color: t.muted }), fontSize)}
+        {popup(`ui_nf_${key}`, open, mode, h, title, pw, bh, (
+          <>
+            <Box x={16} w={pw - 32} h={52} bg={t.page} radius={t.radius} />
+            <Text x={32} w={pw - 112} h={52} join={display} font={font} fontSize={26} />
+            <Button x={pw - 76} y={2} w={56} h={48} icon={fa('delete-left', { size: 22, color: t.muted })} feedback="none" js={`IvaUI.numBack(${id})`} />
+            <Text x={16} y={54} w={pw - 32} h={22} join={error} color={t.danger} font={font} fontSize={15} />
+            {keys.map((k, i) => k && (
+              <Button x={kx + (i % 3) * (kw + gap)} y={top + Math.floor(i / 3) * (kh + gap)} w={kw} h={kh} text={k} js={press(k)} fontSize={24} {...btn} />
+            ))}
+            {footer([{ text: cancel, js: `IvaUI.off(${jsJoin('d', open)})` }, { text: ok, js: `IvaUI.numOk(${id})`, tone: 'accent' }], pw, top + 4 * kh + 3 * gap + 16)}
+          </>
+        ))}
+        {runtime}
+        <OnStart js={`IvaUI.num(${id}, ${JSON.stringify(o).slice(0, -1)}, join: ${jsJoin('a', join)}, open: ${jsJoin('d', open)}, label: ${jsJoin('s', label)}, ` +
+                     `display: ${jsJoin('s', display)}, error: ${jsJoin('s', error)} });`}
+                 joins={[typeof join === 'object' ? join : a(join), open, label, display, error]} />
+      </Group>
+    );
+  }
+
+  /**
+   * A select box with a search field, for long lists: the field opens a sheet
+   * (or a dropdown) with a text field over the options; they filter as you
+   * type, a tap picks one. Options fixed, or a JSON array in a serial join.
+   */
+  function SearchSelect({ options, source, join, value, placeholder = 'Pick one', empty = 'Nothing found', rows = 6, rowH = 52, mode = 'sheet', title = '',
+                          fontSize = 20, showIcon = true, x = 0, y = 0, w = 340, h = 48 }: SearchSelectProps): VNode {
+    const key = `${keyOf(join)}_${hash(JSON.stringify([options, source, placeholder, empty, rows, rowH, mode, title, w])).slice(0, 4)}`;
+    const id = JSON.stringify(key);
+    const open: JoinRef = d(`ui_${key}_ss_open`);
+    const label: JoinRef = s(`ui_${key}_ss_text`);
+    const input: JoinRef = s(`ui_${key}_ss_input`);
+    const hint: JoinRef = s(`ui_${key}_ss_hint`);
+    const none: JoinRef = s(`ui_${key}_ss_none`);
+    const list: JoinRef = l(`ui_${key}_ss_list`);
+    const pw = mode === 'dropdown' ? w : 440;
+    const lw = pw - 32;
+    const row = `ui_ss_row_${lw}_${rowH}`;
+    const bh = 48 + 8 + rows * rowH;
+    const o = `{ join: ${jsJoin('a', join)}, label: ${jsJoin('s', label)}, input: ${jsJoin('s', input)}, hint: ${jsJoin('s', hint)}, none: ${jsJoin('s', none)}, ` +
+      `list: ${jsJoin('l', list)}, open: ${jsJoin('d', open)}, row: ${JSON.stringify(row)}, options: ${JSON.stringify(options ?? [])}, ` +
+      `source: ${source === undefined ? 'null' : jsJoin('s', source)}, placeholder: ${JSON.stringify(placeholder)}, empty: ${JSON.stringify(empty)}` +
+      `${value !== undefined ? `, value: ${value}` : ''} }`;
+    return (
+      <Group x={x} y={y}>
+        {field(label, `IvaUI.selectOpen(${id})`, w, h, showIcon && fa('chevron-down', { size: 18, color: t.muted }), fontSize)}
+        <Subpage name={row} define w={lw} h={rowH}>
+          <Text x={8} w={lw - 16} h={rowH} join={1} font={font} fontSize={20} />
+          <Box x={8} y={rowH - 1} w={lw - 16} h={1} bg={t.raised} />
+          <Button w={lw} h={rowH} feedback="none" active={{ bg: '#FFFFFF14' }}
+                  onPress={[jsAction('IvaUI.rowDown(list)')]} onRelease={[jsAction('IvaUI.selectPick(list, listIndex)')]} />
+        </Subpage>
+        {popup(`ui_ss_${key}`, open, mode, h, title, pw, bh, (
+          <>
+            <Box x={16} w={pw - 32} h={48} bg={t.raised} radius={t.radius} />
+            <Image x={30} y={14} w={20} h={20} src={fa('magnifying-glass', { size: 18, color: t.muted })} />
+            <Text x={60} w={pw - 92} h={48} join={hint} color={t.muted} font={font} fontSize={19} />
+            <Input x={60} w={pw - 92} h={48} join={input} color={t.text} font={font} fontSize={19} />
+            <Text x={24} y={64} w={pw - 48} h={rowH} join={none} color={t.muted} font={font} fontSize={18} />
+            <List x={16} y={56} w={lw} h={rows * rowH} join={list} item={row} />
+          </>
+        ))}
+        {runtime}
+        <OnStart js={`IvaUI.select(${id}, ${o});`}
+                 joins={[typeof join === 'object' ? join : a(join), open, label, input, hint, none, list, ...(source !== undefined ? [typeof source === 'object' ? source : s(source)] : [])]} />
+      </Group>
+    );
+  }
+
   return {
     theme: t, Card, Icon, IconButton, Tile, Badge, Stat, Toggle, Slider, Stepper, Segmented, SceneBar, Dimmer, Dial, Knob, Thermostat, Blinds,
     RadioGroup, CheckBox, CheckBoxGroup, SelectBox, ListRow, DataList, ScrollBox, WeekDays, PinPad, AlarmCard, NavCard, Header, SideMenu, ConfirmDialog,
+    ColorPicker, TextField, SearchSelect, TimePicker, DatePicker, NumberField,
   };
 }
 
@@ -1173,6 +1678,12 @@ export const ScrollBox: Ui['ScrollBox'] = ui.ScrollBox;
 export const WeekDays: Ui['WeekDays'] = ui.WeekDays;
 export const PinPad: Ui['PinPad'] = ui.PinPad;
 export const AlarmCard: Ui['AlarmCard'] = ui.AlarmCard;
+export const ColorPicker: Ui['ColorPicker'] = ui.ColorPicker;
+export const TextField: Ui['TextField'] = ui.TextField;
+export const SearchSelect: Ui['SearchSelect'] = ui.SearchSelect;
+export const TimePicker: Ui['TimePicker'] = ui.TimePicker;
+export const DatePicker: Ui['DatePicker'] = ui.DatePicker;
+export const NumberField: Ui['NumberField'] = ui.NumberField;
 export const NavCard: Ui['NavCard'] = ui.NavCard;
 export const Header: Ui['Header'] = ui.Header;
 export const SideMenu: Ui['SideMenu'] = ui.SideMenu;

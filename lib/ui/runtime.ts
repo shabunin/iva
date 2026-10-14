@@ -10,6 +10,71 @@ var IvaUI = (function () {
   var dials = {};
   var pins = {};
   var times = {};
+  var colors = {};
+  var servers = {};
+  var pickers = {};
+  var drumOf = {};
+  var nums = {};
+  var selects = {};
+  var selectOf = {};
+  // a row's button pressed in a list, until it's let go: a tap unless the list scrolled meanwhile
+  var pressed = {};
+  function rowsOf(list) {
+    CF.watch(CF.ListWillStartScrollingEvent, list, function () { if (pressed[list]) pressed[list].moved = true; });
+  }
+  function tapped(list) {
+    var p = pressed[list];
+    delete pressed[list];
+    return !!p && !p.moved;
+  }
+  function daysIn(m, y) { return new Date(y, m, 0).getDate(); }
+  // a time / date picker's kinds: the drums' rows from the joins' values, the joins' values from the rows, the field's text
+  var KINDS = {
+    time: {
+      rows: function (o, v) {
+        var h = v[0] || 0, m = v[1] || 0, r = [o.ampm ? (h % 12 || 12) - 1 : h, Math.round(m / o.step)];
+        if (o.ampm) r.push(h >= 12 ? 1 : 0);
+        return r;
+      },
+      values: function (o, r) {
+        var h = o.ampm ? (r[0] + 1) % 12 + (r[2] ? 12 : 0) : r[0];
+        return [h, Math.min(59, r[1] * o.step)];
+      },
+      text: function (o, v) {
+        var h = v[0] || 0, m = v[1] || 0;
+        return o.ampm ? (h % 12 || 12) + ':' + pad(m) + (h < 12 ? ' AM' : ' PM') : pad(h) + ':' + pad(m);
+      },
+      now: function (o) {
+        var d = new Date(), t = d.getHours() * 60 + Math.round(d.getMinutes() / o.step) * o.step;
+        return [Math.floor(t / 60) % 24, t % 60];
+      },
+      parse: function (o, text) { var m = /^(\\d{1,2}):(\\d{2})$/.exec(text); return m ? [Number(m[1]), Number(m[2])] : null; }
+    },
+    date: {
+      rows: function (o, v) {
+        if (!v[2]) v = KINDS.date.now(o); // not set yet: today
+        var at = { d: v[0] - 1, m: v[1] - 1, y: v[2] - o.minYear }, r = [];
+        for (var k = 0; k < o.order.length; k++) r.push(at[o.order.charAt(k)]);
+        return r;
+      },
+      values: function (o, r) {
+        var at = {};
+        for (var k = 0; k < o.order.length; k++) at[o.order.charAt(k)] = r[k];
+        var m = at.m + 1, y = o.minYear + at.y;
+        // a day the month lacks: its last one (31 Feb: 28 / 29)
+        return [Math.min(at.d + 1, daysIn(m, y)), m, y];
+      },
+      text: function (o, v) {
+        if (!v[2]) return o.placeholder;
+        var d = v[0], m = v[1], y = v[2];
+        return o.format.replace(/YYYY|MMMM|MMM|MM|M|DD|D/g, function (t) {
+          return { YYYY: String(y), MMMM: o.months[m - 1] || '', MMM: (o.months[m - 1] || '').slice(0, 3), MM: pad(m), M: String(m), DD: pad(d), D: String(d) }[t];
+        });
+      },
+      now: function () { var d = new Date(); return [d.getDate(), d.getMonth() + 1, d.getFullYear()]; },
+      parse: function (o, text) { var m = /^(\\d{4})-(\\d{1,2})-(\\d{1,2})$/.exec(text); return m ? [Number(m[3]), Number(m[2]), Number(m[1])] : null; }
+    }
+  };
   function pad(n) { return (n < 10 ? '0' : '') + n; }
   function fmt(v, decimals, unit) {
     var s = Number(v).toFixed(decimals || 0);
@@ -20,6 +85,24 @@ var IvaUI = (function () {
   // analog joins run 0..65535; min..max is what they stand for
   function toJoin(v, min, max) { return Math.round(clamp((v - min) / ((max - min) || 1), 0, 1) * 65535); }
   function fromJoin(j, min, max) { return min + (Number(j) || 0) / 65535 * (max - min); }
+  function hex2(n) { var h = Math.round(clamp(n, 0, 255)).toString(16); return h.length < 2 ? '0' + h : h; }
+  function hsvRgb(h, s, v) {
+    h = (((h % 360) + 360) % 360) / 60;
+    var i = Math.floor(h) % 6, f = h - Math.floor(h);
+    var p = v * (1 - s), q = v * (1 - s * f), t = v * (1 - s * (1 - f));
+    var m = [[v, t, p], [q, v, p], [p, v, t], [p, q, v], [t, p, v], [v, p, q]][i];
+    return [Math.round(m[0] * 255), Math.round(m[1] * 255), Math.round(m[2] * 255)];
+  }
+  function rgbHsv(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    var max = Math.max(r, g, b), d = max - Math.min(r, g, b), h = 0;
+    if (d) {
+      if (max === r) h = ((g - b) / d) % 6; else if (max === g) h = (b - r) / d + 2; else h = (r - g) / d + 4;
+      h *= 60;
+      if (h < 0) h += 360;
+    }
+    return [h, max ? d / max : 0, max];
+  }
   return {
     /** a serial join showing the time (HH:MM) */
     clock: function (join) {
@@ -192,6 +275,302 @@ var IvaUI = (function () {
         var m = ((Math.round((Number(v) || 0) / o.step) + dir) * o.step + 1440) % 1440;
         CF.setJoin(o.join, m);
       });
+    },
+    /**
+     * a colour picker: hue and saturation on a wheel (o.size square, in a
+     * subpage of its own with the marker o.mark, o.markSize square), brightness on a slider
+     * (o.v, analog). The colour goes to o.r / o.g / o.b (0..255) and o.hex
+     * ('#RRGGBB'), and to a swatch: a web view (o.url) loading a page of that
+     * colour from the panel's own HTTP server (o.system, port o.port). It
+     * follows o.r / o.g / o.b when they change elsewhere.
+     */
+    color: function (id, o, onChange) {
+      var c = colors[id] = { o: o, h: 0, s: 0, v: 1, busy: false, onChange: onChange, sent: '', timer: null, last: 0 };
+      if (o.system) IvaUI.colorServer(o.system);
+      function follow() {
+        if (c.busy) return;
+        CF.getJoins([o.r, o.g, o.b], function (j) {
+          var hsv = rgbHsv(Number(j[o.r].value) || 0, Number(j[o.g].value) || 0, Number(j[o.b].value) || 0);
+          // black and greys have no hue of their own: keep the one there was
+          if (hsv[1] > 0) c.h = hsv[0];
+          if (hsv[2] > 0) c.s = hsv[1];
+          c.v = hsv[2];
+          IvaUI.colorShow(id, false);
+        });
+      }
+      CF.watch(CF.JoinChangeEvent, [o.r, o.g, o.b], follow);
+      CF.watch(CF.JoinChangeEvent, o.v, function (j, v) {
+        if (c.busy) return;
+        c.v = clamp((Number(v) || 0) / 65535, 0, 1);
+        IvaUI.colorShow(id, true);
+      });
+      if (o.value) IvaUI.colorSet(id, o.value); else follow();
+    },
+    /** a touch at (x, y) on the wheel: hue = the angle, saturation = how far out */
+    colorTouch: function (id, x, y) {
+      var c = colors[id];
+      if (!c) return;
+      var r = c.o.size / 2, dx = x - r, dy = y - r, d = Math.sqrt(dx * dx + dy * dy) / r;
+      if (d > 1.15) return; // a corner of the square, off the wheel
+      c.h = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
+      c.s = clamp(d, 0, 1);
+      if (c.v < 0.05) c.v = 1; // picking a colour in the dark: light it
+      IvaUI.colorShow(id, true);
+    },
+    /** a colour ('#RRGGBB') */
+    colorSet: function (id, hex) {
+      var c = colors[id];
+      var m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+      if (!c || !m) return;
+      var n = parseInt(m[1], 16);
+      var hsv = rgbHsv(n >> 16, (n >> 8) & 255, n & 255);
+      if (hsv[1] > 0) c.h = hsv[0];
+      c.s = hsv[1];
+      c.v = hsv[2];
+      IvaUI.colorShow(id, true);
+    },
+    /** show the colour (marker, slider, hex, swatch); write: to the r / g / b joins too */
+    colorShow: function (id, write) {
+      var c = colors[id], o = c.o;
+      var rgb = hsvRgb(c.h, c.s, c.v);
+      var hex = '#' + hex2(rgb[0]) + hex2(rgb[1]) + hex2(rgb[2]);
+      var r = o.size / 2, a = c.h * Math.PI / 180, d = c.s * (r - o.markSize / 4);
+      c.busy = true;
+      if (write) {
+        CF.setJoin(o.r, rgb[0]);
+        CF.setJoin(o.g, rgb[1]);
+        CF.setJoin(o.b, rgb[2]);
+      }
+      CF.setJoin(o.v, Math.round(c.v * 65535));
+      c.busy = false;
+      if (o.hex) CF.setJoin(o.hex, hex.toUpperCase());
+      CF.setProperties({ join: o.mark, x: Math.round(r + d * Math.sin(a) - o.markSize / 2), y: Math.round(r - d * Math.cos(a) - o.markSize / 2) });
+      IvaUI.colorSwatch(id, hex);
+      if (write && c.onChange) c.onChange(rgb[0], rgb[1], rgb[2], hex.toUpperCase());
+    },
+    /** the swatch page: at most every 120 ms while dragging, the last colour always */
+    colorSwatch: function (id, hex) {
+      var c = colors[id], o = c.o;
+      if (!o.url) return;
+      c.pending = hex;
+      if (c.timer) return;
+      var wait = Math.max(0, 120 - (Date.now() - c.last));
+      c.timer = setTimeout(function () {
+        c.timer = null;
+        c.last = Date.now();
+        if (c.pending === c.sent) return;
+        c.sent = c.pending;
+        CF.setJoin(o.url, 'http://127.0.0.1:' + o.port + '/iva-color/' + c.sent.slice(1));
+      }, wait);
+    },
+    /** the panel's HTTP server (a TCP system accepting connections): a page of one colour per GET /iva-color/RRGGBB */
+    colorServer: function (system) {
+      if (servers[system]) return;
+      servers[system] = true;
+      CF.watch(CF.FeedbackMatchedEvent, system, 'request', function (fb, req) {
+        var m = /^GET \\/iva-color\\/([0-9a-fA-F]{6})/.exec(req);
+        var body = m
+          ? '<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"></head><body style="margin:0;background:#' + m[1] + '"></body></html>'
+          : 'not found';
+        CF.send(system, 'HTTP/1.1 ' + (m ? '200 OK' : '404 Not Found') + '\\r\\nContent-Type: text/html\\r\\nCache-Control: no-store\\r\\nContent-Length: ' + body.length + '\\r\\n\\r\\n' + body);
+      });
+    },
+    /** a text field's placeholder (a serial join): shown while the field (input) is empty */
+    hint: function (input, hint, text) {
+      function show(v) { CF.setJoin(hint, v ? '' : text); }
+      CF.watch(CF.InputFieldEditedEvent, input, function (j, v) { show(v); });
+      CF.watch(CF.JoinChangeEvent, input, function (j, v) { show(v); }, true);
+    },
+    /**
+     * a time or date picker (o.kind): drums (o.drums[k] = { list, values }, o.rowH
+     * rows), the values in o.watch (analog joins, as numbers), the field's text
+     * in o.label, the popup on o.open. A list holds two blank rows either side
+     * of the values, so value i is in the middle while row i is at the top.
+     */
+    picker: function (id, o) {
+      var p = pickers[id] = { o: o, kind: KINDS[o.kind], rows: [] };
+      for (var k = 0; k < o.drums.length; k++) {
+        var dr = o.drums[k], items = [{ s1: '' }, { s1: '' }];
+        for (var i = 0; i < dr.values.length; i++) items.push({ s1: dr.values[i] });
+        items.push({ s1: '' }, { s1: '' });
+        IvaUI.fill(dr.list, items);
+        drumOf[dr.list] = { id: id, k: k };
+        rowsOf(dr.list);
+        p.rows[k] = 0;
+        CF.watch(CF.ListDidEndScrollingEvent, dr.list, function (list) { IvaUI.drumSnap(list); });
+      }
+      CF.watch(CF.JoinChangeEvent, o.watch, function () {
+        CF.getJoins(o.watch, function (j) {
+          var v = [];
+          for (var k = 0; k < o.watch.length; k++) v.push(Number(j[o.watch[k]].value) || 0);
+          CF.setJoin(o.label, p.kind.text(o, v));
+        });
+      }, true);
+      var start = o.value && p.kind.parse(o, o.value);
+      if (start) for (var n = 0; n < o.watch.length; n++) CF.setJoin(o.watch[n], start[n]);
+    },
+    /** open the picker, its drums turned to the joins' values */
+    pickerOpen: function (id) {
+      var p = pickers[id], o = p.o;
+      CF.getJoins(o.watch, function (j) {
+        var v = [];
+        for (var k = 0; k < o.watch.length; k++) v.push(Number(j[o.watch[k]].value) || 0);
+        CF.setJoin(o.open, 1);
+        var rows = p.kind.rows(o, v);
+        setTimeout(function () { IvaUI.drumTo(id, rows, false); }, 30);
+      });
+    },
+    /** the drums to the panel's time / today */
+    pickerNow: function (id) {
+      var p = pickers[id];
+      IvaUI.drumTo(id, p.kind.rows(p.o, p.kind.now(p.o)), true);
+    },
+    pickerOk: function (id) {
+      var p = pickers[id], o = p.o, v = p.kind.values(o, p.rows);
+      for (var k = 0; k < o.watch.length; k++) CF.setJoin(o.watch[k], v[k]);
+      CF.setJoin(o.open, 0);
+    },
+    /** turn the drums to these rows */
+    drumTo: function (id, rows, animated) {
+      var p = pickers[id];
+      for (var k = 0; k < p.o.drums.length; k++) {
+        p.rows[k] = clamp(Math.round(rows[k] || 0), 0, p.o.drums[k].values.length - 1);
+        CF.listScroll(p.o.drums[k].list, p.rows[k], CF.TopPosition, !!animated);
+      }
+    },
+    /** a drum let go: the row nearest the middle is the one, turned right to it */
+    drumSnap: function (list) {
+      var at = drumOf[list];
+      if (!at) return;
+      var p = pickers[at.id], h = p.o.rowH, n = p.o.drums[at.k].values.length;
+      CF.listInfo(list, function (l, count, first, visible, pos) {
+        pos = Number(pos);
+        first = Number(first) || 0;
+        // the position in pixels (where it's not: the first row shown)
+        var i = isFinite(pos) && pos >= first * h - 1 && pos <= (first + 1) * h + 1 ? Math.round(pos / h) : first;
+        i = clamp(i, 0, n - 1);
+        p.rows[at.k] = i;
+        if (!isFinite(pos) || Math.abs(pos - i * h) > 0.5) CF.listScroll(list, i, CF.TopPosition, true);
+      });
+    },
+    /** a row's button pressed (its release: drumTap / selectPick) */
+    rowDown: function (list) { pressed[list] = { moved: false }; },
+    /** a tap on a drum's row: that one to the middle */
+    drumTap: function (list, index) {
+      var at = drumOf[list];
+      if (!at || !tapped(list)) return;
+      var p = pickers[at.id], i = Number(index) - 2;
+      if (i < 0 || i >= p.o.drums[at.k].values.length) return;
+      p.rows[at.k] = i;
+      CF.listScroll(list, i, CF.TopPosition, true);
+    },
+    /** a number field: the value in o.join (min..max as 0..65535), typed on a keypad (shown in o.display) */
+    num: function (id, o) {
+      nums[id] = { o: o, entry: '', fresh: true };
+      CF.watch(CF.JoinChangeEvent, o.join, function (j, v) { CF.setJoin(o.label, fmt(fromJoin(v, o.min, o.max), o.decimals, o.unit)); }, true);
+      if (o.value !== undefined && o.value !== null) CF.setJoin(o.join, toJoin(o.value, o.min, o.max));
+    },
+    numOpen: function (id) {
+      var n = nums[id], o = n.o;
+      CF.getJoin(o.join, function (j, v) {
+        n.entry = Number(fromJoin(v, o.min, o.max)).toFixed(o.decimals);
+        n.fresh = true;
+        CF.setJoin(o.error, '');
+        IvaUI.numShow(id);
+        CF.setJoin(o.open, 1);
+      });
+    },
+    numShow: function (id) {
+      var n = nums[id], o = n.o;
+      CF.setJoin(o.display, n.entry + (o.unit && n.entry !== '' ? (o.unit.charAt(0) === '\u00B0' ? '' : ' ') + o.unit : ''));
+    },
+    /** a key: a digit, '.' or '-' (the sign); the first one replaces the value shown */
+    numKey: function (id, k) {
+      var n = nums[id], o = n.o;
+      if (n.fresh) { n.entry = k === '-' ? n.entry : ''; n.fresh = false; }
+      var e = n.entry;
+      if (k === '-') e = e.charAt(0) === '-' ? e.slice(1) : '-' + e;
+      else if (k === '.') {
+        if (!o.decimals || e.indexOf('.') >= 0) return;
+        e = (e === '' || e === '-' ? e + '0' : e) + '.';
+      } else {
+        var dot = e.indexOf('.');
+        if (dot >= 0 && e.length - dot > o.decimals) return;
+        if (o.digits && e.replace(/[^0-9]/g, '').length >= o.digits) return;
+        e = (e === '0' ? '' : e === '-0' ? '-' : e) + k;
+      }
+      n.entry = e;
+      CF.setJoin(o.error, '');
+      IvaUI.numShow(id);
+    },
+    numBack: function (id) {
+      var n = nums[id];
+      n.fresh = false;
+      n.entry = n.entry.slice(0, -1);
+      IvaUI.numShow(id);
+    },
+    numOk: function (id) {
+      var n = nums[id], o = n.o, v = parseFloat(n.entry);
+      if (!isFinite(v)) { CF.setJoin(o.error, o.words.invalid); return; }
+      if (v < o.min || v > o.max) { CF.setJoin(o.error, o.words.range); return; }
+      CF.setJoin(o.join, toJoin(v, o.min, o.max));
+      CF.setJoin(o.open, 0);
+    },
+    /**
+     * a select box with search: the options (o.options, or a JSON array in the
+     * serial join o.source) that contain what's typed (o.input) fill o.list;
+     * a tap on one writes its index (among all the options) to o.join
+     */
+    select: function (id, o) {
+      var st = selects[id] = { o: o, options: o.options, matches: [] };
+      selectOf[o.list] = id;
+      rowsOf(o.list);
+      function label() {
+        CF.getJoin(o.join, function (j, v) {
+          var t = st.options[Number(v)];
+          CF.setJoin(o.label, t === undefined ? o.placeholder : t);
+        });
+      }
+      st.label = label;
+      if (o.source) {
+        CF.watch(CF.JoinChangeEvent, o.source, function (j, v) {
+          var list = [];
+          try { list = JSON.parse(v || '[]'); } catch (e) { list = []; }
+          st.options = [];
+          for (var i = 0; i < list.length; i++) st.options.push(typeof list[i] === 'object' && list[i] ? String(list[i].label) : String(list[i]));
+          label();
+          IvaUI.selectFilter(id, '');
+        }, true);
+      }
+      CF.watch(CF.JoinChangeEvent, o.join, label, true);
+      CF.watch(CF.InputFieldEditedEvent, o.input, function (j, v) { IvaUI.selectFilter(id, v); });
+      if (o.value !== undefined) CF.setJoin(o.join, o.value);
+      IvaUI.selectFilter(id, '');
+    },
+    selectFilter: function (id, text) {
+      var st = selects[id], o = st.o, q = String(text || '').toLowerCase(), rows = [];
+      st.matches = [];
+      for (var i = 0; i < st.options.length; i++) {
+        if (!q || st.options[i].toLowerCase().indexOf(q) >= 0) {
+          st.matches.push(i);
+          rows.push({ subpage: o.row, s1: st.options[i] });
+        }
+      }
+      IvaUI.fill(o.list, rows);
+      CF.setJoin(o.hint, q ? '' : 'Search');
+      CF.setJoin(o.none, rows.length ? '' : o.empty);
+    },
+    selectOpen: function (id) {
+      var o = selects[id].o;
+      CF.setJoin(o.input, '');
+      IvaUI.selectFilter(id, '');
+      CF.setJoin(o.open, 1);
+    },
+    selectPick: function (list, index) {
+      var id = selectOf[list], st = selects[id];
+      if (!st || !tapped(list) || st.matches[Number(index)] === undefined) return;
+      CF.setJoin(st.o.join, st.matches[Number(index)]);
+      CF.setJoin(st.o.open, 0);
     },
     /** a digital join off */
     off: function (join) { CF.setJoin(join, 0); }

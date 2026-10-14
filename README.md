@@ -58,8 +58,8 @@ uses Designer's device sizes.
 
 `import { createUi } from 'iva/ui'`: cards, tiles, icon buttons, badges,
 stats, toggles, sliders, steppers, segmented controls, scene bars, dimmers,
-blinds, dials and a thermostat, radio buttons, checkboxes, select boxes,
-lists, week days, alarms, a PIN pad, a header with breadcrumbs and a clock, a
+blinds, dials and a thermostat, a colour picker, radio buttons, checkboxes,
+select boxes, text and search fields, time / date / number pickers, lists, week days, alarms, a PIN pad, a header with breadcrumbs and a clock, a
 side menu, dialogs - in a theme ([docs/ui.md](docs/ui.md)). Every one of them, with its variations:
 
 ```bash

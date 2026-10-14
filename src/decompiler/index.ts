@@ -382,7 +382,10 @@ class Decompiler {
     const text = n.text;
     return this.simple({ ...n, text: undefined }, 'Input', (a) => {
       a.skip('j', '0');
-      return [['join', a.join('s')], ...this.geom(a), ['text', text], ['password', a.flag('pass')], ['autoFocus', a.flag('autoFocus')], ['theme', this.theme(a)], ...this.tags(a)];
+      return [
+        ['join', a.join('s')], ...this.geom(a), ['text', text], ['password', a.flag('pass')], ['autoFocus', a.flag('autoFocus')], ['theme', this.theme(a)],
+        ['cmd', a.str('command')], ['macro', a.str('macro')], ['changeCmd', a.str('changeCommand')], ['changeMacro', a.str('changeMacro')], ...this.tags(a),
+      ];
     }, ['f', 'l']);
   }
 

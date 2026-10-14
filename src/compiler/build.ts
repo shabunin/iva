@@ -11,7 +11,7 @@ import { fixedJoin, JoinAllocator, JoinSlot, typedJoin } from './joins.js';
 import { isVNode, type Child, type Source, type VNode } from './runtime.js';
 import { styleCss, Themes, type ThemeType } from './style.js';
 import { didYouMean } from './suggest.js';
-import { arc, box, circle, dotOnRing, generatedName, icon, knob, ticks } from './images.js';
+import { arc, box, circle, cutout, dotOnRing, generatedName, icon, knob, ring, ticks, wheel } from './images.js';
 import type { DrawRef, IconRef } from './components.js';
 
 const isIcon = (v: unknown): v is IconRef => !!v && typeof v === 'object' && (v as IconRef).$$icon === 1;
@@ -24,6 +24,9 @@ function drawImage(d: DrawRef, sc: number): Buffer {
     case 'dot': return dotOnRing(d.size, d.ring, d.at, d.diameter, d.color, sc);
     case 'knob': return knob(d.size, d.color, d.pointer, d.at, sc);
     case 'ticks': return ticks(d.size, d.count, d.from, d.to, d.length, d.width, d.color, sc);
+    case 'wheel': return wheel(d.size, sc);
+    case 'ring': return ring(d.size, d.thickness, d.color, d.outline, sc);
+    case 'cutout': return cutout(d.w, d.h, d.radius, d.color, sc);
   }
 }
 import { el, parseXml, serialize, type XNode } from './xml.js';
@@ -523,6 +526,7 @@ export class Builder {
     const out: XNode[] = [];
     for (const n of nodes) {
       if (n.type === 'Script') this.script(n);
+      else if (n.type === 'System') this.system(n);
       else if (n.type === 'OnStart') this.onStart(n);
       else if (n.type === 'Group') out.push(...this.items(this.elements(n), dx + (n.props.x ?? 0), dy + (n.props.y ?? 0), false));
       else if (n.type === 'Subpage' && n.props.define) this.defineSubpage(n, false);
@@ -612,7 +616,7 @@ export class Builder {
     if (p.mode !== undefined && MODES[p.mode] === undefined) throw this.err(node, `mode: 'alwaysOn', 'transitory' or 'dialog'`);
     const hb = p.heartbeat;
     if (hb && hb.mode !== 'reply' && hb.mode !== 'initiate') throw this.err(node, `heartbeat.mode: 'reply' or 'initiate'`);
-    this.systems.push(this.withXml(this.E('system', {
+    const sys = this.withXml(this.E('system', {
       name: p.name, ip: p.host, port: p.port, origin: p.localPort ?? 0, protocol,
       alwayson: MODES[p.mode ?? 'alwaysOn'], idleTimeout: p.idleTimeout, dialogTimeout: p.dialogTimeout,
       offlinequeue: bool(p.offlineQueue, !udp), accept: bool(p.accept, udp), acceptBroadcasts: bool(p.acceptBroadcasts, udp),
@@ -620,7 +624,14 @@ export class Builder {
       heartbeatRx: hb?.rx ?? '', heartbeatTx: hb?.tx ?? '', heartbeatMode: hb ? (hb.mode === 'reply' ? 0 : 1) : -1,
       eom: p.eom ?? '', connectionStatus: this.join(node, 'connectJoin', 'd'), disconnectionStatus: this.join(node, 'disconnectJoin', 'd'),
       startupCmd: p.startupCmd ?? '', startupMacro: p.startupMacro ?? '', textEncoding: p.textEncoding ?? '', js: p.sendHandler ?? '',
-    }, children, undefined, node), node));
+    }, children, undefined, node), node);
+    // the same system from several places (a component that brings its own): once
+    const same = this.systems.find((x) => x.attrs.find(([k]) => k === 'name')?.[1] === String(p.name));
+    if (same) {
+      if (serialize(same) === serialize(sys)) return;
+      throw this.err(node, `two different systems named "${p.name}"`);
+    }
+    this.systems.push(sys);
   }
 
   private command(node: VNode): XNode {
@@ -786,11 +797,13 @@ export class Builder {
       case 'Input':
         return this.E('input', {
           j: 0, s: this.join(node, 'join', 's'), ...geom, pass: bool(p.password), autoFocus: bool(p.autoFocus), f: 0,
-          t: this.styleTheme(node, 'input', { always: true }), l: 0, tags: tagsAttr(p.tags),
+          t: this.styleTheme(node, 'input', { always: true }),
+          command: p.cmd, macro: p.macro, changeCommand: p.changeCmd, changeMacro: p.changeMacro, l: 0, tags: tagsAttr(p.tags),
         }, [], p.text === undefined ? undefined : String(p.text), node);
       case 'Web':
         return this.E('web', {
-          ...geom, j: p.join ?? 0, title: p.titleJoin ?? 0, back: p.backJoin ?? 0, forward: p.forwardJoin ?? 0, refresh: p.refreshJoin ?? 0, stop: p.stopJoin ?? 0,
+          ...geom, j: this.join(node, 'join', 's'), title: this.join(node, 'titleJoin', 's'), back: this.join(node, 'backJoin', 'd'),
+          forward: this.join(node, 'forwardJoin', 'd'), refresh: this.join(node, 'refreshJoin', 'd'), stop: this.join(node, 'stopJoin', 'd'),
           url: p.url, tags: tagsAttr(p.tags),
         });
       case 'Video': {

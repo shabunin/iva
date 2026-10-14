@@ -80,6 +80,8 @@ declare module 'iva' {
       style?: 'solid' | 'regular' | 'brands';
       color?: string;
       size?: number;
+      /** the image's file name (else: from the content) */
+      file?: string;
   }
   export interface IconOptions {
       /** default: the button's text colour (active: its active colour); white on <Image> */
@@ -88,9 +90,76 @@ declare module 'iva' {
       size?: number;
       /** 'solid' (default), 'regular' or 'brands' (also 'brands:github' as the name) */
       style?: 'solid' | 'regular' | 'brands';
+      /** the image's file name (for scripts / list rows that name it) */
+      file?: string;
   }
   /** A Font Awesome (free) icon: fa('lightbulb'), fa('bell', { style: 'regular' }), fa('brands:spotify'). Names: fontawesome.com/search?m=free */
   export declare const fa: (name: string, opts?: IconOptions) => IconRef;
+  /** Something iva draws into an image (draw.arc(), ...); angles: degrees clockwise from 12 o'clock. */
+  export type DrawRef = {
+      $$draw: 1;
+      name?: string;
+  } & ({
+      kind: 'arc';
+      size: number;
+      thickness: number;
+      from: number;
+      to: number;
+      color: string;
+  } | {
+      kind: 'dot';
+      size: number;
+      ring: number;
+      at: number;
+      diameter: number;
+      color: string;
+  } | {
+      kind: 'knob';
+      size: number;
+      color: string;
+      pointer: string;
+      at: number;
+  } | {
+      kind: 'ticks';
+      size: number;
+      count: number;
+      from: number;
+      to: number;
+      length: number;
+      width: number;
+      color: string;
+  } | {
+      kind: 'wheel';
+      size: number;
+  } | {
+      kind: 'ring';
+      size: number;
+      thickness: number;
+      color: string;
+      outline?: string;
+  } | {
+      kind: 'cutout';
+      w: number;
+      h: number;
+      radius: number;
+      color: string;
+  });
+  type Drawing<K extends DrawRef['kind']> = Omit<Extract<DrawRef, {
+      kind: K;
+  }>, '$$draw' | 'kind'>;
+  /** Images iva draws, for <Image src>: draw.arc({ size, thickness, from, to, color }), draw.dot(...),
+   * draw.knob(...), draw.ticks(...), draw.wheel({ size }) (hue round, white in the middle),
+   * draw.ring({ size, thickness, color, outline }), draw.cutout({ w, h, radius, color }) (a frame
+   * with a rounded hole, to round a web view's corners). `name` fixes the file name (else: from the content). */
+  export declare const draw: {
+      arc: (o: Drawing<'arc'>) => DrawRef;
+      dot: (o: Drawing<'dot'>) => DrawRef;
+      knob: (o: Drawing<'knob'>) => DrawRef;
+      ticks: (o: Drawing<'ticks'>) => DrawRef;
+      wheel: (o: Drawing<'wheel'>) => DrawRef;
+      ring: (o: Drawing<'ring'>) => DrawRef;
+      cutout: (o: Drawing<'cutout'>) => DrawRef;
+  };
   export interface ImageRef {
       /** a file, or fa('icon') */
       src: string | IconRef;
@@ -189,7 +258,10 @@ declare module 'iva' {
       visible?: boolean;
       in?: Transition;
       out?: Transition;
+      /** above everything else on the page (iva places it last) */
       topmost?: boolean;
+      /** at x / y on the page, whatever <Group> it is in (a sheet centred on the screen) */
+      fixed?: boolean;
       clickthrough?: boolean;
       tags?: string | string[];
   }
@@ -234,6 +306,8 @@ declare module 'iva' {
   }
   export interface SubpageProps extends Placement, Pick<StyleProps, 'bg' | 'image' | 'radius' | 'borderWidth' | 'borderColor' | 'theme'>, XmlProp {
       name: string;
+      /** inside a page: only define it (list rows, ...), don't place it */
+      define?: boolean;
       w: number;
       h: number;
       /** clip children to the subpage (default true) */
@@ -283,8 +357,8 @@ declare module 'iva' {
       children?: Child;
   }
   export interface ImageProps extends Geom, XmlProp {
-      /** a file (relative to the .jsx, or in assets/), a URL, or fa('icon') */
-      src?: string | IconRef;
+      /** a file (relative to the .jsx, or in assets/), a URL, fa('icon'), or draw.arc(...) etc. */
+      src?: string | IconRef | DrawRef;
       /** serial join holding the image file / URL */
       join?: Join;
       clickthrough?: boolean;
@@ -358,15 +432,27 @@ declare module 'iva' {
       text?: string | number;
       password?: boolean;
       autoFocus?: boolean;
+      /** a command sent when the user is done (Return): `[inputval]` in it is the text */
+      cmd?: string;
+      /** a macro run when the user is done (Return) */
+      macro?: string;
+      /** a command sent on each change (`[inputval]`: the text so far) */
+      changeCmd?: string;
+      /** a macro run on each change */
+      changeMacro?: string;
   }
   export interface WebProps extends Geom, XmlProp {
+      /** what it loads first: a URL, or a file of the project (`page.html`) */
       url: string;
-      join?: number;
-      titleJoin?: number;
-      backJoin?: number;
-      forwardJoin?: number;
-      refreshJoin?: number;
-      stopJoin?: number;
+      /** serial join: the URL (setting it loads it) */
+      join?: Join;
+      /** serial join: the page's title */
+      titleJoin?: Join;
+      /** digital joins: back, forward, reload, stop (on a press) */
+      backJoin?: Join;
+      forwardJoin?: Join;
+      refreshJoin?: Join;
+      stopJoin?: Join;
   }
   export interface VideoProps extends Geom, XmlProp {
       url: string;
@@ -797,6 +883,344 @@ declare module 'iva/ui' {
       y?: number;
       w?: number;
   }
+  export interface DialProps {
+      /** analog join (0..65535, standing for min..max) */
+      join: Join;
+      min?: number;
+      max?: number;
+      /** where it starts, in min..max */
+      value?: number;
+      /** a touch / the -+ buttons snap to this */
+      step?: number;
+      decimals?: number;
+      unit?: string;
+      /** under the value */
+      label?: string;
+      /** serial join for the label */
+      labelJoin?: Join;
+      size?: number;
+      /** ring thickness (default: 7.5 % of the size) */
+      thickness?: number;
+      color?: string;
+      /** degrees of the ring (default 270, the gap at the bottom) */
+      sweep?: number;
+      /** arc frames drawn (default 50: every 2 %) */
+      steps?: number;
+      x?: number;
+      y?: number;
+  }
+  export interface KnobProps {
+      /** analog join (0..65535, standing for min..max) */
+      join: Join;
+      min?: number;
+      max?: number;
+      value?: number;
+      step?: number;
+      decimals?: number;
+      unit?: string;
+      label?: string;
+      size?: number;
+      /** the knob */
+      color?: string;
+      /** its pointer */
+      pointer?: string;
+      sweep?: number;
+      x?: number;
+      y?: number;
+  }
+  export interface ThermostatProps {
+      /** analog join: the setpoint (0..65535, standing for min..max) */
+      setpoint: Join;
+      value?: number;
+      /** the room temperature: text, or a serial join */
+      current?: string;
+      currentJoin?: Join;
+      min?: number;
+      max?: number;
+      step?: number;
+      unit?: string;
+      size?: number;
+      /** modes under it (Segmented), the index in `mode` */
+      modes?: string[];
+      mode?: Join;
+      modeValue?: number;
+      x?: number;
+      y?: number;
+  }
+  export interface RadioGroupProps {
+      options: string[];
+      /** analog join: the index chosen */
+      join: Join;
+      value?: number;
+      x?: number;
+      y?: number;
+      w?: number;
+      /** a row's height */
+      rowH?: number;
+  }
+  export interface CheckBoxProps {
+      label: string;
+      /** digital join */
+      join: Join;
+      value?: boolean;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  export interface CheckBoxGroupProps {
+      options: {
+          label: string;
+          join: Join;
+          value?: boolean;
+      }[];
+      x?: number;
+      y?: number;
+      w?: number;
+      rowH?: number;
+  }
+  export interface SelectBoxProps {
+      options: string[];
+      /** analog join: the index chosen */
+      join: Join;
+      value?: number;
+      /** the sheet's title */
+      title?: string;
+      /** 'sheet' (default: a dialog over the page) or 'dropdown' (a list under the field) */
+      mode?: 'sheet' | 'dropdown';
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  export interface ListRowProps extends Actions {
+      icon?: string;
+      title: string;
+      subtitle?: string;
+      /** on the right: a value (text, or a serial join) */
+      value?: string;
+      valueJoin?: Join;
+      /** on the right: an ON / OFF toggle on this digital join */
+      toggle?: Join;
+      /** on the right: a chevron (the row goes somewhere: page / js / cmd) */
+      chevron?: boolean;
+      divider?: boolean;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  export type DataListItem = {
+      header: string;
+  } | {
+      spacer: true;
+  } | {
+      icon?: string;
+      title: string;
+      subtitle?: string;
+      value?: string;
+      alert?: boolean;
+  };
+  export interface DataListProps {
+      /** list join */
+      join: Join;
+      items: DataListItem[];
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  export interface ScrollBoxProps {
+      /** list join */
+      join: Join;
+      lines: string[];
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+      rowH?: number;
+  }
+  export interface WeekDaysProps {
+      /** analog join: the bitmask (Mon 1, Tue 2, Wed 4 ... Sun 64) */
+      join: Join;
+      value?: number;
+      /** 'mon' (default) or 'sun' first */
+      first?: 'mon' | 'sun';
+      /** seven labels, Monday first (default Mo Tu We Th Fr Sa Su) */
+      labels?: string[];
+      /** a serial join that gets the summary ("Weekdays", "Sun, Mon", ...) */
+      textJoin?: Join;
+      size?: number;
+      gap?: number;
+      x?: number;
+      y?: number;
+  }
+  export interface PinPadProps {
+      /** serial join: OK writes the code here */
+      code?: Join;
+      /** JavaScript run on OK, with `code` (a string) */
+      onEnter?: string;
+      length?: number;
+      /** show dots, not the digits (default true) */
+      mask?: boolean;
+      placeholder?: string;
+      /** a key's size */
+      size?: number;
+      gap?: number;
+      x?: number;
+      y?: number;
+  }
+  export interface ColorPickerProps {
+      /** analog joins: red, green, blue, 0..255 - written as you pick, followed when they change elsewhere */
+      r: Join;
+      g: Join;
+      b: Join;
+      /** serial join: the colour as #RRGGBB */
+      hex?: Join;
+      /** the colour at start ('#FFB000'); default: what r / g / b hold */
+      value?: string;
+      /** the wheel's diameter */
+      size?: number;
+      /** colours one tap away (false: none) */
+      swatches?: string[] | false;
+      /** JavaScript run on each pick, with r, g, b (numbers) and hex */
+      onChange?: string;
+      /** the port of the panel's own HTTP server that shows the swatch (a web view loads the colour from it) */
+      port?: number;
+      /** what's behind it (the swatch's corners are drawn in it): default the card colour */
+      bg?: string;
+      x?: number;
+      y?: number;
+  }
+  export interface TextFieldProps {
+      /** serial join: the text (typing writes it) */
+      join: Join;
+      label?: string;
+      /** the text at start */
+      value?: string;
+      /** shown while it's empty */
+      placeholder?: string;
+      password?: boolean;
+      /** a Font Awesome icon on the left */
+      icon?: string;
+      /** a command sent on Return ([inputval]: the text) */
+      cmd?: string;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  /** Where a picker opens: 'sheet' (a dialog in the middle of the panel) or 'dropdown' (under the field). */
+  type PopupMode = 'sheet' | 'dropdown';
+  interface FieldProps {
+      mode?: PopupMode;
+      /** the sheet's title */
+      title?: string;
+      /** the field's text size */
+      fontSize?: number;
+      /** the icon at the field's right (default true) */
+      showIcon?: boolean;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  export interface SearchSelectProps extends FieldProps {
+      /** the options; or `source` */
+      options?: string[];
+      /** serial join with the options as a JSON array (strings, or { label }): a script or a feedback fills it */
+      source?: Join;
+      /** analog join: the index of the option picked */
+      join: Join;
+      /** the option picked at start */
+      value?: number;
+      /** the field's text while nothing is picked */
+      placeholder?: string;
+      /** shown in the list when nothing matches */
+      empty?: string;
+      /** rows shown at once */
+      rows?: number;
+      rowH?: number;
+  }
+  export interface TimePickerProps extends FieldProps {
+      /** analog joins: the hour (0-23) and the minute (0-59), as numbers */
+      hour: Join;
+      minute: Join;
+      /** the time at start ('07:30') */
+      value?: string;
+      /** the minutes drum in steps (5: 00, 05, 10 ...) */
+      minuteStep?: number;
+      /** 12 hours and AM / PM */
+      ampm?: boolean;
+      /** a button turning the drums to the panel's time: its text ('Now') */
+      now?: string;
+      ok?: string;
+      cancel?: string;
+  }
+  export interface DatePickerProps extends FieldProps {
+      /** analog joins: the day (1-31), month (1-12) and year, as numbers */
+      day: Join;
+      month: Join;
+      year: Join;
+      /** the date at start ('2026-10-08') */
+      value?: string;
+      /** the field's text: D DD M MM MMM MMMM YYYY (default 'DD.MM.YYYY') */
+      format?: string;
+      /** the drums' order */
+      order?: 'dmy' | 'mdy' | 'ymd';
+      /** the years on the drum (default: 10 years either side of this one) */
+      minYear?: number;
+      maxYear?: number;
+      /** the 12 months' names, January first (another language) */
+      months?: string[];
+      /** a button turning the drums to today: its text (default 'Today'; false: none) */
+      today?: string | false;
+      /** the field's text while no date is set */
+      placeholder?: string;
+      ok?: string;
+      cancel?: string;
+  }
+  export interface NumberFieldProps extends FieldProps {
+      /** analog join: the value, min..max as 0..65535 (as Slider, Stepper) */
+      join: Join;
+      /** the value at start */
+      value?: number;
+      min?: number;
+      max?: number;
+      /** digits after the point */
+      decimals?: number;
+      /** digits at most */
+      digits?: number;
+      /** after the number ('%', '\u00B0C') */
+      unit?: string;
+      ok?: string;
+      cancel?: string;
+      /** the messages for a bad number: invalid ('Not a number'), range ('From {min} to {max}') */
+      words?: {
+          invalid?: string;
+          range?: string;
+      };
+  }
+  export interface AlarmCardProps {
+      title: string;
+      /** digital join: the alarm on */
+      on: Join;
+      onValue?: boolean;
+      /** analog join: the time, minutes since midnight */
+      time: Join;
+      /** the time it starts at: "06:45" */
+      value?: string;
+      /** minutes a - / + step moves it (default 15) */
+      step?: number;
+      /** 12 h with AM / PM */
+      ampm?: boolean;
+      /** analog join: the days (WeekDays bitmask) */
+      days: Join;
+      daysValue?: number;
+      x?: number;
+      y?: number;
+      w?: number;
+  }
   export interface NavCardProps {
       icon: string;
       title: string;
@@ -860,6 +1284,25 @@ declare module 'iva/ui' {
       Segmented: (p: SegmentedProps) => VNode;
       SceneBar: (p: SceneBarProps) => VNode;
       Dimmer: (p: DimmerProps) => VNode;
+      Dial: (p: DialProps) => VNode;
+      RadioGroup: (p: RadioGroupProps) => VNode;
+      CheckBox: (p: CheckBoxProps) => VNode;
+      CheckBoxGroup: (p: CheckBoxGroupProps) => VNode;
+      SelectBox: (p: SelectBoxProps) => VNode;
+      ListRow: (p: ListRowProps) => VNode;
+      DataList: (p: DataListProps) => VNode;
+      ScrollBox: (p: ScrollBoxProps) => VNode;
+      WeekDays: (p: WeekDaysProps) => VNode;
+      PinPad: (p: PinPadProps) => VNode;
+      ColorPicker: (p: ColorPickerProps) => VNode;
+      TextField: (p: TextFieldProps) => VNode;
+      SearchSelect: (p: SearchSelectProps) => VNode;
+      TimePicker: (p: TimePickerProps) => VNode;
+      DatePicker: (p: DatePickerProps) => VNode;
+      NumberField: (p: NumberFieldProps) => VNode;
+      AlarmCard: (p: AlarmCardProps) => VNode;
+      Knob: (p: KnobProps) => VNode;
+      Thermostat: (p: ThermostatProps) => VNode;
       Blinds: (p: BlindsProps) => VNode;
       NavCard: (p: NavCardProps) => VNode;
       Header: (p: HeaderProps) => VNode;
@@ -867,7 +1310,7 @@ declare module 'iva/ui' {
       ConfirmDialog: (p: ConfirmDialogProps) => VNode;
   }
   /** A join as a JavaScript expression ("d12", or Joins.d.name for a named one). */
-  export declare function jsJoin(type: 'd' | 'a' | 's', j: Join): string;
+  export declare function jsJoin(type: 'd' | 'a' | 's' | 'l', j: Join): string;
   /** Components in a theme: createUi({ accent: '#0A84FF' }); what isn't given comes from defaultTheme. */
   export declare function createUi(theme?: Partial<UiTheme>): Ui;
   /** The components in the default theme. */
@@ -885,6 +1328,25 @@ declare module 'iva/ui' {
   export declare const SceneBar: Ui['SceneBar'];
   export declare const Dimmer: Ui['Dimmer'];
   export declare const Blinds: Ui['Blinds'];
+  export declare const Dial: Ui['Dial'];
+  export declare const Knob: Ui['Knob'];
+  export declare const Thermostat: Ui['Thermostat'];
+  export declare const RadioGroup: Ui['RadioGroup'];
+  export declare const CheckBox: Ui['CheckBox'];
+  export declare const CheckBoxGroup: Ui['CheckBoxGroup'];
+  export declare const SelectBox: Ui['SelectBox'];
+  export declare const ListRow: Ui['ListRow'];
+  export declare const DataList: Ui['DataList'];
+  export declare const ScrollBox: Ui['ScrollBox'];
+  export declare const WeekDays: Ui['WeekDays'];
+  export declare const PinPad: Ui['PinPad'];
+  export declare const AlarmCard: Ui['AlarmCard'];
+  export declare const ColorPicker: Ui['ColorPicker'];
+  export declare const TextField: Ui['TextField'];
+  export declare const SearchSelect: Ui['SearchSelect'];
+  export declare const TimePicker: Ui['TimePicker'];
+  export declare const DatePicker: Ui['DatePicker'];
+  export declare const NumberField: Ui['NumberField'];
   export declare const NavCard: Ui['NavCard'];
   export declare const Header: Ui['Header'];
   export declare const SideMenu: Ui['SideMenu'];
@@ -931,3 +1393,4 @@ declare const cmd: typeof import('iva').cmd;
 declare const macro: typeof import('iva').macro;
 declare const js: typeof import('iva').js;
 declare const fa: typeof import('iva').fa;
+declare const draw: typeof import('iva').draw;

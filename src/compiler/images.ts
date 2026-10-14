@@ -132,6 +132,56 @@ export function ticks(size: number, count: number, from: number, to: number, len
   return render(lines.join(''), size, size, scale);
 }
 
+/** RGB of a hue (degrees) at full saturation and value. */
+function hueRgb(h: number): [number, number, number] {
+  const f = (k: number) => {
+    const x = (k + h / 60) % 6;
+    return Math.round(255 * (1 - Math.max(0, Math.min(x, 4 - x, 1))));
+  };
+  return [f(5), f(3), f(1)];
+}
+
+/**
+ * A colour wheel: hue round it (red at 12 o'clock, clockwise), from white in
+ * the middle to full colour at the edge - HSV with value 1, so a point's
+ * colour is hue = its angle, saturation = its distance from the middle.
+ */
+export function wheel(size: number, scale = 1): Buffer {
+  const c = size / 2;
+  const wedges: string[] = [];
+  for (let i = 0; i < 120; i++) {
+    // a little overlap: no seams between neighbours
+    const [x1, y1] = polar(c, c, i * 3 - 0.6);
+    const [x2, y2] = polar(c, c, i * 3 + 3.6);
+    const [r, g, b] = hueRgb(i * 3 + 1.5);
+    wedges.push(`<path d="M ${c} ${c} L ${n(x1)} ${n(y1)} A ${c} ${c} 0 0 1 ${n(x2)} ${n(y2)} Z" fill="rgb(${r},${g},${b})" />`);
+  }
+  return render(
+    `<defs><clipPath id="o"><circle cx="${c}" cy="${c}" r="${c}" /></clipPath>` +
+      `<radialGradient id="w" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#fff" /><stop offset="1" stop-color="#fff" stop-opacity="0" /></radialGradient></defs>` +
+      `<g clip-path="url(#o)">${wedges.join('')}</g><circle cx="${c}" cy="${c}" r="${c}" fill="url(#w)" />`,
+    size, size, scale,
+  );
+}
+
+/** A ring (a marker): `color`, `thickness` wide, edged in `outline`. */
+export function ring(size: number, thickness: number, color: string, outline: string | undefined, scale = 1): Buffer {
+  const c = size / 2;
+  const r = c - thickness / 2 - 1.5;
+  return render(
+    (outline ? `<circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke-width="${thickness + 2}" ${paint('stroke', outline)} />` : '') +
+      `<circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke-width="${thickness}" ${paint('stroke', color)} />`,
+    size, size, scale,
+  );
+}
+
+/** A frame with a rounded hole the size of the image: laid over a rectangle (a web view), it rounds its corners. */
+export function cutout(w: number, h: number, radius: number, color: string, scale = 1): Buffer {
+  const r = Math.max(0, Math.min(radius, w / 2, h / 2));
+  const hole = `M ${r} 0 H ${w - r} A ${r} ${r} 0 0 1 ${w} ${r} V ${h - r} A ${r} ${r} 0 0 1 ${w - r} ${h} H ${r} A ${r} ${r} 0 0 1 0 ${h - r} V ${r} A ${r} ${r} 0 0 1 ${r} 0 Z`;
+  return render(`<path fill-rule="evenodd" d="M 0 0 H ${w} V ${h} H 0 Z ${hole}" ${paint('fill', color)} />`, w, h, scale);
+}
+
 // ── Font Awesome (free: solid, regular, brands) ─────────────────────
 
 type IconDef = [number, number, unknown, unknown, string | string[]];

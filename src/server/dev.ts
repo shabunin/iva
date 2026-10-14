@@ -137,7 +137,7 @@ async function jsxSource(entry: string, log: (m: string) => void): Promise<Proje
       for (const a of r.assets) if (IMAGE_RE.test(a.name)) imageMap[a.name] = `/__iva/files/${encodeURIComponent(a.name)}`;
       const scriptMap: Record<string, string> = {};
       for (const sc of r.scripts) scriptMap[sc.name] = sc.code ?? fs.readFileSync(sc.file!, 'utf8');
-      return { gui: `${slug(r.name)}.gui`, title: r.name, guiXml: r.xml, imageMap, scriptMap, missingScripts: [] };
+      return { gui: `${slug(r.name)}.gui`, title: r.name, guiXml: r.xml, imageMap, scriptMap, missingScripts: [], fileBase: '/__iva/files/' };
     },
     file: (rel) => {
       const a = (result as CompileResult | null)?.assets.find((x) => x.name === rel);

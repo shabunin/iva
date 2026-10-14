@@ -61,20 +61,31 @@ export type DrawRef = { $$draw: 1; name?: string } & (
   | { kind: 'dot'; size: number; ring: number; at: number; diameter: number; color: string }
   | { kind: 'knob'; size: number; color: string; pointer: string; at: number }
   | { kind: 'ticks'; size: number; count: number; from: number; to: number; length: number; width: number; color: string }
+  | { kind: 'wheel'; size: number }
+  | { kind: 'ring'; size: number; thickness: number; color: string; outline?: string }
+  | { kind: 'cutout'; w: number; h: number; radius: number; color: string }
 );
 type Drawing<K extends DrawRef['kind']> = Omit<Extract<DrawRef, { kind: K }>, '$$draw' | 'kind'>;
 /** Images iva draws, for <Image src>: draw.arc({ size, thickness, from, to, color }), draw.dot(...),
- * draw.knob(...), draw.ticks(...). `name` fixes the file name (else: from the content). */
+ * draw.knob(...), draw.ticks(...), draw.wheel({ size }) (hue round, white in the middle),
+ * draw.ring({ size, thickness, color, outline }), draw.cutout({ w, h, radius, color }) (a frame
+ * with a rounded hole, to round a web view's corners). `name` fixes the file name (else: from the content). */
 export const draw: {
   arc: (o: Drawing<'arc'>) => DrawRef;
   dot: (o: Drawing<'dot'>) => DrawRef;
   knob: (o: Drawing<'knob'>) => DrawRef;
   ticks: (o: Drawing<'ticks'>) => DrawRef;
+  wheel: (o: Drawing<'wheel'>) => DrawRef;
+  ring: (o: Drawing<'ring'>) => DrawRef;
+  cutout: (o: Drawing<'cutout'>) => DrawRef;
 } = {
   arc: (o) => ({ $$draw: 1, kind: 'arc', ...o }),
   dot: (o) => ({ $$draw: 1, kind: 'dot', ...o }),
   knob: (o) => ({ $$draw: 1, kind: 'knob', ...o }),
   ticks: (o) => ({ $$draw: 1, kind: 'ticks', ...o }),
+  wheel: (o) => ({ $$draw: 1, kind: 'wheel', ...o }),
+  ring: (o) => ({ $$draw: 1, kind: 'ring', ...o }),
+  cutout: (o) => ({ $$draw: 1, kind: 'cutout', ...o }),
 };
 
 export interface ImageRef {
@@ -372,15 +383,27 @@ export interface InputProps extends Geom, StyleProps, XmlProp {
   text?: string | number;
   password?: boolean;
   autoFocus?: boolean;
+  /** a command sent when the user is done (Return): `[inputval]` in it is the text */
+  cmd?: string;
+  /** a macro run when the user is done (Return) */
+  macro?: string;
+  /** a command sent on each change (`[inputval]`: the text so far) */
+  changeCmd?: string;
+  /** a macro run on each change */
+  changeMacro?: string;
 }
 export interface WebProps extends Geom, XmlProp {
+  /** what it loads first: a URL, or a file of the project (`page.html`) */
   url: string;
-  join?: number;
-  titleJoin?: number;
-  backJoin?: number;
-  forwardJoin?: number;
-  refreshJoin?: number;
-  stopJoin?: number;
+  /** serial join: the URL (setting it loads it) */
+  join?: Join;
+  /** serial join: the page's title */
+  titleJoin?: Join;
+  /** digital joins: back, forward, reload, stop (on a press) */
+  backJoin?: Join;
+  forwardJoin?: Join;
+  refreshJoin?: Join;
+  stopJoin?: Join;
 }
 export interface VideoProps extends Geom, XmlProp {
   url: string;
@@ -610,7 +633,7 @@ export const PROPS: Record<string, string[]> = {
     'dragCmd', 'pressCmd', 'releaseCmd', ...METER],
   Gauge: [...GEOM, 'tags', 'join', ...METER],
   List: [...GEOM, 'tags', 'join', 'orientation', 'item', 'header', 'title', 'footer', 'swipeDelete', 'scrollCmd', 'scrollInterval', 'listEndCmd', 'listEndOffset', 'bg', 'theme'],
-  Input: [...GEOM, 'tags', 'join', 'text', 'password', 'autoFocus', ...STYLE],
+  Input: [...GEOM, 'tags', 'join', 'text', 'password', 'autoFocus', 'cmd', 'macro', 'changeCmd', 'changeMacro', ...STYLE],
   Web: [...GEOM, 'tags', 'url', 'join', 'titleJoin', 'backJoin', 'forwardJoin', 'refreshJoin', 'stopJoin'],
   Video: [...GEOM, 'tags', 'url', 'join', 'playJoin', 'stopJoin', 'format', 'autoplay', 'controls', 'bg', 'cache', 'auth'],
   Gesture: ['type', 'name', 'touches', 'taps', 'direction', 'onBegin', 'onChange', 'onEnd'],

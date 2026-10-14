@@ -26,6 +26,8 @@ export interface ProjectManifest {
   /** script name as listed in <scripts> -> source */
   scriptMap: Record<string, string>;
   missingScripts: string[];
+  /** URL of the project's folder: other files (a web view's `page.html`) by their path in it */
+  fileBase: string;
 }
 
 const toPosix = (p: string) => p.split(path.sep).join('/');
@@ -117,5 +119,7 @@ export function loadManifest(base: string, guiRel: string, assetUrl: (rel: strin
   }
 
   const title = guiXml.match(/<project>([^<]*)<\/project>/)?.[1]?.trim() || path.basename(guiRel, '.gui');
-  return { gui: guiRel, title, guiXml, imageMap, scriptMap, missingScripts };
+  const dirRel = toPosix(path.relative(base, projectDir));
+  const fileBase = dirRel ? `${assetUrl(dirRel)}/` : assetUrl('');
+  return { gui: guiRel, title, guiXml, imageMap, scriptMap, missingScripts, fileBase };
 }

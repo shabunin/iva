@@ -1,5 +1,5 @@
 import { installStdlib } from '@agapi/stdlib';
-import { loadProject, type Orientation, type LoadProjectResult } from '@agapi/cf-runtime';
+import { loadProject, type Orientation, type LoadProjectResult, type LoadProjectOptions } from '@agapi/cf-runtime';
 import { createIvaHost } from './host';
 import { control, ensureConnected } from './bridge/transport';
 import { installFonts } from './fonts';
@@ -12,6 +12,7 @@ interface Manifest {
   imageMap: Record<string, string>;
   scriptMap: Record<string, string>;
   missingScripts: string[];
+  fileBase: string;
 }
 
 // Errors from the runtime and project scripts: counted in the status bar,
@@ -27,9 +28,22 @@ const noteError = (text: string) => {
   }
 };
 const consoleError = console.error.bind(console);
+/** Something logged, as text (never throws: objects can be circular). */
+const describe = (a: unknown): string => {
+  if (a instanceof Error) return a.message;
+  if (typeof a === 'string') return a;
+  try {
+    return JSON.stringify(a) ?? String(a);
+  } catch {
+    return String(a);
+  }
+};
 console.error = (...args: unknown[]) => {
-  noteError(args.map((a) => (a instanceof Error ? a.message : typeof a === 'string' ? a : JSON.stringify(a))).join(' '));
-  consoleError(...args);
+  try {
+    noteError(args.map(describe).join(' '));
+  } finally {
+    consoleError(...args);
+  }
 };
 window.addEventListener('error', (e) => noteError(`${e.message} (${e.filename?.split('/').pop()}:${e.lineno})`));
 window.addEventListener('unhandledrejection', (e) => noteError(`unhandled: ${e.reason?.message ?? e.reason}`));
@@ -93,11 +107,13 @@ async function boot(gui: string) {
   }
   const m: Manifest = await res.json();
   document.title = `${m.title} · iva`;
-  current = await loadProject({
+  // fileUrl: a web view's url="page.html" is the project's own file (an older agapi ignores it)
+  const options: LoadProjectOptions & { fileUrl?: (name: string) => string } = {
     guiXml: m.guiXml,
     imageMap: m.imageMap,
     scriptMap: m.scriptMap,
     canvas,
+    fileUrl: (name) => m.fileBase + name.split('/').map(encodeURIComponent).join('/'),
     orientation,
     onOrientationChange: (o) => setOrientation(o),
     menu: {
@@ -106,7 +122,8 @@ async function boot(gui: string) {
       fullscreenTarget: stage,
       host: { reload: () => location.reload() },
     },
-  });
+  };
+  current = await loadProject(options);
   fitStage();
   const warn = m.missingScripts.length ? ` · missing scripts: ${m.missingScripts.join(', ')}` : '';
   setStatus(`${m.title}${warn}`, warn ? 'warn' : 'ok');
