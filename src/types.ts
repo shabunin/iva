@@ -10,15 +10,21 @@ import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
 const COMPILER = path.join(path.dirname(fileURLToPath(import.meta.url)), 'compiler');
+const UI = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'ui', 'index.tsx');
 
-function declarations(file: string): string {
-  const out = ts.transpileDeclaration(fs.readFileSync(path.join(COMPILER, file), 'utf8'), {
-    fileName: file,
-    compilerOptions: { stripInternal: true, removeComments: false },
+/** A source file's declarations; imports dropped (keep: those from these modules). */
+function declarations(file: string, keepImportsFrom: string[] = []): string {
+  const out = ts.transpileDeclaration(fs.readFileSync(path.isAbsolute(file) ? file : path.join(COMPILER, file), 'utf8'), {
+    fileName: path.basename(file),
+    compilerOptions: { stripInternal: true, removeComments: false, jsx: ts.JsxEmit.ReactJSX },
   });
   return out.outputText
     .split('\n')
-    .filter((l) => !/^import\b/.test(l) && !/^export \{\};?$/.test(l))
+    .filter((l) => {
+      if (/^export \{\};?$/.test(l)) return false;
+      if (!/^import\b/.test(l)) return true;
+      return keepImportsFrom.some((m) => l.includes(`'${m}'`) || l.includes(`"${m}"`));
+    })
     .join('\n')
     .trim();
 }
@@ -28,8 +34,8 @@ const indent = (text: string) => text.split('\n').map((l) => (l ? `  ${l}` : l))
 /** The globals a project file may use without importing (what the build injects). */
 const GLOBALS = [
   'Project', 'Page', 'Landscape', 'Portrait', 'Subpage', 'SubpageRef', 'Button', 'Text', 'Image', 'Slider', 'Gauge', 'List', 'Input', 'Web', 'Video',
-  'Gesture', 'System', 'Command', 'Feedback', 'Capture', 'OnMatch', 'Macro', 'Step', 'Token', 'Script', 'Sound', 'Theme', 'Raw',
-  'd', 'a', 's', 'l', 'cmd', 'macro', 'js',
+  'Gesture', 'System', 'Command', 'Feedback', 'Capture', 'OnMatch', 'Macro', 'Step', 'Token', 'Script', 'Sound', 'Theme', 'Raw', 'Box', 'Group', 'OnStart',
+  'd', 'a', 's', 'l', 'cmd', 'macro', 'js', 'fa',
 ];
 
 export function typesFile(version: string): string {
@@ -51,6 +57,10 @@ declare module 'iva' {
   export type { VNode, Child, Source };
   export { Fragment } from 'iva/jsx-runtime';
 ${indent(components)}
+}
+
+declare module 'iva/ui' {
+${indent(declarations(UI, ['iva']))}
 }
 
 ${GLOBALS.map((g) => `declare const ${g}: typeof import('iva').${g};`).join('\n')}

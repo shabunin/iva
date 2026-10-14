@@ -21,7 +21,8 @@ const ivaModules: Plugin = {
       const sub = args.path.slice(3);
       if (sub === '' ) return { path: path.join(HERE, 'prelude.ts') };
       if (sub === '/jsx-runtime' || sub === '/jsx-dev-runtime') return { path: path.join(HERE, 'runtime.ts') };
-      return { errors: [{ text: `no module "${args.path}" (iva exports: iva, iva/jsx-runtime)` }] };
+      if (sub === '/ui') return { path: path.join(HERE, '..', '..', 'lib', 'ui', 'index.tsx') };
+      return { errors: [{ text: `no module "${args.path}" (iva has: iva, iva/ui, iva/jsx-runtime)` }] };
     });
   },
 };

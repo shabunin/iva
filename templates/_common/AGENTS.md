@@ -10,6 +10,7 @@ GUI Designer open.
 iva dev            # live preview (app.jsx): rebuilds on save; real TCP/UDP/HTTP to devices
 iva check          # types (as the editor sees them) + a test build: run before handing over
 iva build          # -> dist/: the .gui, its images and scripts, joins.json
+iva serve          # to iViewer on a real device (GUI File URL http://<this machine>:8019), reloads on save
 ```
 
 ## Files
@@ -36,8 +37,15 @@ iva build          # -> dist/: the .gui, its images and scripts, joins.json
   into GUI Designer themes; same style = same theme.
 - Sliders and gauges are drawn from images: use `bg` / `fill` / `thumbColor`
   (iva draws them) or image files.
+- Rounded corners / borders: `radius`, `borderWidth` + `borderColor` on a
+  `<Button>` or `<Subpage>` (iva draws the background). Icons:
+  `icon={fa('lightbulb')}` (Font Awesome free names), `iconAlign="left"|"top"`;
+  `<Image src={fa('house')} />`. Not as text: iViewer has no icon font.
 - Fonts: `font="Helvetica Neue" bold` - iva finds the device font name; an
   unknown font is a warning.
+- Ready-made components: `import { createUi } from 'iva/ui'` (Card, Tile,
+  IconButton, Toggle, Slider, Stepper, Segmented, SceneBar, Dimmer, Blinds,
+  Header, SideMenu, ConfirmDialog, ...); see iva's docs/ui.md.
 - Devices: `<System host port>` with `<Command>` and `<Feedback>`; button
   `cmd="Name"` sends a command.
 - Keep it valid for the real iViewer: prefer iva's props; `xml={{...}}` and

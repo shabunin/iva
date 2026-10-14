@@ -11,16 +11,16 @@ injected); `import { Button } from 'iva'` works too.
 | `<Project>` | `<gui>` + `<properties>` | `name`; `device` (`iPad`, `iPad Pro 11`, `iPad Pro 12.9`, `iPad Air 10.5`, `iPhone X`, `iPhone XS Max`, `iPhone 8`, `iPhone 8 Plus`, `iPhone 5`, `iPhone 4`) + `orientation`, or `width` / `height` (wider than tall → landscape is the main orientation); `otherSize`, `autoposition`, `joinBase`, `assets` (a folder shipped whole; images found there by bare name; default `./assets`), `properties` (raw XML after `<size>`) |
 | `<Page>` | `<page>` + `<portrait>`/`<landscape>` | `name`, `start`, `bg`, `image`, `theme`, `tags`. Items go into the main orientation (the other is written empty, as GUI Designer does) |
 | `<Landscape>` / `<Portrait>` | `<landscape>` / `<portrait>` | `bg`, `image`, `theme`. With these, the page has exactly the orientations given, in that order |
-| `<Subpage>` | `<subpage name w h>` (definition) + placement | `name`, `w`, `h`, `clip`, `bg`/`image`/`theme`. Inside a page it is defined *and* placed (`x`, `y`, `join`, `visible`, `in`, `out`, `topmost`, `clickthrough`); in `<Project>` it is only defined |
+| `<Subpage>` | `<subpage name w h>` (definition) + placement | `name`, `w`, `h`, `clip`, `bg`/`image`/`theme`, `radius` / `borderWidth` / `borderColor` (drawn). Inside a page it is defined *and* placed (`x`, `y`, `join`, `visible`, `in`, `out`, `topmost`, `clickthrough`); in `<Project>` it is only defined |
 | `<SubpageRef>` | `<subpage name x y j …>` | `name` + the placement props: places a subpage defined elsewhere |
 
 ## Items
 
 | JSX | `.gui` | Join | Key props |
 |---|---|---|---|
-| `<Button>` | `<btn>` + `<inactive>`/`<active>` (+ `<actions>`) | `join` digital; `textJoin` / `activeTextJoin` serial | `text`, `activeText`, `icon`, `activeIcon`, `feedback` (`momentary`·`toggle`·`none`), `page` (flip; `'Return'`), `cmd`, `js`, `repeat`, `onPress` / `onRelease` / `onHold` + `holdTime`, style props, `active={{…}}` |
+| `<Button>` | `<btn>` + `<inactive>`/`<active>` (+ `<actions>`) | `join` digital; `textJoin` / `activeTextJoin` serial | `text`, `activeText`, `icon` / `activeIcon` (a file, `fa('name')`, or `{ src, x, y, w, h }`), `iconAlign` (`center`·`left`·`top`), `feedback` (`momentary`·`toggle`·`none`), `page` (flip; `'Return'`), `cmd`, `js`, `repeat`, `onPress` / `onRelease` / `onHold` + `holdTime`, style props incl. `radius` / `borderWidth` / `borderColor`, `active={{…}}` |
 | `<Text>` | `<txt>` | `join` serial | `text` or children, `wrap`, style props |
-| `<Image>` | `<img>` | `join` serial (file / URL) | `src` (file or URL), `clickthrough`, `refresh`, `noCache`, `downloadIndicator`, `clearOnURLChange`; children: `<Gesture>` |
+| `<Image>` | `<img>` | `join` serial (file / URL) | `src` (a file, a URL, or `fa('name', { color, size })`), `clickthrough`, `refresh`, `noCache`, `downloadIndicator`, `clearOnURLChange`; children: `<Gesture>` |
 | `<Slider>` | `<slider>` + `<indicator>`×2 | `join` analog; `pressJoin` digital | `min`, `max`, `decimals`, `invert`, `feedback`, `dragCmd` / `pressCmd` / `releaseCmd`; looks: `bg`/`image` (track), `fill`/`fillImage`, `radius`, `thumb`/`activeThumb` or `thumbColor` + `thumbSize` |
 | `<Gauge>` | `<gauge>` | `join` analog | `bg`/`image`, `fill`/`fillImage`, `radius`, `theme` |
 | `<List>` | `<list>` | `join` list | `item` (subpage name or an inline `<Subpage>`), `header`, `title`, `footer`, `orientation`, `swipeDelete`, `scrollCmd`, `scrollInterval`, `listEndCmd`, `listEndOffset`, `bg` |
@@ -42,9 +42,12 @@ All items take `x`, `y` (default 0), `w`, `h` (required) and `tags`.
 | `<OnMatch>` | `<onmatch>` | `target`, `value`, `cmd`, `token` |
 | `<Macro>` + `<Step>` | `<macros><macro>` + `<command delay>` | `name`; steps: `command`, `delay` (ms from the start) |
 | `<Token>` | `<tokens><token>` | `name` (`[brackets]` optional), `value`, `persist` |
-| `<Script>` | `<scripts><script>` + the file | `src` (copied), or `name` + `code` |
+| `<Script>` | `<scripts><script>` + the file | `src` (copied), or `name` + `code`. Anywhere (a component can bring one): lifted to the project, the same script once |
 | `<Sound>` | `<sounds><sound>` + the file | `name`, `src`, `join` digital, `loop`, `releaseStop` |
 | `<Theme>` | `<themes><theme>` | `name`, `type` (`button`·`text`·`background`·`gauge`·`input`·`list`), style props + `active`, or `states={[css0, css1, …]}` (exact CSS): a named theme, used with `theme="Name"` |
+| `<Box>` | `<img clickthrough>` + a drawn image | `x`, `y`, `w`, `h`, `bg`, `radius`, `borderWidth` / `borderColor`: a rounded rectangle touches go through (card, bar, track backgrounds) |
+| `<Group>` | its children | `x`, `y`: moves what's inside (lay a card's content out relative to the card) |
+| `<OnStart>` | a generated `iva-start.js` | `js`: code run once the panel has started (all of it in one `CF.modules` setup, each distinct piece once); `joins`: the joins it uses no element does |
 | `<Raw>` | the element as written | `xml`: one .gui element, verbatim (anywhere an item, a system / feedback / macro child, or a project section goes) |
 
 ## Style props → themes
@@ -68,6 +71,24 @@ themes get the full text block GUI Designer writes. Buttons have two states:
 Sliders and gauges are drawn by iViewer from images only: `bg`, `fill` and
 `thumbColor` make iva draw them (anti-aliased PNGs, `radius` for the
 corners), or give image files with `image`, `fillImage`, `thumb`.
+
+## Rounded corners, borders, icons
+
+iViewer has no CSS border-radius and loads no font files of the project's
+own, so iva **draws** these into images at build time (PNG, plus an `@2x`
+version iViewer uses on retina screens):
+
+- `radius`, `borderWidth` + `borderColor` on a `<Button>` or `<Subpage>`:
+  the background is drawn at the element's size, per state
+  (`active={{ bg, borderColor }}` gets its own). `radius={h / 2}` is a pill,
+  on a square a circle.
+- `fa('lightbulb')`: a [Font Awesome](https://fontawesome.com/search?m=free)
+  (free) icon. On a `<Button>` (`icon={fa('tv')}`) it's drawn in the text
+  colour of each state, half the button's height (`fa('tv', { size: 32 })`),
+  centred, or with `iconAlign="left"` / `"top"` beside / above the text.
+  `<Image src={fa('house', { color: '#9aa4b1' })} />` is an icon on its own.
+  `fa('bell', { style: 'regular' })`, `fa('brands:spotify')`. A misspelt
+  name is an error with a suggestion. (Font Awesome Free: CC BY 4.0 icons.)
 
 ## Joins
 

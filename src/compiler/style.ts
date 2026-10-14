@@ -106,7 +106,8 @@ export function styleCss(type: ThemeType, st: StyleProps, image: ImageResolver, 
     };
     const face = () => {
       add('font-weight', bold ? 'bold' : 'normal');
-      add('font-style', italic ? 'italic' : 'none');
+      // GUI Designer's spelling
+      add('font-style', italic ? 'italics' : 'none');
       add('text-decoration', 'none');
     };
     // buttons: face, then alignment; text and inputs: the other way round (as GUI Designer writes them)

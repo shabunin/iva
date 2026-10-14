@@ -12,6 +12,8 @@ import { check } from '../check.js';
 import { writeTypes } from '../types.js';
 import { DEVICES } from '../compiler/components.js';
 import { openInDesigner } from '../designer.js';
+import { startDeviceServer } from '../server/device.js';
+import QRCode from 'qrcode';
 
 const HELP = `iva - iViewer assistant (CommandFusion .gui projects)
 
@@ -29,6 +31,10 @@ Usage:
                        turn a .gui (with its images and scripts) into a JSX
                        project in dir (default: a folder named after it), and
                        check that it compiles back to the same .gui
+  iva serve [entry | file.gui]
+                       serve it to iViewer on a real device, as GUI Designer's
+                       Upload Service does (port 8019); rebuilds on save and
+                       reloads the panel on the device (--no-live: don't)
   iva designer [entry | file.gui]
                        build and open in CommandFusion GUI Designer (Wine on
                        Linux / macOS: $IVA_DESIGNER, $IVA_WINEPREFIX)
@@ -72,6 +78,34 @@ async function main(argv: string[]) {
     for (const p of r.problems) process.stderr.write(`${p}\n`);
     process.stdout.write(r.problems.length ? `${r.problems.length} problem${r.problems.length > 1 ? 's' : ''}\n` : 'ok\n');
     process.exitCode = r.problems.length ? 1 : 0;
+    return;
+  }
+  if (cmd === 'serve') {
+    const { values, positionals } = parseArgs({
+      args: rest,
+      allowPositionals: true,
+      options: { port: { type: 'string', short: 'p', default: '8019' }, host: { type: 'string', default: '0.0.0.0' }, 'no-live': { type: 'boolean', default: false } },
+    });
+    const target = positionals[0] ?? (fs.existsSync('app.jsx') ? 'app.jsx' : undefined);
+    if (!target || !fs.existsSync(target)) throw new Error('serve what? iva serve app.jsx | iva serve project.gui');
+    const server = await startDeviceServer({ target, port: Number(values.port), host: values.host!, live: !values['no-live'] });
+    if (!server.addresses.length) process.stdout.write('no network address found: is this machine on a network?\n');
+    process.stdout.write(`\nServing ${server.name} for iViewer. On the device, set iViewer's GUI File URL to:\n\n`);
+    for (const a of server.addresses) process.stdout.write(`    ${a.url.padEnd(28)} ${a.iface}${a.kind ? ` (${a.kind})` : ''}\n`);
+    process.stdout.write('\n(the device must reach that address: same network, or the same VPN / ZeroTier network)\n');
+    if (server.addresses[0]) {
+      // a cf:// link opens iViewer (iOS camera / Android scanner)
+      const link = server.addresses[0].url.replace(/^http:/, 'cf:');
+      const qr = await QRCode.toString(link, { type: 'terminal', small: true });
+      process.stdout.write(`\nor scan ${link}:\n${qr}\n`);
+    }
+    process.stdout.write(values['no-live'] ? '' : 'Saving the project rebuilds it and reloads the panel on the device.\n\n');
+    const stop = async () => {
+      await server.close();
+      process.exit(0);
+    };
+    process.on('SIGINT', stop);
+    process.on('SIGTERM', stop);
     return;
   }
   if (cmd === 'designer') {

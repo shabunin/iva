@@ -32,8 +32,28 @@ export const l: JoinHelper = joinRef('l');
 /** A join prop whose type the element fixes: `join={12}`, `join="power"` (named) or `d(12)`. */
 export type Join = number | string | JoinRef;
 
+/** A Font Awesome icon, drawn into an image at build time: fa('lightbulb'). */
+export interface IconRef {
+  $$icon: 1;
+  name: string;
+  style?: 'solid' | 'regular' | 'brands';
+  color?: string;
+  size?: number;
+}
+export interface IconOptions {
+  /** default: the button's text colour (active: its active colour); white on <Image> */
+  color?: string;
+  /** px (default: half the button's height; the whole <Image>) */
+  size?: number;
+  /** 'solid' (default), 'regular' or 'brands' (also 'brands:github' as the name) */
+  style?: 'solid' | 'regular' | 'brands';
+}
+/** A Font Awesome (free) icon: fa('lightbulb'), fa('bell', { style: 'regular' }), fa('brands:spotify'). Names: fontawesome.com/search?m=free */
+export const fa: (name: string, opts?: IconOptions) => IconRef = (name, opts = {}) => ({ $$icon: 1, name, ...opts });
+
 export interface ImageRef {
-  src: string;
+  /** a file, or fa('icon') */
+  src: string | IconRef;
   x?: number;
   y?: number;
   w?: number;
@@ -95,6 +115,9 @@ export interface StyleProps extends XmlProp {
   shadow?: string | { color?: string; x?: number; y?: number; blur?: number };
   opacity?: number;
   padding?: number | [number, number, number, number];
+  /** corner radius (<Button>, <Subpage>): iva draws the background */
+  radius?: number;
+  /** a border (<Button>, <Subpage>: drawn; <Input>: CSS) */
   borderWidth?: number;
   borderColor?: string;
   /** extra CSS, appended as is */
@@ -103,7 +126,7 @@ export interface StyleProps extends XmlProp {
   theme?: string;
 }
 
-const STYLE = ['bg', 'image', 'slice', 'color', 'font', 'fontStyle', 'fontName', 'fontSize', 'bold', 'italic', 'align', 'valign', 'shadow', 'opacity', 'padding', 'borderWidth', 'borderColor', 'css', 'theme'];
+const STYLE = ['bg', 'image', 'slice', 'color', 'font', 'fontStyle', 'fontName', 'fontSize', 'bold', 'italic', 'align', 'valign', 'shadow', 'opacity', 'padding', 'radius', 'borderWidth', 'borderColor', 'css', 'theme'];
 const GEOM = ['x', 'y', 'w', 'h'];
 const METER = ['bg', 'image', 'fill', 'fillImage', 'radius', 'theme'];
 
@@ -192,7 +215,7 @@ export interface PageProps extends Pick<StyleProps, 'bg' | 'image' | 'theme'>, X
 export interface OrientationProps extends Pick<StyleProps, 'bg' | 'image' | 'theme'>, XmlProp {
   children?: Child;
 }
-export interface SubpageProps extends Placement, Pick<StyleProps, 'bg' | 'image' | 'theme'>, XmlProp {
+export interface SubpageProps extends Placement, Pick<StyleProps, 'bg' | 'image' | 'radius' | 'borderWidth' | 'borderColor' | 'theme'>, XmlProp {
   name: string;
   w: number;
   h: number;
@@ -214,8 +237,11 @@ export interface ButtonProps extends Geom, StyleProps, XmlProp {
   /** serial join for the text */
   textJoin?: Join;
   activeTextJoin?: Join;
-  icon?: string | ImageRef;
-  activeIcon?: string | ImageRef;
+  /** an image file, fa('icon'), or { src, x, y, w, h } */
+  icon?: string | ImageRef | IconRef;
+  activeIcon?: string | ImageRef | IconRef;
+  /** where an fa() icon goes: 'center' (default), 'left' of the text, or 'top' above it */
+  iconAlign?: 'center' | 'left' | 'top';
   /** style when active (pressed / on), over the normal style */
   active?: StyleProps;
   /** go to this page on release ('Return' = previous page) */
@@ -240,8 +266,8 @@ export interface TextProps extends Geom, StyleProps, XmlProp {
   children?: Child;
 }
 export interface ImageProps extends Geom, XmlProp {
-  /** a file (relative to the .jsx) or a URL */
-  src?: string;
+  /** a file (relative to the .jsx, or in assets/), a URL, or fa('icon') */
+  src?: string | IconRef;
   /** serial join holding the image file / URL */
   join?: Join;
   clickthrough?: boolean;
@@ -477,12 +503,35 @@ export interface ThemeProps extends Omit<StyleProps, 'theme'>, XmlProp {
   active?: StyleProps;
 }
 
+/** A drawn rounded rectangle (an image that lets touches through): card / bar / track backgrounds. */
+export interface BoxProps extends Geom, XmlProp {
+  bg?: string;
+  radius?: number;
+  borderWidth?: number;
+  borderColor?: string;
+}
+/** Its children, moved by x / y: lay a card's content out relative to the card. */
+export interface GroupProps {
+  x?: number;
+  y?: number;
+  children?: Child;
+}
+/** JavaScript run once the panel has started (all OnStart code: one CF.modules setup, in order). */
+export interface OnStartProps {
+  js: string;
+  /** joins the code uses that no element does (so named ones get numbers): d('x'), 's12', ... */
+  joins?: (string | JoinRef)[];
+}
+
 /** A .gui element written as is: `<Raw xml='<timer j="1" interval="0" />' />` */
 export interface RawProps {
   xml: string;
 }
 
 export const Raw: Component<RawProps> = intrinsic<RawProps>('Raw');
+export const Box: Component<BoxProps> = intrinsic<BoxProps>('Box');
+export const Group: Component<GroupProps> = intrinsic<GroupProps>('Group');
+export const OnStart: Component<OnStartProps> = intrinsic<OnStartProps>('OnStart');
 export const Project: Component<ProjectProps> = intrinsic<ProjectProps>('Project');
 export const Page: Component<PageProps> = intrinsic<PageProps>('Page');
 export const Landscape: Component<OrientationProps> = intrinsic<OrientationProps>('Landscape');
@@ -520,10 +569,10 @@ export const PROPS: Record<string, string[]> = {
   Page: ['name', 'start', 'bg', 'image', 'theme', 'tags'],
   Landscape: ['bg', 'image', 'theme'],
   Portrait: ['bg', 'image', 'theme'],
-  Subpage: ['name', 'w', 'h', 'clip', 'bg', 'image', 'theme', ...PLACEMENT],
+  Subpage: ['name', 'w', 'h', 'clip', 'bg', 'image', 'radius', 'borderWidth', 'borderColor', 'theme', ...PLACEMENT],
   SubpageRef: ['name', ...PLACEMENT],
   Button: [...GEOM, 'tags', 'join', 'feedback', 'text', 'activeText', 'textJoin', 'activeTextJoin', 'icon', 'activeIcon', 'active',
-    'page', 'cmd', 'js', 'repeat', 'onPress', 'onRelease', 'onHold', 'holdTime', ...STYLE],
+    'iconAlign', 'page', 'cmd', 'js', 'repeat', 'onPress', 'onRelease', 'onHold', 'holdTime', ...STYLE],
   Text: [...GEOM, 'tags', 'join', 'text', 'wrap', ...STYLE],
   Image: [...GEOM, 'tags', 'src', 'join', 'clickthrough', 'refresh', 'noCache', 'downloadIndicator', 'clearOnURLChange'],
   Slider: [...GEOM, 'tags', 'join', 'pressJoin', 'min', 'max', 'decimals', 'invert', 'feedback', 'thumb', 'activeThumb', 'thumbColor', 'thumbSize',
@@ -547,8 +596,11 @@ export const PROPS: Record<string, string[]> = {
   Sound: ['name', 'src', 'join', 'loop', 'releaseStop'],
   Theme: ['name', 'type', 'active', 'states', ...STYLE.filter((p) => p !== 'theme')],
   Raw: ['xml'],
+  Box: [...GEOM, 'tags', 'bg', 'radius', 'borderWidth', 'borderColor'],
+  Group: ['x', 'y'],
+  OnStart: ['js', 'joins'],
 };
-for (const [name, props] of Object.entries(PROPS)) if (name !== 'Raw') props.push('xml');
+for (const [name, props] of Object.entries(PROPS)) if (!['Raw', 'Group', 'OnStart'].includes(name)) props.push('xml');
 
 /** Required props (a missing one is an error).
  * @internal */
@@ -570,6 +622,8 @@ export const REQUIRED: Record<string, string[]> = {
   Sound: ['name', 'src'],
   Theme: ['name', 'type'],
   Raw: ['xml'],
+  Box: ['w', 'h'],
+  OnStart: ['js'],
 };
 
 /** Style props allowed inside `active={{...}}` and <Theme>.

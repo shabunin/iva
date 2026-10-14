@@ -3,8 +3,14 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["node"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "node"
+    ],
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
@@ -13,16 +19,50 @@
     "resolveJsonModule": true,
     "baseUrl": ".",
     "paths": {
-      "@agapi/cf-runtime": ["../agapi/packages/cf-runtime/src/index.ts"],
-      "@agapi/stdlib": ["../agapi/packages/stdlib/src/index.ts"],
-      "@agapi/stdlib/*": ["../agapi/packages/stdlib/src/*", "../agapi/packages/stdlib/src/*/index.ts"],
-      "@agapi/host-protocol": ["../agapi/packages/host-protocol/src/index.ts"],
-      "@agapi-src/*": ["../agapi/packages/*"],
-      "@tauri-apps/api/core": ["src/preview/bridge/tauri-core.ts"],
-      "@tauri-apps/api/event": ["src/preview/bridge/tauri-event.ts"],
-      "@tauri-apps/plugin-http": ["src/preview/bridge/tauri-plugin-http.ts"],
-      "@tauri-apps/plugin-websocket": ["src/preview/bridge/tauri-plugin-websocket.ts"]
-    }
+      "@agapi/cf-runtime": [
+        "../agapi/packages/cf-runtime/src/index.ts"
+      ],
+      "@agapi/stdlib": [
+        "../agapi/packages/stdlib/src/index.ts"
+      ],
+      "@agapi/stdlib/*": [
+        "../agapi/packages/stdlib/src/*",
+        "../agapi/packages/stdlib/src/*/index.ts"
+      ],
+      "@agapi/host-protocol": [
+        "../agapi/packages/host-protocol/src/index.ts"
+      ],
+      "@agapi-src/*": [
+        "../agapi/packages/*"
+      ],
+      "@tauri-apps/api/core": [
+        "src/preview/bridge/tauri-core.ts"
+      ],
+      "@tauri-apps/api/event": [
+        "src/preview/bridge/tauri-event.ts"
+      ],
+      "@tauri-apps/plugin-http": [
+        "src/preview/bridge/tauri-plugin-http.ts"
+      ],
+      "@tauri-apps/plugin-websocket": [
+        "src/preview/bridge/tauri-plugin-websocket.ts"
+      ],
+      "iva": [
+        "src/compiler/prelude.ts"
+      ],
+      "iva/jsx-runtime": [
+        "src/compiler/runtime.ts"
+      ],
+      "iva/jsx-dev-runtime": [
+        "src/compiler/runtime.ts"
+      ]
+    },
+    "jsx": "react-jsx",
+    "jsxImportSource": "iva"
   },
-  "include": ["src", "test"]
+  "include": [
+    "src",
+    "test",
+    "lib"
+  ]
 }

@@ -26,6 +26,7 @@ cd my-panel
 iva dev        # live preview, rebuilds on save; real TCP/UDP/HTTP to the devices
 iva check      # what the editor underlines + a test build
 iva build      # -> dist/: the .gui, images, scripts, joins.json
+iva serve      # to iViewer on a real device (GUI File URL http://<this machine>:8019)
 iva designer   # build and open it in CommandFusion GUI Designer
 ```
 
@@ -52,6 +53,37 @@ only with its opacity triple, for one), `font="Helvetica Neue" bold` gets
 the device's font name (`HelveticaNeue-Bold`, from Designer's font list),
 systems take Designer's defaults per protocol, and `device="iPad Pro 11"`
 uses Designer's device sizes.
+
+## iva/ui and the gallery
+
+`import { createUi } from 'iva/ui'`: cards, tiles, icon buttons, badges,
+stats, toggles, sliders, steppers, segmented controls, scene bars, dimmers,
+blinds, a header with breadcrumbs and a clock, a side menu, dialogs - in a
+theme ([docs/ui.md](docs/ui.md)). Every one of them, with its variations:
+
+```bash
+iva dev examples/gallery/app.jsx
+```
+
+## `iva serve`: on a real device
+
+```bash
+iva serve            # app.jsx; or: iva serve Project.gui
+```
+
+Serves the project the way GUI Designer's Upload Service does (port 8019,
+`/` is the .gui, other files flat by name, Designer's headers), so iViewer
+loads it like a project uploaded from Designer: in iViewer's settings, set
+the GUI File URL to the address it prints (or scan its `cf://` QR code). The
+device has to reach that address - the same network, or the same VPN /
+ZeroTier network.
+
+Saving rebuilds the project, and the panel on the device reloads itself: the
+served .gui carries one extra script (`iva-live.js`, only while served by
+iva) that waits for the next build and calls `CF.loadGUI`. A `.gui` is
+re-read when it changes, so a project saved from GUI Designer reloads too.
+`--no-live` serves it untouched. Every request is logged, unknown ones in
+full (iViewer's cache-complete and debugger callbacks aren't documented).
 
 ## `iva decompile`
 
@@ -127,6 +159,9 @@ src/preview/           the preview page (+ bridge/ for agapi's host classes)
 test/                  node:test
 examples/hello/        a small JSX project
 docs/components.md     the elements, their props and what they become
+docs/ui.md             iva/ui: the components
+lib/ui/                iva/ui: the components and their panel script
+examples/gallery/      every iva/ui component (and examples/elements: shapes, icons)
 fixtures/local/        small hand-written .gui projects
 fixtures/DemoUserInterfaces/   CommandFusion's demos (npm run fixtures; not committed)
 ```

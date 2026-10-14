@@ -108,7 +108,8 @@ test('one simple press action is the btn cmd attribute; anything more is <action
 test('a slider drawn from colours gets generated images', async () => {
   const r = await build(wrap(`<Slider w={200} h={20} bg="#333" fill="#08f" thumbColor="#fff" />`));
   const pngs = r.assets.filter((a) => a.data);
-  assert.equal(pngs.length, 3);
+  assert.equal(pngs.length, 6); // track, fill, thumb - and their @2x for retina screens
+  assert.equal(pngs.filter((a) => a.name.endsWith('@2x.png')).length, 3);
   for (const p of pngs) assert.deepEqual([...p.data!.subarray(1, 4)], [0x50, 0x4e, 0x47]);
   const gui = await parseGUI(r.xml);
   const slider = gui.pages.Main.landscape![0];
@@ -149,4 +150,93 @@ test('a page in both orientations', async () => {
   assert.equal(gui.pages.Main.landscape![0].content, 'wide');
   assert.equal(gui.pages.Main.portrait![0].content, 'tall');
   assert.notEqual(gui.pages.Main.landscapeTheme, gui.pages.Main.portraitTheme);
+});
+
+test('radius / border: the background is drawn at the button\'s size, per state', async () => {
+  const r = await build(wrap(`
+    <Button w={200} h={60} radius={12} bg="#222" active={{ bg: '#06f' }} />
+    <Button y={100} w={200} h={60} radius={12} borderWidth={2} borderColor="#06f" />`));
+  const gui = await parseGUI(r.xml);
+  const [filled, outline] = gui.pages.Main.landscape!;
+  const t = gui.themes[filled.t!];
+  assert.match(t.states['0']['background-image'], /url\(iva_btn_\w+\.png\)/);
+  assert.notEqual(t.states['0']['background-image'], t.states['1']['background-image']);
+  assert.equal(t.states['0']['background-color'], undefined);
+  assert.match(gui.themes[outline.t!].states['0']['background-image'], /iva_btn_/);
+  // 1x and the retina @2x, twice the size
+  const png = (n: string) => r.assets.find((a) => a.name === n)!.data!;
+  const name = /url\((.*)\)/.exec(t.states['0']['background-image'])![1];
+  assert.equal(png(name).readUInt32BE(16), 200);
+  assert.equal(png(name.replace('.png', '@2x.png')).readUInt32BE(16), 400);
+  await fails(wrap(`<Button w={10} h={10} borderWidth={2} />`), /borderWidth needs borderColor/);
+});
+
+test('a subpage with radius gets a drawn background', async () => {
+  const r = await build(wrap(`<Subpage name="Card" w={300} h={120} radius={16} bg="#222" />`));
+  const gui = await parseGUI(r.xml);
+  assert.match(gui.themes[gui.subpages.Card.theme!].states['0']['background-image'], /url\(iva_bg_\w+\.png\)/);
+});
+
+test('fa() icons: on buttons in the text colour (active too), as images, with "did you mean"', async () => {
+  const r = await build(wrap(`
+    <Button w={200} h={80} icon={fa('lightbulb')} iconAlign="left" text="Lamp" color="#ccc" active={{ color: '#fff' }} />
+    <Image y={100} w={48} h={48} src={fa('brands:github')} />`));
+  const gui = await parseGUI(r.xml);
+  const [btn, img] = gui.pages.Main.landscape!;
+  const off = btn.children.find((c) => c.type === 'inactive')!.children[0];
+  const on = btn.children.find((c) => c.type === 'active')!.children[0];
+  assert.match(off.text!, /^iva_fa_\w+\.png$/);
+  assert.notEqual(off.text, on.text); // drawn in each state's colour
+  assert.deepEqual([off.x, off.y, off.w, off.h], [20, 20, 40, 40]);
+  assert.match(gui.themes[btn.t!].states['0'].padding, /^0px 20px 0px 75px$/);
+  assert.equal(gui.themes[btn.t!].states['0']['text-align'], 'left');
+  assert.match(img.content!, /^iva_fa_\w+\.png$/);
+  await fails(wrap(`<Image w={10} h={10} src={fa('lightbulp')} />`), /no Font Awesome icon "lightbulp" \(did you mean "lightbulb"\?\)/);
+});
+
+test('<Box>: a drawn image touches go through; <Group>: moves its children', async () => {
+  const r = await build(wrap(`
+    <Group x={100} y={50}>
+      <Box w={200} h={100} radius={12} bg="#222" />
+      <Group x={10} y={10}><Button w={20} h={20} /></Group>
+    </Group>`));
+  const gui = await parseGUI(r.xml);
+  const [box, btn] = gui.pages.Main.landscape!;
+  assert.equal(box.type, 'img');
+  assert.deepEqual([box.x, box.y, box.attributes.clickthrough], [100, 50, '1']);
+  assert.match(box.content!, /^iva_box_\w+\.png$/);
+  assert.deepEqual([btn.x, btn.y], [110, 60]);
+});
+
+test('<Script> and <OnStart> go anywhere: lifted to the project, once', async () => {
+  const r = await build(wrap(`
+    <Script name="lib.js" code="var A = 1;" />
+    <Text w={10} h={10} />
+    <Script name="lib.js" code="var A = 1;" />
+    <OnStart js="start();" joins={[s('fromJs')]} />
+    <OnStart js="start();" />`));
+  assert.deepEqual(r.scripts.map((s) => s.name), ['iva-joins.js', 'lib.js', 'iva-start.js']);
+  const start = r.scripts.find((s) => s.name === 'iva-start.js')!.code!;
+  assert.equal(start.match(/start\(\);/g)!.length, 1);
+  assert.match(start, /CF\.modules\.push/);
+  assert.deepEqual(r.joins, { serial: { fromJs: 1000 } });
+  await fails(wrap(`<Script name="lib.js" code="a" /><Script name="lib.js" code="b" />`), /two different scripts named lib\.js/);
+});
+
+test('a subpage defined again the same way is fine; differently, an error', async () => {
+  const sub = (text: string) => `<Subpage name="Pop" w={100} h={50} join="pop"><Text w={100} h={50} text="${text}" /></Subpage>`;
+  const r = await build(`export default (
+    <Project name="T" width={1024} height={768}>
+      <Page name="A">${sub('hi')}</Page>
+      <Page name="B">${sub('hi')}</Page>
+    </Project>
+  );`);
+  assert.equal((r.xml.match(/<subpage name="Pop" w=/g) ?? []).length, 1);
+  assert.equal((r.xml.match(/<subpage name="Pop" x=/g) ?? []).length, 2);
+  await fails(`export default (
+    <Project name="T" width={1024} height={768}>
+      <Page name="A">${sub('hi')}</Page>
+      <Page name="B">${sub('ho')}</Page>
+    </Project>
+  );`, /"Pop" is defined twice, differently/);
 });

@@ -1,16 +1,21 @@
 /**
- * Images iva draws itself at build time (iViewer draws sliders and gauges
- * only from images): anti-aliased rounded rectangles and circles, as PNG.
+ * Images iva draws itself at build time. iViewer draws backgrounds, sliders
+ * and gauges from images (it has no CSS border-radius, and no font files of
+ * the project's own), so rounded boxes, slider parts and Font Awesome icons
+ * become PNGs - each at 1x and 2x (`name@2x.png`, which iViewer picks on
+ * retina screens).
  */
 
 import { createHash } from 'node:crypto';
-import zlib from 'node:zlib';
+import { createRequire } from 'node:module';
+import { Resvg } from '@resvg/resvg-js';
+import { suggest } from './suggest.js';
 
 export type RGBA = [number, number, number, number];
 
 const NAMED: Record<string, string> = {
   white: '#ffffff', black: '#000000', red: '#ff0000', green: '#008000', blue: '#0000ff', gray: '#808080', grey: '#808080',
-  yellow: '#ffff00', orange: '#ffa500', transparent: '#00000000',
+  yellow: '#ffff00', orange: '#ffa500', silver: '#c0c0c0', transparent: '#00000000',
 };
 
 export function parseColor(input: string): RGBA {
@@ -30,71 +35,101 @@ export function parseColor(input: string): RGBA {
   throw new Error(`can't read colour "${input}" (use #rgb, #rrggbb, #rrggbbaa or rgba())`);
 }
 
-/** Coverage of a pixel (0..1) by a shape, 4x4 supersampled. */
-function raster(w: number, h: number, inside: (x: number, y: number) => boolean, color: RGBA): Buffer {
-  const rows: Buffer[] = [];
-  const S = 4;
-  for (let y = 0; y < h; y++) {
-    const row = Buffer.alloc(1 + w * 4); // filter byte 0 + RGBA
-    for (let x = 0; x < w; x++) {
-      let hits = 0;
-      for (let sy = 0; sy < S; sy++) for (let sx = 0; sx < S; sx++) if (inside(x + (sx + 0.5) / S, y + (sy + 0.5) / S)) hits++;
-      const o = 1 + x * 4;
-      row[o] = color[0];
-      row[o + 1] = color[1];
-      row[o + 2] = color[2];
-      row[o + 3] = Math.round((color[3] * hits) / (S * S));
-    }
-    rows.push(row);
+/** SVG paint attributes for a colour: fill="rgb()" fill-opacity="" */
+function paint(attr: 'fill' | 'stroke', color: string): string {
+  const [r, g, b, a] = parseColor(color);
+  return `${attr}="rgb(${r},${g},${b})"${a < 255 ? ` ${attr}-opacity="${(a / 255).toFixed(3)}"` : ''}`;
+}
+
+/** Drawn images by their SVG and scale: a rebuild (iva dev, iva serve) redraws only what changed. */
+const drawnCache = new Map<string, Buffer>();
+
+/** Render SVG (in `w` x `h` units) to a PNG `scale` times that size. */
+function render(svgBody: string, w: number, h: number, scale: number): Buffer {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${svgBody}</svg>`;
+  const key = `${scale}|${svg}`;
+  let png = drawnCache.get(key);
+  if (!png) {
+    // no system fonts: iva draws shapes and icon paths, never text (loading them is most of the time)
+    png = Buffer.from(new Resvg(svg, { fitTo: { mode: 'width', value: Math.round(w * scale) }, font: { loadSystemFonts: false } }).render().asPng());
+    if (drawnCache.size > 2000) drawnCache.clear();
+    drawnCache.set(key, png);
   }
-  return png(w, h, Buffer.concat(rows));
+  return png;
 }
 
-const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
-  let c = n;
-  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-  return c >>> 0;
-});
-function crc32(buf: Buffer) {
-  let c = 0xffffffff;
-  for (const b of buf) c = CRC_TABLE[(c ^ b) & 255] ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
-}
-function chunk(type: string, data: Buffer) {
-  const len = Buffer.alloc(4);
-  len.writeUInt32BE(data.length);
-  const td = Buffer.concat([Buffer.from(type, 'ascii'), data]);
-  const crc = Buffer.alloc(4);
-  crc.writeUInt32BE(crc32(td));
-  return Buffer.concat([len, td, crc]);
-}
-function png(w: number, h: number, raw: Buffer): Buffer {
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(w, 0);
-  ihdr.writeUInt32BE(h, 4);
-  ihdr[8] = 8; // bit depth
-  ihdr[9] = 6; // RGBA
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk('IHDR', ihdr),
-    chunk('IDAT', zlib.deflateSync(raw, { level: 9 })),
-    chunk('IEND', Buffer.alloc(0)),
-  ]);
+export interface BoxStyle {
+  w: number;
+  h: number;
+  radius?: number;
+  fill?: string;
+  borderWidth?: number;
+  borderColor?: string;
 }
 
-export function roundedRect(w: number, h: number, radius: number, color: string): Buffer {
-  const r = Math.max(0, Math.min(radius, w / 2, h / 2));
-  const inside = (x: number, y: number) => {
-    const cx = Math.min(Math.max(x, r), w - r);
-    const cy = Math.min(Math.max(y, r), h - r);
-    return (x - cx) ** 2 + (y - cy) ** 2 <= r * r;
-  };
-  return raster(Math.round(w), Math.round(h), inside, parseColor(color));
+/** A box: rounded corners, a fill, a border inside its edge. */
+export function box(st: BoxStyle, scale = 1): Buffer {
+  const bw = st.borderWidth && st.borderColor ? st.borderWidth : 0;
+  const r = Math.max(0, Math.min(st.radius ?? 0, st.w / 2, st.h / 2));
+  const body = [
+    st.fill ? `<rect x="0" y="0" width="${st.w}" height="${st.h}" rx="${r}" ${paint('fill', st.fill)} />` : '',
+    bw ? `<rect x="${bw / 2}" y="${bw / 2}" width="${st.w - bw}" height="${st.h - bw}" rx="${Math.max(0, r - bw / 2)}" fill="none" stroke-width="${bw}" ${paint('stroke', st.borderColor!)} />` : '',
+  ].join('');
+  return render(body, st.w, st.h, scale);
 }
 
-export function circle(d: number, color: string): Buffer {
-  const r = d / 2;
-  return raster(Math.round(d), Math.round(d), (x, y) => (x - r) ** 2 + (y - r) ** 2 <= r * r, parseColor(color));
+export function circle(d: number, color: string, scale = 1): Buffer {
+  return render(`<circle cx="${d / 2}" cy="${d / 2}" r="${d / 2}" ${paint('fill', color)} />`, d, d, scale);
+}
+
+// ── Font Awesome (free: solid, regular, brands) ─────────────────────
+
+type IconDef = [number, number, unknown, unknown, string | string[]];
+const require_ = createRequire(import.meta.url);
+let ICONS: Record<string, Map<string, IconDef>> | null = null;
+
+function icons() {
+  if (ICONS) return ICONS;
+  ICONS = {};
+  for (const style of ['solid', 'regular', 'brands']) {
+    const pack = require_(`@fortawesome/free-${style}-svg-icons`) as Record<string, { iconName?: string; icon?: IconDef }>;
+    const map = new Map<string, IconDef>();
+    for (const def of Object.values(pack)) {
+      if (!def?.iconName || !def.icon) continue;
+      map.set(def.iconName, def.icon);
+      // old names still work ('home' for 'house', ...)
+      for (const alias of (def.icon[2] as unknown[]) ?? []) if (typeof alias === 'string' && !map.has(alias)) map.set(alias, def.icon);
+    }
+    ICONS[style] = map;
+  }
+  return ICONS;
+}
+
+export type IconStyle = 'solid' | 'regular' | 'brands';
+
+/** A Font Awesome icon's definition, by name ('lightbulb', 'brands:github'). */
+export function iconDef(name: string, style?: IconStyle): { def: IconDef; style: IconStyle; name: string } {
+  const m = /^(solid|regular|brands):(.+)$/.exec(name);
+  const st = (m?.[1] as IconStyle | undefined) ?? style;
+  const bare = (m?.[2] ?? name).replace(/^fa-/, '');
+  const packs = icons();
+  for (const s of st ? [st] : (['solid', 'regular', 'brands'] as IconStyle[])) {
+    const def = packs[s].get(bare);
+    if (def) return { def, style: s, name: bare };
+  }
+  const known = [...(st ? packs[st].keys() : [...packs.solid.keys(), ...packs.brands.keys()])];
+  const hint = suggest(bare, known);
+  throw new Error(`no Font Awesome ${st ? `${st} ` : ''}icon "${bare}"${hint ? ` (did you mean "${hint}"?)` : ''} - names: https://fontawesome.com/search?o=r&m=free`);
+}
+
+/** The icon, `size` px, centred in a boxW x boxH image (default: just the icon's square). */
+export function icon(name: string, style: IconStyle | undefined, color: string, size: number, scale = 1, boxW = size, boxH = size): Buffer {
+  const { def } = iconDef(name, style);
+  const [w, h, , , path] = def;
+  const s = Math.max(w, h);
+  const paths = (Array.isArray(path) ? path : [path]).map((d) => `<path d="${d}" ${paint('fill', color)} />`).join('');
+  const body = `<g transform="translate(${(boxW - size) / 2} ${(boxH - size) / 2}) scale(${size / s}) translate(${(s - w) / 2} ${(s - h) / 2})">${paths}</g>`;
+  return render(body, boxW, boxH, scale);
 }
 
 /** A stable file name for generated image data. */

@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { createServer as createVite, type Alias } from 'vite';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { HostSession } from './host/session.js';
+import { watchTree } from './watch.js';
 import { findGuis, loadManifest, rootDir, safeJoin, type GuiEntry, type ProjectManifest } from './project.js';
 import { compile, IvaError, slug, type CompileResult } from '../compiler/index.js';
 
@@ -236,17 +237,12 @@ export async function startDev(opts: DevOptions) {
   });
 
   // ── reload on change ──
-  let timer: NodeJS.Timeout | undefined;
-  const watcher = fs.watch(source.dir, { recursive: true }, (_ev, file) => {
-    if (!file || /(^|[\\/])(\.|node_modules|dist)([\\/]|$)/.test(String(file))) return;
-    clearTimeout(timer);
-    timer = setTimeout(async () => {
-      log(`changed: ${file}`);
-      const error = await source.refresh();
-      const msg = error ? { t: 'error', text: error } : { t: 'reload' };
-      for (const ws of pages) ws.send(JSON.stringify(msg));
-    }, 150);
-  });
+  const watcher = watchTree(source.dir, true, async (file) => {
+    log(`changed: ${file}`);
+    const error = await source.refresh();
+    const msg = error ? { t: 'error', text: error } : { t: 'reload' };
+    for (const ws of pages) ws.send(JSON.stringify(msg));
+  }, log);
 
   await new Promise<void>((resolve, reject) => {
     httpServer.once('error', reject);

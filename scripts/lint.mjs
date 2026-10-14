@@ -3,7 +3,7 @@
 import { spawnSync } from 'node:child_process';
 
 const r = spawnSync('npx', ['tsc', '--noEmit', '--pretty', 'false'], { encoding: 'utf8' });
-const own = (r.stdout + r.stderr).split('\n').filter((l) => /^(src|test|scripts)\//.test(l));
+const own = (r.stdout + r.stderr).split('\n').filter((l) => /^(src|test|scripts|lib)\//.test(l));
 if (own.length) {
   console.log(own.join('\n'));
   process.exit(1);
