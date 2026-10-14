@@ -8,6 +8,8 @@ var IvaUI = (function () {
   var groups = {};
   var steppers = {};
   var dials = {};
+  var pins = {};
+  var times = {};
   function pad(n) { return (n < 10 ? '0' : '') + n; }
   function fmt(v, decimals, unit) {
     var s = Number(v).toFixed(decimals || 0);
@@ -45,10 +47,11 @@ var IvaUI = (function () {
       CF.setJoin(s.text, fmt(s.v, o.decimals, o.unit));
     },
     /** one of several (segmented, scenes): the index in an analog join, each option's digital join on when chosen */
-    group: function (id, value, joins, initial) {
+    group: function (id, value, joins, initial, labels, labelJoin) {
       groups[id] = { value: value, joins: joins };
       CF.watch(CF.JoinChangeEvent, value, function (j, v) {
         for (var i = 0; i < joins.length; i++) CF.setJoin(joins[i], i == v ? 1 : 0);
+        if (labels && labelJoin) CF.setJoin(labelJoin, labels[Number(v)] === undefined ? '' : labels[Number(v)]);
       }, true);
       if (initial !== undefined) IvaUI.pick(id, initial);
     },
@@ -102,6 +105,92 @@ var IvaUI = (function () {
         var step = o.step || (o.max - o.min) / 100;
         var value = Math.round(fromJoin(v, o.min, o.max) / step) * step + dir * step;
         CF.setJoin(o.join, toJoin(clamp(value, o.min, o.max), o.min, o.max));
+      });
+    },
+    /** a list's rows (CF.listAdd items: { subpage, s1, ... }) */
+    fill: function (list, items) {
+      // CF.listRemove(list) with no range empties it
+      if (CF.listClear) CF.listClear(list); else CF.listRemove(list);
+      CF.listAdd(list, items);
+    },
+    /**
+     * days of the week: a digital join per day (in the order shown), the
+     * bitmask in an analog join (Mon 1, Tue 2 ... Sun 64), a summary in a serial join
+     */
+    days: function (id, o) {
+      var names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      var on = [];
+      function summary(mask) {
+        if (mask === 127) return 'Every day';
+        if (mask === 31) return 'Weekdays';
+        if (mask === 96) return 'Weekend';
+        if (!mask) return 'Never';
+        var out = [];
+        for (var k = 0; k < o.order.length; k++) if (mask & (1 << o.order[k])) out.push(names[o.order[k]]);
+        return out.join(', ');
+      }
+      function update() {
+        var mask = 0;
+        for (var k = 0; k < on.length; k++) if (on[k]) mask |= 1 << o.order[k];
+        CF.setJoin(o.mask, mask);
+        if (o.text) CF.setJoin(o.text, summary(mask));
+      }
+      for (var i = 0; i < o.joins.length; i++) {
+        on[i] = !!(o.value & (1 << o.order[i]));
+        CF.setJoin(o.joins[i], on[i] ? 1 : 0);
+        (function (i) {
+          CF.watch(CF.JoinChangeEvent, o.joins[i], function (j, v) { on[i] = Number(v) > 0; update(); });
+        })(i);
+      }
+      update();
+    },
+    /** a code typed on a keypad: shown (masked) in a serial join; OK hands it on */
+    pin: function (id, o, onEnter) {
+      pins[id] = { o: o, code: '', onEnter: onEnter };
+      IvaUI.pinShow(id);
+    },
+    pinShow: function (id) {
+      var p = pins[id];
+      var shown = p.code ? (p.o.mask ? new Array(p.code.length + 1).join('\u2022') : p.code) : p.o.placeholder;
+      CF.setJoin(p.o.display, shown);
+    },
+    pinKey: function (id, k) {
+      var p = pins[id];
+      if (p && p.code.length < p.o.length) { p.code += k; IvaUI.pinShow(id); }
+    },
+    pinBack: function (id) {
+      var p = pins[id];
+      if (p) { p.code = p.code.slice(0, -1); IvaUI.pinShow(id); }
+    },
+    pinClear: function (id) {
+      var p = pins[id];
+      if (p) { p.code = ''; IvaUI.pinShow(id); }
+    },
+    pinEnter: function (id) {
+      var p = pins[id];
+      if (!p) return;
+      var code = p.code;
+      if (p.o.code) CF.setJoin(p.o.code, code);
+      p.code = '';
+      IvaUI.pinShow(id);
+      if (p.onEnter) p.onEnter(code);
+    },
+    /** a time of day: minutes since midnight in an analog join, shown in a serial join */
+    time: function (id, o) {
+      times[id] = o;
+      CF.watch(CF.JoinChangeEvent, o.join, function (j, v) {
+        var m = Number(v) || 0, h = Math.floor(m / 60) % 24, mm = m % 60;
+        var text = o.ampm ? ((h % 12) || 12) + ':' + pad(mm) + (h < 12 ? ' AM' : ' PM') : pad(h) + ':' + pad(mm);
+        CF.setJoin(o.text, text);
+      }, true);
+      if (o.value !== undefined) CF.setJoin(o.join, o.value);
+    },
+    timeStep: function (id, dir) {
+      var o = times[id];
+      if (!o) return;
+      CF.getJoin(o.join, function (j, v) {
+        var m = ((Math.round((Number(v) || 0) / o.step) + dir) * o.step + 1440) % 1440;
+        CF.setJoin(o.join, m);
       });
     },
     /** a digital join off */

@@ -39,6 +39,8 @@ export interface IconRef {
   style?: 'solid' | 'regular' | 'brands';
   color?: string;
   size?: number;
+  /** the image's file name (else: from the content) */
+  file?: string;
 }
 export interface IconOptions {
   /** default: the button's text colour (active: its active colour); white on <Image> */
@@ -47,6 +49,8 @@ export interface IconOptions {
   size?: number;
   /** 'solid' (default), 'regular' or 'brands' (also 'brands:github' as the name) */
   style?: 'solid' | 'regular' | 'brands';
+  /** the image's file name (for scripts / list rows that name it) */
+  file?: string;
 }
 /** A Font Awesome (free) icon: fa('lightbulb'), fa('bell', { style: 'regular' }), fa('brands:spotify'). Names: fontawesome.com/search?m=free */
 export const fa: (name: string, opts?: IconOptions) => IconRef = (name, opts = {}) => ({ $$icon: 1, name, ...opts });
@@ -178,7 +182,10 @@ interface Placement {
   visible?: boolean;
   in?: Transition;
   out?: Transition;
+  /** above everything else on the page (iva places it last) */
   topmost?: boolean;
+  /** at x / y on the page, whatever <Group> it is in (a sheet centred on the screen) */
+  fixed?: boolean;
   clickthrough?: boolean;
   tags?: string | string[];
 }
@@ -239,6 +246,8 @@ export interface OrientationProps extends Pick<StyleProps, 'bg' | 'image' | 'the
 }
 export interface SubpageProps extends Placement, Pick<StyleProps, 'bg' | 'image' | 'radius' | 'borderWidth' | 'borderColor' | 'theme'>, XmlProp {
   name: string;
+  /** inside a page: only define it (list rows, ...), don't place it */
+  define?: boolean;
   w: number;
   h: number;
   /** clip children to the subpage (default true) */
@@ -582,7 +591,7 @@ export const Script: Component<ScriptProps> = intrinsic<ScriptProps>('Script');
 export const Sound: Component<SoundProps> = intrinsic<SoundProps>('Sound');
 export const Theme: Component<ThemeProps> = intrinsic<ThemeProps>('Theme');
 
-const PLACEMENT = ['x', 'y', 'join', 'visible', 'in', 'out', 'topmost', 'clickthrough', 'tags'];
+const PLACEMENT = ['x', 'y', 'join', 'visible', 'in', 'out', 'topmost', 'fixed', 'clickthrough', 'tags'];
 
 /** The props each element takes (children aside).
  * @internal */
@@ -591,7 +600,7 @@ export const PROPS: Record<string, string[]> = {
   Page: ['name', 'start', 'bg', 'image', 'theme', 'tags'],
   Landscape: ['bg', 'image', 'theme'],
   Portrait: ['bg', 'image', 'theme'],
-  Subpage: ['name', 'w', 'h', 'clip', 'bg', 'image', 'radius', 'borderWidth', 'borderColor', 'theme', ...PLACEMENT],
+  Subpage: ['name', 'w', 'h', 'clip', 'define', 'bg', 'image', 'radius', 'borderWidth', 'borderColor', 'theme', ...PLACEMENT],
   SubpageRef: ['name', ...PLACEMENT],
   Button: [...GEOM, 'tags', 'join', 'feedback', 'text', 'activeText', 'textJoin', 'activeTextJoin', 'icon', 'activeIcon', 'active',
     'iconAlign', 'page', 'cmd', 'js', 'repeat', 'onPress', 'onRelease', 'onHold', 'holdTime', ...STYLE],

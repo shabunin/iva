@@ -45,7 +45,9 @@ iva serve          # to iViewer on a real device (GUI File URL http://<this mach
   unknown font is a warning.
 - Ready-made components: `import { createUi } from 'iva/ui'` (Card, Tile,
   IconButton, Toggle, Slider, Stepper, Segmented, SceneBar, Dimmer, Blinds,
-  Header, SideMenu, ConfirmDialog, ...); see iva's docs/ui.md.
+  Dial, Knob, Thermostat, RadioGroup, CheckBox, SelectBox, DataList,
+  WeekDays, AlarmCard, PinPad, Header, SideMenu, ConfirmDialog, ...); see
+  iva's docs/ui.md.
 - Devices: `<System host port>` with `<Command>` and `<Feedback>`; button
   `cmd="Name"` sends a command.
 - Keep it valid for the real iViewer: prefer iva's props; `xml={{...}}` and

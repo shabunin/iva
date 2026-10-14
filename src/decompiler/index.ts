@@ -460,9 +460,11 @@ class Decompiler {
     if (!this.subpageNames.has(name)) throw new Error(`no subpage "${name}"`);
     const props: [string, PropValue][] = [
       ['name', name], ['x', a.optNum('x', 0)], ['y', a.optNum('y', 0)], ['join', a.join('j')], ['in', tr('1')], ['out', tr('2')],
-      ['clickthrough', a.flag('clickthrough')], ['topmost', a.flag('topmost')], ['visible', a.flag('v', true)], ...this.tags(a),
+      ['clickthrough', a.flag('clickthrough')], ['visible', a.flag('v', true)], ...this.tags(a),
     ];
     a.skip('l', '0');
+    // GUI Designer's topmost="1" stays an attribute (iva's topmost prop also moves the placement last)
+    a.skip('topmost', '0');
     const x = this.xml(a, n, 'subpage-ref');
     const merged = Object.assign({}, ...extra, x[0]?.[1] ?? {});
     return j('SubpageRef', [...props, ...(Object.keys(merged).length ? [['xml', merged] as [string, PropValue]] : [])]);

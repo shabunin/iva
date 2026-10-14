@@ -7,6 +7,9 @@ export const sections = [
   { page: 'Controls', icon: 'sliders', text: 'Controls', sub: 'Toggle, Slider, Stepper, Segmented, SceneBar' },
   { page: 'Dials', icon: 'circle-half-stroke', text: 'Dials', sub: 'Dial, Knob, Thermostat' },
   { page: 'Devices', icon: 'lightbulb', text: 'Devices', sub: 'Dimmer, Blinds' },
+  { page: 'Forms', icon: 'square-check', text: 'Forms', sub: 'RadioGroup, CheckBox, SelectBox' },
+  { page: 'Lists', icon: 'list', text: 'Lists', sub: 'DataList, ListRow, ScrollBox' },
+  { page: 'Schedule', icon: 'clock', text: 'Schedule & security', sub: 'WeekDays, AlarmCard, PinPad' },
   { page: 'Navigation', icon: 'compass', text: 'Navigation & feedback', sub: 'Header, SideMenu, NavCard, ConfirmDialog' },
 ];
 

@@ -58,8 +58,9 @@ uses Designer's device sizes.
 
 `import { createUi } from 'iva/ui'`: cards, tiles, icon buttons, badges,
 stats, toggles, sliders, steppers, segmented controls, scene bars, dimmers,
-blinds, a header with breadcrumbs and a clock, a side menu, dialogs - in a
-theme ([docs/ui.md](docs/ui.md)). Every one of them, with its variations:
+blinds, dials and a thermostat, radio buttons, checkboxes, select boxes,
+lists, week days, alarms, a PIN pad, a header with breadcrumbs and a clock, a
+side menu, dialogs - in a theme ([docs/ui.md](docs/ui.md)). Every one of them, with its variations:
 
 ```bash
 iva dev examples/gallery/app.jsx

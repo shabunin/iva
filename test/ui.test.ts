@@ -15,7 +15,8 @@ test('the iva/ui gallery builds: one runtime script, the shared subpages once', 
   assert.equal(start.match(/IvaUI\.menu\(/g)!.length, 1); // the side menu is on every page, set up once
   assert.equal(start.match(/IvaUI\.clock\(/g)!.length, 1);
   assert.equal((r.xml.match(/<subpage name="ui_menu" w=/g) ?? []).length, 1);
-  assert.equal((r.xml.match(/<subpage name="ui_menu" x=/g) ?? []).length, 6); // placed on every page
+  // placed on every page
+  assert.equal((r.xml.match(/<subpage name="ui_menu" x=/g) ?? []).length, (r.xml.match(/<page name=/g) ?? []).length);
   assert.deepEqual(r.warnings, []);
 });
 
@@ -56,4 +57,19 @@ export default (
   const start = r.scripts.find((x) => x.name === 'iva-start.js')!.code!;
   assert.equal(start.match(/IvaUI\.dial\(/g)!.length, 3);
   assert.match(start, /IvaUI\.set\(Joins\.a\["level"\], 65, 0, 100\)/);
+});
+
+test('forms, lists, schedule: popups last, list rows defined, icons drawn at their size', async () => {
+  const r = await compile(GALLERY);
+  const gui = r.xml;
+  const forms = gui.slice(gui.indexOf('<page name="Forms"'), gui.indexOf('</page>', gui.indexOf('<page name="Forms"')));
+  const placed = [...forms.matchAll(/<subpage name="([^"]+)" x=/g)].map((m) => m[1]);
+  // the select sheets / dropdowns after the page's other subpages (the menu is placed by the Shell at the end too)
+  assert.ok(placed.indexOf('ui_select_fan') > placed.indexOf('ui_menu'), placed.join(', '));
+  assert.match(gui, /<subpage name="ui_dl_560_row" w="560"/);
+  assert.doesNotMatch(gui, /<subpage name="ui_dl_560_row" x=/);
+  const icon = r.assets.find((a) => /^iva_icon_\w+\.png$/.test(a.name))!;
+  assert.equal(icon.data!.readUInt32BE(16), 26);
+  const start = r.scripts.find((s) => s.name === 'iva-start.js')!.code!;
+  for (const f of ['IvaUI.fill(', 'IvaUI.days(', 'IvaUI.pin(', 'IvaUI.time(']) assert.ok(start.includes(f), f);
 });

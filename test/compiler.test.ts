@@ -240,3 +240,26 @@ test('a subpage defined again the same way is fine; differently, an error', asyn
     </Project>
   );`, /"Pop" is defined twice, differently/);
 });
+
+test('topmost placements go last; fixed ones ignore their group; define only defines', async () => {
+  const r = await build(wrap(`
+    <Group x={100} y={100}>
+      <Subpage name="Pop" topmost fixed w={50} h={50} />
+      <Subpage name="Row" define w={50} h={20}><Text w={50} h={20} join={1} /></Subpage>
+      <Button w={10} h={10} />
+    </Group>
+    <Text w={10} h={10} />`));
+  const gui = await parseGUI(r.xml);
+  const items = gui.pages.Main.landscape!;
+  assert.deepEqual(items.map((n) => n.type), ['btn', 'txt', 'subpage']);
+  assert.deepEqual([items[2].x, items[2].y], [0, 0]); // fixed: not moved by the group
+  assert.ok(gui.subpages.Row);
+  assert.ok(!items.some((n) => n.name === 'Row'));
+});
+
+test('one <OnStart> failing does not stop the rest', async () => {
+  const r = await build(wrap(`<OnStart js="boom();" /><OnStart js="fine();" />`));
+  const code = r.scripts.find((s) => s.name === 'iva-start.js')!.code!;
+  assert.match(code, /try \{ boom\(\); \} catch \(e\)/);
+  assert.match(code, /try \{ fine\(\); \} catch \(e\)/);
+});

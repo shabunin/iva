@@ -15,8 +15,8 @@
  */
 
 import {
-  Box, Button, Gesture, Group, Image, OnStart, Script, Slider as IvaSlider, Subpage, Text, a, d, draw, fa, s,
-  type ButtonProps, type Child, type Join, type JoinRef, type VNode,
+  Box, Button, Gesture, Group, Image, List, OnStart, Script, Slider as IvaSlider, Subpage, Text, a, d, draw, fa, js as jsAction, l, s,
+  type ButtonProps, type Child, type IconRef, type Join, type JoinRef, type VNode,
 } from 'iva';
 import { UI_RUNTIME } from './runtime.js';
 
@@ -283,6 +283,138 @@ export interface ThermostatProps {
   x?: number;
   y?: number;
 }
+export interface RadioGroupProps {
+  options: string[];
+  /** analog join: the index chosen */
+  join: Join;
+  value?: number;
+  x?: number;
+  y?: number;
+  w?: number;
+  /** a row's height */
+  rowH?: number;
+}
+export interface CheckBoxProps {
+  label: string;
+  /** digital join */
+  join: Join;
+  value?: boolean;
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+}
+export interface CheckBoxGroupProps {
+  options: { label: string; join: Join; value?: boolean }[];
+  x?: number;
+  y?: number;
+  w?: number;
+  rowH?: number;
+}
+export interface SelectBoxProps {
+  options: string[];
+  /** analog join: the index chosen */
+  join: Join;
+  value?: number;
+  /** the sheet's title */
+  title?: string;
+  /** 'sheet' (default: a dialog over the page) or 'dropdown' (a list under the field) */
+  mode?: 'sheet' | 'dropdown';
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+}
+export interface ListRowProps extends Actions {
+  icon?: string;
+  title: string;
+  subtitle?: string;
+  /** on the right: a value (text, or a serial join) */
+  value?: string;
+  valueJoin?: Join;
+  /** on the right: an ON / OFF toggle on this digital join */
+  toggle?: Join;
+  /** on the right: a chevron (the row goes somewhere: page / js / cmd) */
+  chevron?: boolean;
+  divider?: boolean;
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+}
+export type DataListItem =
+  | { header: string }
+  | { spacer: true }
+  | { icon?: string; title: string; subtitle?: string; value?: string; alert?: boolean };
+export interface DataListProps {
+  /** list join */
+  join: Join;
+  items: DataListItem[];
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+}
+export interface ScrollBoxProps {
+  /** list join */
+  join: Join;
+  lines: string[];
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+  rowH?: number;
+}
+export interface WeekDaysProps {
+  /** analog join: the bitmask (Mon 1, Tue 2, Wed 4 ... Sun 64) */
+  join: Join;
+  value?: number;
+  /** 'mon' (default) or 'sun' first */
+  first?: 'mon' | 'sun';
+  /** seven labels, Monday first (default Mo Tu We Th Fr Sa Su) */
+  labels?: string[];
+  /** a serial join that gets the summary ("Weekdays", "Sun, Mon", ...) */
+  textJoin?: Join;
+  size?: number;
+  gap?: number;
+  x?: number;
+  y?: number;
+}
+export interface PinPadProps {
+  /** serial join: OK writes the code here */
+  code?: Join;
+  /** JavaScript run on OK, with `code` (a string) */
+  onEnter?: string;
+  length?: number;
+  /** show dots, not the digits (default true) */
+  mask?: boolean;
+  placeholder?: string;
+  /** a key's size */
+  size?: number;
+  gap?: number;
+  x?: number;
+  y?: number;
+}
+export interface AlarmCardProps {
+  title: string;
+  /** digital join: the alarm on */
+  on: Join;
+  onValue?: boolean;
+  /** analog join: the time, minutes since midnight */
+  time: Join;
+  /** the time it starts at: "06:45" */
+  value?: string;
+  /** minutes a - / + step moves it (default 15) */
+  step?: number;
+  /** 12 h with AM / PM */
+  ampm?: boolean;
+  /** analog join: the days (WeekDays bitmask) */
+  days: Join;
+  daysValue?: number;
+  x?: number;
+  y?: number;
+  w?: number;
+}
 export interface NavCardProps {
   icon: string;
   title: string;
@@ -344,6 +476,16 @@ export interface Ui {
   SceneBar: (p: SceneBarProps) => VNode;
   Dimmer: (p: DimmerProps) => VNode;
   Dial: (p: DialProps) => VNode;
+  RadioGroup: (p: RadioGroupProps) => VNode;
+  CheckBox: (p: CheckBoxProps) => VNode;
+  CheckBoxGroup: (p: CheckBoxGroupProps) => VNode;
+  SelectBox: (p: SelectBoxProps) => VNode;
+  ListRow: (p: ListRowProps) => VNode;
+  DataList: (p: DataListProps) => VNode;
+  ScrollBox: (p: ScrollBoxProps) => VNode;
+  WeekDays: (p: WeekDaysProps) => VNode;
+  PinPad: (p: PinPadProps) => VNode;
+  AlarmCard: (p: AlarmCardProps) => VNode;
   Knob: (p: KnobProps) => VNode;
   Thermostat: (p: ThermostatProps) => VNode;
   Blinds: (p: BlindsProps) => VNode;
@@ -354,7 +496,7 @@ export interface Ui {
 }
 
 /** A join as a JavaScript expression ("d12", or Joins.d.name for a named one). */
-export function jsJoin(type: 'd' | 'a' | 's', j: Join): string {
+export function jsJoin(type: 'd' | 'a' | 's' | 'l', j: Join): string {
   if (typeof j === 'number') return JSON.stringify(`${type}${j}`);
   if (typeof j === 'string') return /^\d+$/.test(j) ? JSON.stringify(type + j) : `Joins.${type}[${JSON.stringify(j)}]`;
   return typeof j.id === 'number' ? JSON.stringify(`${j.type}${j.id}`) : `Joins.${j.type}[${JSON.stringify(j.id)}]`;
@@ -501,12 +643,13 @@ export function createUi(theme: Partial<UiTheme> = {}): Ui {
   }
 
   /** one of several: each option a button on its own digital join, the index in `join` */
-  function oneOf(join: Join, count: number, value: number) {
+  function oneOf(join: Join, count: number, value: number, labels?: string[], labelJoin?: JoinRef) {
     const id = JSON.stringify(keyOf(join));
     const option = (i: number): JoinRef => d(`ui_${keyOf(join)}_${i}`);
+    const extra = labels && labelJoin ? `, ${JSON.stringify(labels)}, ${jsJoin('s', labelJoin)}` : '';
     const start = (
-      <OnStart js={`IvaUI.group(${id}, ${jsJoin('a', join)}, [${Array.from({ length: count }, (_, i) => jsJoin('d', option(i))).join(', ')}], ${value});`}
-               joins={[typeof join === 'object' ? join : a(join)]} />
+      <OnStart js={`IvaUI.group(${id}, ${jsJoin('a', join)}, [${Array.from({ length: count }, (_, i) => jsJoin('d', option(i))).join(', ')}], ${value}${extra});`}
+               joins={[typeof join === 'object' ? join : a(join), ...(labelJoin ? [labelJoin] : [])]} />
     );
     return { option, pick: (i: number) => `IvaUI.pick(${id}, ${i})`, start };
   }
@@ -657,6 +800,262 @@ export function createUi(theme: Partial<UiTheme> = {}): Ui {
     );
   }
 
+  // ── forms ───────────────────────────────────────────────────────
+
+  /** A row that toggles or picks: a transparent button, an icon per state, the label beside (left-aligned everywhere). */
+  function row(y: number, w: number, h: number, label: string, iconOff: IconRef, iconOn: IconRef, button: Partial<ButtonProps>) {
+    const size = 24;
+    const icon = (ic: IconRef) => ({ src: ic, x: 0, y: Math.round((h - size) / 2) });
+    return (
+      <Group y={y}>
+        <Button w={w} h={h} icon={icon(iconOff)} activeIcon={icon(iconOn)} {...button} />
+        <Text x={size + 16} w={w - size - 16} h={h} text={label} font={font} fontSize={21} />
+      </Group>
+    );
+  }
+
+  function RadioGroup({ options, join, value = 0, x = 0, y = 0, w = 320, rowH = 48 }: RadioGroupProps): VNode {
+    const g = oneOf(join, options.length, value);
+    const off = fa('circle', { style: 'regular', size: 24, color: t.muted });
+    const on = fa('circle-dot', { size: 24, color: t.accent });
+    return (
+      <Group x={x} y={y}>
+        {options.map((o, i) => row(i * rowH, w, rowH - 4, o, off, on, { join: g.option(i), feedback: 'none', js: g.pick(i) }))}
+        {runtime}
+        {g.start}
+      </Group>
+    );
+  }
+
+  function CheckBox({ label, join, value, x = 0, y = 0, w = 320, h = 44 }: CheckBoxProps): VNode {
+    const off = fa('square', { style: 'regular', size: 24, color: t.muted });
+    const on = fa('square-check', { size: 24, color: t.accent });
+    return (
+      <Group x={x} y={y}>
+        {row(0, w, h, label, off, on, { join, feedback: 'toggle' })}
+        {value && <OnStart js={`CF.setJoin(${jsJoin('d', join)}, 1);`} />}
+      </Group>
+    );
+  }
+
+  function CheckBoxGroup({ options, x = 0, y = 0, w = 320, rowH = 48 }: CheckBoxGroupProps): VNode {
+    return (
+      <Group x={x} y={y}>
+        {options.map((o, i) => <CheckBox y={i * rowH} w={w} h={rowH - 4} label={o.label} join={o.join} value={o.value} />)}
+      </Group>
+    );
+  }
+
+  function SelectBox({ options, join, value = 0, title, mode = 'sheet', x = 0, y = 0, w = 340, h = 48 }: SelectBoxProps): VNode {
+    const key = keyOf(join);
+    const open: JoinRef = d(`ui_${key}_open`);
+    const label: JoinRef = s(`ui_${key}_label`);
+    const g = oneOf(join, options.length, value, options, label);
+    const close = `IvaUI.off(${jsJoin('d', open)})`;
+    const { width: W, height: H } = t.panel;
+    const rowH = 52;
+    const optionRows = (rw: number) =>
+      options.map((o, i) => (
+        <Group y={i * rowH}>
+          <Button w={rw} h={rowH - 4} join={g.option(i)} feedback="none" js={`${g.pick(i)}; ${close}`} radius={t.radius} active={{ bg: t.raised }}
+                  activeIcon={{ src: fa('check', { size: 18, color: t.accent }), x: rw - 36, y: Math.round((rowH - 4 - 18) / 2) }} />
+          <Text x={16} w={rw - 60} h={rowH - 4} text={o} font={font} fontSize={20} />
+        </Group>
+      ));
+    const sheetW = 420;
+    const sheetH = 84 + options.length * rowH + 12;
+    return (
+      <Group x={x} y={y}>
+        <Box w={w} h={h} bg={t.raised} radius={t.radius} />
+        <Text x={16} w={w - 56} h={h} join={label} font={font} fontSize={21} />
+        <Image x={w - 36} y={Math.round((h - 18) / 2)} w={18} h={18} src={fa('chevron-down', { size: 18, color: t.muted })} />
+        <Button w={w} h={h} feedback="none" js={`CF.setJoin(${jsJoin('d', open)}, 1)`} />
+        {mode === 'sheet' ? (
+          <Subpage name={`ui_select_${key}`} fixed topmost w={W} h={H} join={open} bg="#000000a0" in={{ type: 'fade', time: 0.15 }} out={{ type: 'fade', time: 0.15 }}>
+            <Button w={W} h={H} feedback="none" js={close} />
+            <Group x={Math.round((W - sheetW) / 2)} y={Math.round((H - sheetH) / 2)}>
+              <Box w={sheetW} h={sheetH} bg={t.surface} radius={t.radius + 4} borderWidth={1} borderColor={t.raised} />
+              <Text x={24} y={16} w={sheetW - 90} h={44} text={title ?? ''} font={font} fontSize={26} />
+              <Button x={sheetW - 60} y={14} w={48} h={48} icon={fa('xmark', { size: 22, color: t.muted })} feedback="none" js={close} />
+              <Group x={8} y={76}>{optionRows(sheetW - 16)}</Group>
+            </Group>
+          </Subpage>
+        ) : (
+          <Group>
+            <Subpage name={`ui_select_${key}_away`} fixed topmost w={W} h={H} join={open}>
+              <Button w={W} h={H} feedback="none" js={close} />
+            </Subpage>
+            <Subpage name={`ui_select_${key}`} topmost y={h + 6} w={w} h={options.length * rowH + 8} join={open} bg={t.surface} radius={t.radius}
+                     borderWidth={1} borderColor={t.raised} in={{ type: 'fade', time: 0.15 }} out={{ type: 'fade', time: 0.15 }}>
+              <Group x={4} y={4}>{optionRows(w - 8)}</Group>
+            </Subpage>
+          </Group>
+        )}
+        {runtime}
+        {g.start}
+      </Group>
+    );
+  }
+
+  // ── lists ───────────────────────────────────────────────────────
+
+  function ListRow({ icon, title, subtitle, value, valueJoin, toggle, chevron, divider = true, x = 0, y = 0, w = 542, h = 64, ...actions }: ListRowProps): VNode {
+    const left = icon ? 48 : 0;
+    const pressable = chevron || actions.page || actions.js || actions.cmd;
+    return (
+      <Group x={x} y={y}>
+        {pressable && <Button w={w} h={h} feedback="none" radius={t.radius} active={{ bg: t.raised }} {...actions} />}
+        {icon && <Image y={Math.round((h - 28) / 2)} w={28} h={28} src={fa(icon, { size: 24, color: t.muted })} />}
+        <Text x={left} y={subtitle ? 6 : 0} w={w - left - 140} h={subtitle ? 32 : h} text={title} font={font} fontSize={21} />
+        {subtitle && <Text x={left} y={36} w={w - left - 140} h={22} text={subtitle} color={t.muted} font={font} fontSize={15} />}
+        {(value || valueJoin) && <Text x={w - 160} w={160} h={h} text={value} join={valueJoin} align="right" color={t.muted} font={font} fontSize={19} />}
+        {toggle && <Button x={w - 96} y={Math.round((h - 36) / 2)} w={96} h={36} join={toggle} feedback="toggle" text="OFF" activeText="ON"
+                           radius={18} bg={t.raised} color={t.muted} active={{ bg: t.accent, color: t.text }} font={font} fontSize={15} />}
+        {chevron && <Image x={w - 26} y={Math.round((h - 18) / 2)} w={18} h={18} src={fa('chevron-right', { size: 18, color: t.muted })} />}
+        {divider && <Box x={left} y={h - 1} w={w - left} h={1} bg={t.raised} />}
+      </Group>
+    );
+  }
+
+  /** Rows of a CF list: headers, rows (icon, title, subtitle, value), alerts, spacers - filled at start. */
+  function DataList({ join, items, x = 0, y = 0, w = 560, h = 480 }: DataListProps): VNode {
+    const key = keyOf(join);
+    const sub = (kind: string) => `ui_dl_${w}_${kind}`;
+    const iconFile = (name: string, color: string) => `iva_icon_${hash(`${name}|${color}`)}`;
+    const used = new Map<string, IconRef>();
+    const rows = items.map((it) => {
+      if ('header' in it) return { subpage: sub('header'), s1: it.header };
+      if ('spacer' in it) return { subpage: sub('spacer') };
+      const color = it.alert ? t.danger : t.accent;
+      const row: Record<string, string> = { subpage: sub(it.alert ? 'alert' : 'row'), s1: it.title, s2: it.subtitle ?? '', s3: it.value ?? '' };
+      if (it.icon) {
+        const file = iconFile(it.icon, color);
+        used.set(file, fa(it.icon, { size: 26, color, file }));
+        row.s4 = `${file}.png`;
+      }
+      return row;
+    });
+    const rowBody = (danger: boolean) => (
+      <>
+        {danger && <Box w={4} h={64} bg={t.danger} />}
+        <Image x={16} y={18} w={28} h={28} join={4} />
+        <Text x={60} y={6} w={w - 240} h={32} join={1} font={font} fontSize={21} />
+        <Text x={60} y={36} w={w - 240} h={22} join={2} color={t.muted} font={font} fontSize={15} />
+        {danger
+          ? <Box x={w - 130} y={20} w={110} h={26} bg={t.danger} radius={13} />
+          : <Text x={w - 180} w={160} h={64} join={3} align="right" color={t.muted} font={font} fontSize={19} />}
+        {danger && <Text x={w - 130} y={20} w={110} h={26} text="!" align="center" font={font} fontSize={16} />}
+        <Box x={60} y={63} w={w - 80} h={1} bg={t.raised} />
+      </>
+    );
+    return (
+      <Group x={x} y={y}>
+        <Subpage name={sub('header')} define w={w} h={52}>
+          <Text x={16} y={14} w={w - 32} h={36} join={1} color={t.accent} font={font} fontSize={18} />
+        </Subpage>
+        <Subpage name={sub('row')} define w={w} h={64}>{rowBody(false)}</Subpage>
+        <Subpage name={sub('alert')} define w={w} h={64}>{rowBody(true)}</Subpage>
+        <Subpage name={sub('spacer')} define w={w} h={24} />
+        {/* the row icons, named in the .gui so they ship with it */}
+        <Subpage name={`ui_icons_${key}`} define w={1} h={1}>
+          {[...used.values()].map((src) => <Image w={1} h={1} src={src} />)}
+        </Subpage>
+        <List w={w} h={h} join={typeof join === 'object' ? join : l(join)} item={sub('row')} />
+        {runtime}
+        <OnStart js={`IvaUI.fill(${jsJoin('l', join)}, ${JSON.stringify(rows)});`} />
+      </Group>
+    );
+  }
+
+  function ScrollBox({ join, lines, x = 0, y = 0, w = 232, h = 232, rowH = 50 }: ScrollBoxProps): VNode {
+    const sub = `ui_scroll_${w}_${rowH}`;
+    return (
+      <Group x={x} y={y}>
+        <Subpage name={sub} define w={w} h={rowH}>
+          <Box w={w} h={rowH - 6} bg={t.raised} radius={t.radius + 4} />
+          <Text x={8} w={w - 16} h={rowH - 6} join={1} font={font} fontSize={19} />
+        </Subpage>
+        <List w={w} h={h} join={typeof join === 'object' ? join : l(join)} item={sub} />
+        {runtime}
+        <OnStart js={`IvaUI.fill(${jsJoin('l', join)}, ${JSON.stringify(lines.map((ln) => ({ s1: ln })))});`} />
+      </Group>
+    );
+  }
+
+  // ── schedule & security ─────────────────────────────────────────
+
+  function WeekDays({ join, value = 31, first = 'mon', labels = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'], textJoin, size = 48, gap = 8, x = 0, y = 0 }: WeekDaysProps): VNode {
+    const key = keyOf(join);
+    const order = first === 'sun' ? [6, 0, 1, 2, 3, 4, 5] : [0, 1, 2, 3, 4, 5, 6];
+    const day = (i: number): JoinRef => d(`ui_${key}_day${i}`);
+    return (
+      <Group x={x} y={y}>
+        {order.map((dIdx, i) => (
+          <Button x={i * (size + gap)} w={size} h={size} join={day(i)} feedback="toggle" text={labels[dIdx]} radius={size / 2}
+                  bg={t.raised} color={t.muted} active={{ bg: t.accent, color: t.text }} font={font} fontSize={Math.round(size * 0.4)} />
+        ))}
+        {runtime}
+        <OnStart js={`IvaUI.days(${JSON.stringify(key)}, { mask: ${jsJoin('a', join)}, joins: [${order.map((_, i) => jsJoin('d', day(i))).join(', ')}], order: ${JSON.stringify(order)}, value: ${value}${textJoin ? `, text: ${jsJoin('s', textJoin)}` : ''} });`}
+                 joins={[typeof join === 'object' ? join : a(join), ...(textJoin && typeof textJoin === 'object' ? [textJoin] : [])]} />
+      </Group>
+    );
+  }
+
+  function PinPad({ code, onEnter, length = 8, mask = true, placeholder = 'Enter code', size = 72, gap = 12, x = 0, y = 0 }: PinPadProps): VNode {
+    const id = JSON.stringify(`pin_${hash(`${x}|${y}|${placeholder}`)}`);
+    const display: JoinRef = s(`ui_${JSON.parse(id)}_display`);
+    const w = 3 * size + 2 * gap;
+    const key = (k: string, i: number) => {
+      const col = i % 3;
+      const r = Math.floor(i / 3);
+      const pos = { x: col * (size + gap), y: 76 + r * (size + gap), w: size, h: size, radius: t.radius + 2, font };
+      if (k === 'back') return <Button {...pos} bg={t.raised} active={{ bg: t.accent }} icon={fa('delete-left', { size: 24, color: t.muted })} js={`IvaUI.pinBack(${id})`} onHold={[jsAction(`IvaUI.pinClear(${id})`)]} />;
+      if (k === 'ok') return <Button {...pos} bg={t.accent} active={{ bg: shade(t.accent, -0.25) }} text="OK" fontSize={26} js={`IvaUI.pinEnter(${id})`} />;
+      return <Button {...pos} bg={t.raised} active={{ bg: t.accent }} text={k} fontSize={30} js={`IvaUI.pinKey(${id}, ${JSON.stringify(k)})`} />;
+    };
+    return (
+      <Group x={x} y={y}>
+        <Box w={w} h={64} bg={t.raised} radius={t.radius + 2} />
+        <Text w={w} h={64} join={display} align="center" font={font} fontSize={30} />
+        {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'back', '0', 'ok'].map(key)}
+        {runtime}
+        <OnStart js={`IvaUI.pin(${id}, { display: ${jsJoin('s', display)}, length: ${length}, mask: ${mask}, placeholder: ${JSON.stringify(placeholder)}${code ? `, code: ${jsJoin('s', code)}` : ''} }${onEnter ? `, function (code) { ${onEnter} }` : ''});`}
+                 joins={[display, ...(code && typeof code === 'object' ? [code] : [])]} />
+      </Group>
+    );
+  }
+
+  function AlarmCard({ title, on, onValue, time, value = '07:00', step = 15, ampm = false, days, daysValue = 31, x = 0, y = 0, w = 620 }: AlarmCardProps): VNode {
+    const key = keyOf(time);
+    const id = JSON.stringify(key);
+    const text: JoinRef = s(`ui_${key}_time`);
+    const summary: JoinRef = s(`ui_${keyOf(days)}_summary`);
+    const [hh, mm] = value.split(':').map(Number);
+    const h = 210;
+    const arrow = (dir: number, ax: number) => (
+      <Button x={ax} y={56} w={56} h={64} radius={t.radius} bg={t.raised} active={{ bg: t.accent }}
+              icon={fa(dir > 0 ? 'chevron-up' : 'chevron-down', { size: 20, color: t.muted })} js={`IvaUI.timeStep(${id}, ${dir})`} repeat={300} />
+    );
+    return (
+      <Group x={x} y={y}>
+        <Box w={w} h={h} bg={t.surface} radius={t.radius + 4} />
+        <Text x={28} y={12} w={w - 160} h={40} text={title} color={t.muted} font={font} fontSize={21} />
+        <Button x={w - 124} y={12} w={96} h={36} join={on} feedback="toggle" text="OFF" activeText="ON" radius={18} bg={t.raised} color={t.muted}
+                active={{ bg: t.accent, color: t.text }} font={font} fontSize={15} />
+        <Box x={24} y={56} w={ampm ? 230 : 180} h={64} bg={t.raised} radius={t.radius + 2} />
+        <Text x={24} y={56} w={ampm ? 230 : 180} h={64} join={text} align="center" font={font} fontSize={44} />
+        {arrow(-1, (ampm ? 230 : 180) + 36)}
+        {arrow(1, (ampm ? 230 : 180) + 100)}
+        <Text x={w - 220} y={56} w={192} h={64} join={summary} align="right" color={t.muted} font={font} fontSize={21} />
+        <WeekDays x={24} y={138} join={days} value={daysValue} textJoin={summary} size={52} />
+        {runtime}
+        <OnStart js={`IvaUI.time(${id}, { join: ${jsJoin('a', time)}, text: ${jsJoin('s', text)}, step: ${step}, ampm: ${ampm}, value: ${hh * 60 + mm} });`}
+                 joins={[typeof time === 'object' ? time : a(time), text]} />
+        {onValue && <OnStart js={`CF.setJoin(${jsJoin('d', on)}, 1);`} />}
+      </Group>
+    );
+  }
+
   function NavCard({ icon, title, text, page, x = 0, y = 0, w = 380, h = 180 }: NavCardProps): VNode {
     return (
       <Group x={x} y={y}>
@@ -740,7 +1139,10 @@ export function createUi(theme: Partial<UiTheme> = {}): Ui {
     );
   }
 
-  return { theme: t, Card, Icon, IconButton, Tile, Badge, Stat, Toggle, Slider, Stepper, Segmented, SceneBar, Dimmer, Dial, Knob, Thermostat, Blinds, NavCard, Header, SideMenu, ConfirmDialog };
+  return {
+    theme: t, Card, Icon, IconButton, Tile, Badge, Stat, Toggle, Slider, Stepper, Segmented, SceneBar, Dimmer, Dial, Knob, Thermostat, Blinds,
+    RadioGroup, CheckBox, CheckBoxGroup, SelectBox, ListRow, DataList, ScrollBox, WeekDays, PinPad, AlarmCard, NavCard, Header, SideMenu, ConfirmDialog,
+  };
 }
 
 /** The components in the default theme. */
@@ -761,6 +1163,16 @@ export const Blinds: Ui['Blinds'] = ui.Blinds;
 export const Dial: Ui['Dial'] = ui.Dial;
 export const Knob: Ui['Knob'] = ui.Knob;
 export const Thermostat: Ui['Thermostat'] = ui.Thermostat;
+export const RadioGroup: Ui['RadioGroup'] = ui.RadioGroup;
+export const CheckBox: Ui['CheckBox'] = ui.CheckBox;
+export const CheckBoxGroup: Ui['CheckBoxGroup'] = ui.CheckBoxGroup;
+export const SelectBox: Ui['SelectBox'] = ui.SelectBox;
+export const ListRow: Ui['ListRow'] = ui.ListRow;
+export const DataList: Ui['DataList'] = ui.DataList;
+export const ScrollBox: Ui['ScrollBox'] = ui.ScrollBox;
+export const WeekDays: Ui['WeekDays'] = ui.WeekDays;
+export const PinPad: Ui['PinPad'] = ui.PinPad;
+export const AlarmCard: Ui['AlarmCard'] = ui.AlarmCard;
 export const NavCard: Ui['NavCard'] = ui.NavCard;
 export const Header: Ui['Header'] = ui.Header;
 export const SideMenu: Ui['SideMenu'] = ui.SideMenu;

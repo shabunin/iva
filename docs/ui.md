@@ -59,6 +59,15 @@ it as a value in min..max.
 | `Dial` | a ring the value runs round: arc, thumb, the value in the middle; touch / drag the ring | `join`, `min`, `max`, `value`, `step`, `decimals`, `unit`, `label` / `labelJoin`, `size`, `thickness`, `color`, `sweep`, `steps` |
 | `Knob` | a knob that turns, tick marks round it (GUI Designer's Dial demo); the value under it | `join`, `min`, `max`, `value`, `step`, `unit`, `label`, `size`, `color`, `pointer`, `sweep` |
 | `Thermostat` | a setpoint Dial, the room temperature, − / +; modes below | `setpoint`, `value`, `current` / `currentJoin`, `min`, `max`, `step`, `unit`, `size`, `modes` + `mode` |
+| `RadioGroup` | one of a few, as radio buttons | `options`, `join` (the index), `value` |
+| `CheckBox` / `CheckBoxGroup` | on / off boxes | `label`, `join`, `value`; group: `options: [{ label, join, value }]` |
+| `SelectBox` | a field opening the options: a sheet over the page, or a dropdown under the field | `options`, `join` (the index), `value`, `title`, `mode` (`sheet`·`dropdown`) |
+| `ListRow` | a row: icon, title, subtitle; a value, a toggle or a chevron on the right | `icon`, `title`, `subtitle`, `value` / `valueJoin`, `toggle`, `chevron` + `page` / `js` / `cmd`, `divider` |
+| `DataList` | a CF list of headers, rows, alerts, spacers, filled at start | `join` (list), `items: [{ header } \| { icon, title, subtitle, value, alert } \| { spacer }]` |
+| `ScrollBox` | a list of lines to drag through | `join` (list), `lines` |
+| `WeekDays` | seven day toggles; the bitmask (Mon 1 … Sun 64) and a summary ("Weekdays", "Sun, Mon") | `join` (bitmask), `value`, `first` (`mon`·`sun`), `labels`, `textJoin`, `size` |
+| `AlarmCard` | a titled card: on / off, a time stepped up / down, the days | `title`, `on`, `time` (minutes since midnight), `value` ("06:45"), `step`, `ampm`, `days`, `daysValue` |
+| `PinPad` | a keypad: digits, ← (hold: clear), OK; the code shown as dots | `code` (serial join OK writes), `onEnter` (JS with `code`), `length`, `mask`, `placeholder` |
 | `NavCard` | a card that goes to a page | `icon`, `title`, `text`, `page` |
 | `Header` | the top bar: menu button, title, breadcrumbs, clock | `title`, `section`, `home`, `menu`, `clock` |
 | `SideMenu` | a menu over the page, marking the page shown | `title`, `subtitle`, `items: [{ icon, text, page }]`, `menu`, `slide` |
@@ -80,5 +89,6 @@ so it moves smoothly to the exact value. A touch or a drag on the ring
 Dials that look the same share their frames; each look costs `steps + 1`
 small images (× 2 for retina) - fewer `steps` for lighter projects.
 
-Not yet: ColorPicker, forms, pickers, lists and tables, runtime theme
+Not yet: ColorPicker, SearchSelect (type to filter: the preview can't show
+input fields yet), TimePicker (a scroll wheel), Pager, tables, runtime theme
 switching.
