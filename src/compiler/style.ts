@@ -84,6 +84,10 @@ export class Themes {
     return this.byName.has(name);
   }
 
+  names() {
+    return this.byName.keys();
+  }
+
   typeOf(name: string) {
     return this.byName.get(name)?.type;
   }

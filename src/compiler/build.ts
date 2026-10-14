@@ -12,7 +12,7 @@ import { isVNode, type Child, type Source, type VNode } from './runtime.js';
 import { styleCss, Themes, type ThemeType } from './style.js';
 import { didYouMean } from './suggest.js';
 import { circle, generatedName, roundedRect } from './images.js';
-import { el, type XNode } from './xml.js';
+import { el, parseXml, type XNode } from './xml.js';
 
 export class CompileError extends Error {
   constructor(message: string, public source?: Source) {
@@ -31,6 +31,8 @@ export interface Asset {
 
 export interface ScriptOut {
   name: string;
+  /** raw attributes for its <script> element */
+  xml?: Record<string, string | number | null>;
   file?: string;
   code?: string;
 }
@@ -80,6 +82,9 @@ export class Builder {
   private sounds: XNode[] = [];
   private warnings: string[] = [];
   private primary: 'landscape' | 'portrait' = 'landscape';
+  /** <Project assets>: shipped whole; images found there by bare name */
+  private assetDir: string | null = null;
+  private trailing: XNode[] = [];
 
   constructor(private baseDir: string) {}
 
@@ -98,6 +103,25 @@ export class Builder {
     const land = this.primary === 'landscape' ? [w, h] : other;
     const port = this.primary === 'portrait' ? [w, h] : other;
 
+    const assetDir = path.resolve(this.baseDir, p.assets ?? './assets');
+    if (fs.existsSync(assetDir) && fs.statSync(assetDir).isDirectory()) {
+      this.assetDir = assetDir;
+      for (const f of fs.readdirSync(assetDir, { recursive: true }) as string[]) {
+        const file = path.join(assetDir, f);
+        if (fs.statSync(file).isFile() && !path.basename(f).startsWith('.')) this.addAsset(project, file);
+      }
+    } else if (p.assets !== undefined) {
+      throw this.err(project, `assets: no folder ${p.assets}`);
+    }
+    let properties: XNode[] = [el('autoposition'), el('imagefolder'), el('debug', { loaderrors: 0, connectionerrors: 0 })];
+    if (p.properties !== undefined) {
+      try {
+        properties = parseXml(p.properties);
+      } catch (e: any) {
+        throw this.err(project, `properties: ${e.message}`);
+      }
+    }
+
     const children = this.elements(project);
     // themes first: elements refer to them by name
     for (const c of children) if (c.type === 'Theme') this.theme(c);
@@ -111,13 +135,13 @@ export class Builder {
         case 'Token': this.token(c); break;
         case 'Script': this.script(c); break;
         case 'Sound': this.sound(c); break;
-        default: throw this.err(c, `<${c.type}> can't be directly in <Project> (it takes Page, Subpage, System, Macro, Token, Script, Sound, Theme)`);
+        case 'Raw': this.trailing.push(this.raw(c)); break;
+        default: throw this.err(c, `<${c.type}> can't be directly in <Project> (it takes Page, Subpage, System, Macro, Token, Script, Sound, Theme, Raw)`);
       }
     }
     if (!this.pages.length) throw new CompileError('the project has no <Page>');
     const starts = this.pages.filter((pg) => pg.attrs.some(([k, v]) => k === 'start' && v === '1'));
     if (starts.length > 1) throw new CompileError(`more than one start page: ${starts.map((s) => s.attrs[0][1]).join(', ')}`);
-    if (!starts.length) this.pages[0].attrs.push(['start', '1']);
     for (const use of this.subpageUses) {
       if (!this.subpages.has(use.name)) {
         throw new CompileError(`no subpage "${use.name}"${didYouMean(use.name, this.subpages.keys())}`, use.source);
@@ -140,22 +164,21 @@ export class Builder {
       el('properties', {}, [
         el('project', {}, [], p.name),
         el('designer', {}, [], 'iva'),
-        el('size', { autoposition: p.autoposition ?? 'scale' }, [
+        el('size', { autoposition: p.autoposition === null ? undefined : p.autoposition ?? 'scale' }, [
           el('portrait', { width: port[0], height: port[1] }),
           el('landscape', { width: land[0], height: land[1] }),
         ]),
-        el('autoposition'),
-        el('imagefolder'),
-        el('debug', { loaderrors: 0, connectionerrors: 0 }),
+        ...properties,
       ]),
       ...section('systems', this.systems),
       ...section('macros', this.macros),
       ...section('sounds', this.sounds),
       this.themes.toXml(),
       ...section('tokens', this.tokens),
-      ...section('scripts', this.scripts.map((s) => el('script', { name: s.name }))),
+      ...section('scripts', this.scripts.map((s) => this.withXml(el('script', { name: s.name }), { props: { xml: s.xml } } as unknown as VNode))),
       ...this.pages,
       ...[...this.subpages.values()].map((s) => s.node),
+      ...this.trailing,
     ]);
     return { root, assets: [...this.assets.values()], scripts: this.scripts, joins: this.joins.map(), warnings: this.warnings };
   }
@@ -164,6 +187,32 @@ export class Builder {
 
   private err(node: VNode | undefined, msg: string) {
     return new CompileError(node ? `<${node.type}>: ${msg}` : msg, node?.source);
+  }
+
+  /** `xml={{...}}`: raw attributes over what iva wrote; null removes one. */
+  private withXml(x: XNode, node: VNode): XNode {
+    const extra = node.props.xml;
+    if (extra === undefined) return x;
+    if (typeof extra !== 'object' || extra === null || Array.isArray(extra)) throw this.err(node, 'xml: an object of attributes');
+    for (const [k, v] of Object.entries(extra)) {
+      const i = x.attrs.findIndex(([a]) => a === k);
+      if (v === null || v === undefined) {
+        if (i >= 0) x.attrs.splice(i, 1);
+      } else if (i >= 0) x.attrs[i][1] = String(v);
+      else x.attrs.push([k, String(v)]);
+    }
+    return x;
+  }
+
+  private raw(node: VNode): XNode {
+    let nodes: XNode[];
+    try {
+      nodes = parseXml(node.props.xml);
+    } catch (e: any) {
+      throw this.err(node, e.message);
+    }
+    if (nodes.length !== 1) throw this.err(node, 'xml: exactly one element');
+    return nodes[0];
   }
 
   private check(node: VNode) {
@@ -252,10 +301,20 @@ export class Builder {
 
   /** An image file: its .gui name (copied with the build); URLs stay as they are. */
   private image(node: VNode, src: string): string {
-    if (/^[a-z]+:\/\//i.test(src)) return src;
-    const from = this.dirOf(node);
-    const file = path.resolve(from, src);
-    if (!fs.existsSync(file)) throw this.err(node, `image not found: ${src} (looked for ${file})`);
+    if (/^[a-z]+:\/\//i.test(src) || src === '') return src;
+    let file = path.resolve(this.dirOf(node), src);
+    if (!fs.existsSync(file) && this.assetDir && fs.existsSync(path.join(this.assetDir, path.basename(src)))) {
+      file = path.join(this.assetDir, path.basename(src));
+    }
+    if (!fs.existsSync(file)) {
+      this.warnings.push(`${this.where(node)}<${node.type}>: image not found: ${src}${this.assetDir ? '' : ' (no assets folder)'}`);
+      return path.basename(src);
+    }
+    return this.addAsset(node, file);
+  }
+
+  /** A project file that ships with the build, under its file name. */
+  private addAsset(node: VNode, file: string): string {
     const name = path.basename(file);
     const prev = this.assets.get(name.toLowerCase());
     if (prev && prev.file !== file && !(prev.data ?? fs.readFileSync(prev.file!)).equals(fs.readFileSync(file))) {
@@ -284,8 +343,7 @@ export class Builder {
     const styled = ['bg', 'image', 'fill', 'fillImage', 'radius'].some((k) => p[k] !== undefined);
     if (p.theme !== undefined) {
       if (styled) throw this.err(node, `use either theme="${p.theme}" or bg / image / fill props, not both`);
-      if (!this.themes.has(p.theme)) throw this.err(node, `no <Theme name="${p.theme}">`);
-      return p.theme;
+      return this.namedTheme(node, p.theme);
     }
     if (!styled) return '';
     if (p.bg !== undefined && p.image !== undefined) throw this.err(node, 'bg or image, not both');
@@ -304,10 +362,7 @@ export class Builder {
     const p = node.props;
     if (p.theme !== undefined) {
       if (hasStyle(p) || opts.active) throw this.err(node, `use either theme="${p.theme}" or style props, not both`);
-      if (!this.themes.has(p.theme)) throw this.err(node, `no <Theme name="${p.theme}">`);
-      const t = this.themes.typeOf(p.theme);
-      if (t !== type) this.warnings.push(`${this.where(node)}<${node.type}> uses ${t} theme "${p.theme}" (expects ${type})`);
-      return p.theme;
+      return this.namedTheme(node, p.theme);
     }
     if (!opts.always && !hasStyle(p) && !opts.active) return '';
     const base = pickStyle(p);
@@ -315,6 +370,14 @@ export class Builder {
     const states = [styleCss(type, base, img)];
     if (type === 'button') states.push(styleCss(type, { ...base, ...(opts.active ?? {}) }, img));
     return this.themes.generated(type, states);
+  }
+
+  /** theme="Name": a <Theme> (theme="" = none). An unknown name is kept, with a warning. */
+  private namedTheme(node: VNode, name: string): string {
+    if (name !== '' && !this.themes.has(name)) {
+      this.warnings.push(`${this.where(node)}<${node.type}>: no <Theme name="${name}">${didYouMean(name, this.themes.names())}`);
+    }
+    return name;
   }
 
   private where(node: VNode) {
@@ -331,6 +394,16 @@ export class Builder {
 
   private theme(node: VNode) {
     const p = node.props;
+    if (p.states !== undefined) {
+      if (hasStyle(p) || p.active) throw this.err(node, 'states (exact CSS) or style props, not both');
+      if (!Array.isArray(p.states) || !p.states.length || p.states.some((c: unknown) => typeof c !== 'string')) throw this.err(node, 'states: an array of CSS strings');
+      try {
+        this.themes.define(p.name, p.type, p.states);
+      } catch (e: any) {
+        throw this.err(node, e.message);
+      }
+      return;
+    }
     const img = (src: string) => this.image(node, src);
     const base = pickStyle(p);
     const states = [styleCss(p.type, base, img)];
@@ -353,25 +426,26 @@ export class Builder {
     }
     const orient = (tag: 'landscape' | 'portrait', holder: VNode | undefined, items: VNode[]) => {
       const t = holder ? this.styleTheme(holder, 'background') : '';
-      return this.E(tag, { t: t || undefined }, items.map((i) => this.item(i)));
+      const x = this.E(tag, { t: t || undefined }, items.map((i) => this.item(i)));
+      return holder && holder !== node ? this.withXml(x, holder) : x;
     };
-    let land: XNode;
-    let port: XNode;
+    let orients: XNode[];
     if (blocks.length) {
-      const L = blocks.filter((b) => b.type === 'Landscape');
-      const P = blocks.filter((b) => b.type === 'Portrait');
-      if (L.length > 1 || P.length > 1) throw this.err(node, 'one <Landscape> and one <Portrait> at most');
-      const style = (b: VNode | undefined) => (b && (hasStyle(b.props) || b.props.theme) ? b : hasStyle(p) || p.theme ? node : b);
-      land = orient('landscape', style(L[0]), L[0] ? this.elements(L[0]) : []);
-      port = orient('portrait', style(P[0]), P[0] ? this.elements(P[0]) : []);
+      // exactly the orientations given, in the order given
+      if (blocks.filter((b) => b.type === 'Landscape').length > 1 || blocks.filter((b) => b.type === 'Portrait').length > 1) {
+        throw this.err(node, 'one <Landscape> and one <Portrait> at most');
+      }
+      const style = (b: VNode) => (hasStyle(b.props) || b.props.theme !== undefined ? b : hasStyle(p) || p.theme !== undefined ? node : b);
+      orients = blocks.map((b) => orient(b.type === 'Landscape' ? 'landscape' : 'portrait', style(b), this.elements(b)));
     } else {
-      const main = orient(this.primary, hasStyle(p) || p.theme ? node : undefined, kids);
+      // GUI Designer writes both: the main one with the items, the other empty
+      const main = orient(this.primary, hasStyle(p) || p.theme !== undefined ? node : undefined, kids);
       const empty = this.E(this.primary === 'landscape' ? 'portrait' : 'landscape', {});
-      [land, port] = this.primary === 'landscape' ? [main, empty] : [empty, main];
+      orients = this.primary === 'landscape' ? [empty, main] : [main, empty];
     }
-    this.pages.push(this.E('page', {
-      name: p.name, j: 0, tags: tagsAttr(p.tags) ?? '', transition: 'None', subtype: 'None', time: 0, ease: '', start: p.start ? 1 : undefined,
-    }, [port, land]));
+    this.pages.push(this.withXml(this.E('page', {
+      name: p.name, j: 0, tags: tagsAttr(p.tags), transition: '', subtype: '', time: 0, ease: '', start: p.start ? 1 : undefined,
+    }, orients), node));
   }
 
   private defineSubpage(node: VNode, inline: boolean): string {
@@ -388,7 +462,9 @@ export class Builder {
     const t = this.styleTheme(node, 'background');
     const items = this.elements(node).map((i) => this.item(i));
     this.subpages.set(p.name, {
-      node: this.E('subpage', { name: p.name, w: p.w, h: p.h, t: t || undefined, clip: bool(p.clip, true) }, items),
+      node: inline
+        ? this.E('subpage', { name: p.name, w: p.w, h: p.h, t: t || undefined, clip: bool(p.clip, true) }, items)
+        : this.withXml(this.E('subpage', { name: p.name, w: p.w, h: p.h, t: t || undefined, clip: bool(p.clip, true) }, items), node),
       source: node.source,
     });
     return p.name;
@@ -399,16 +475,17 @@ export class Builder {
     const children = this.elements(node).map((c) => {
       if (c.type === 'Command') return this.command(c);
       if (c.type === 'Feedback') return this.feedback(c);
-      throw this.err(c, '<System> takes <Command> and <Feedback>');
+      if (c.type === 'Raw') return this.raw(c);
+      throw this.err(c, '<System> takes <Command>, <Feedback> and <Raw>');
     });
     const hb = p.heartbeat ?? {};
-    this.systems.push(this.E('system', {
+    this.systems.push(this.withXml(this.E('system', {
       name: p.name, ip: p.host, port: p.port, origin: p.localPort ?? 0, protocol: p.protocol ?? 'tcp',
       alwayson: bool(p.alwaysOn, true), offlinequeue: bool(p.offlineQueue), accept: bool(p.accept), acceptBroadcasts: bool(p.acceptBroadcasts),
       ssl: 0, maxconnections: p.maxConnections ?? 0, heartbeatRx: hb.rx ?? '', heartbeatTx: hb.tx ?? '', heartbeatMode: hb.mode ?? -1,
       eom: p.eom ?? '', connectionStatus: this.join(node, 'connectJoin', 'd'), disconnectionStatus: this.join(node, 'disconnectJoin', 'd'),
       startupCmd: p.startupCmd ?? '', startupMacro: p.startupMacro ?? '', textEncoding: '', js: '',
-    }, children, undefined, node));
+    }, children, undefined, node), node));
   }
 
   private command(node: VNode): XNode {
@@ -421,7 +498,7 @@ export class Builder {
     }, [], p.send ?? body ?? '', node);
     this.targetAttr(x, 'target', this.target(node, 'target'));
     if (p.value !== undefined) x.attrs.push(['value', String(p.value)]);
-    return x;
+    return this.withXml(x, node);
   }
 
   private feedback(node: VNode): XNode {
@@ -429,15 +506,15 @@ export class Builder {
       const p = c.props;
       if (c.type === 'Capture') {
         const t = this.target(c, 'join');
-        if (typeof t === 'string') throw this.err(c, `join: "${t}" isn't a join (d(5), 's12', 'a:level')`);
-        const x = this.E('group', { index: p.index ?? 1, name: p.name ?? '', datatype: t!.type });
+        if (typeof t === 'string' && !p.type) throw this.err(c, `join: "${t}" isn't a join (d(5), 's12', 'a:level'); for something else, give its type too`);
+        const x = this.E('group', { index: p.index ?? 1, name: p.name ?? '', datatype: p.type ?? (t as JoinSlot).type });
         // GUI Designer writes the target with its type letter (target="d1")
         this.targetAttr(x, 'target', t);
         for (const [k, attr] of [['onVal', 'onVal'], ['offVal', 'offVal'], ['unit', 'unit'], ['min', 'min'], ['max', 'max'], ['transform', 'transform']] as const) {
           if (p[k] !== undefined) x.attrs.push([attr, String(p[k])]);
         }
         if (p.setToken) x.attrs.push(['settoken', '1']);
-        return x;
+        return this.withXml(x, c);
       }
       if (c.type === 'OnMatch') {
         const x = this.E('onmatch', {});
@@ -445,25 +522,27 @@ export class Builder {
         if (p.value !== undefined) x.attrs.push(['value', String(p.value)]);
         if (p.cmd !== undefined) x.attrs.push(['cmd', p.cmd]);
         if (p.token !== undefined) x.attrs.push(['token', p.token]);
-        return x;
+        return this.withXml(x, c);
       }
-      throw this.err(c, '<Feedback> takes <Capture> and <OnMatch>');
+      if (c.type === 'Raw') return this.raw(c);
+      throw this.err(c, '<Feedback> takes <Capture>, <OnMatch> and <Raw>');
     });
-    return this.E('fb', { name: node.props.name, regex: node.props.regex }, items);
+    return this.withXml(this.E('fb', { name: node.props.name, regex: node.props.regex }, items), node);
   }
 
   private macro(node: VNode) {
     const steps = this.elements(node).map((c) => {
+      if (c.type === 'Raw') return this.raw(c);
       if (c.type !== 'Step') throw this.err(c, '<Macro> takes <Step command="..." delay={ms}>');
-      return this.E('command', { delay: c.props.delay ?? 0 }, [], c.props.command);
+      return this.withXml(this.E('command', { delay: c.props.delay ?? 0 }, [], c.props.command), c);
     });
-    this.macros.push(this.E('macro', { name: node.props.name }, steps));
+    this.macros.push(this.withXml(this.E('macro', { name: node.props.name }, steps), node));
   }
 
   private token(node: VNode) {
     const p = node.props;
     const name = p.name.startsWith('[') ? p.name : `[${p.name}]`;
-    this.tokens.push(this.E('token', { name, value: p.value ?? '', persist: p.persist ? 1 : undefined }));
+    this.tokens.push(this.withXml(this.E('token', { name, value: p.value ?? '', persist: p.persist ? 1 : undefined }), node));
   }
 
   private script(node: VNode) {
@@ -481,6 +560,7 @@ export class Builder {
       out = { name: p.name, code };
     }
     if (this.scripts.some((s) => s.name.toLowerCase() === out.name.toLowerCase())) throw this.err(node, `two scripts named ${out.name}`);
+    if (p.xml !== undefined) out.xml = p.xml;
     this.scripts.push(out);
   }
 
@@ -491,12 +571,17 @@ export class Builder {
     if (!fs.existsSync(file)) throw this.err(node, `sound not found: ${p.src}`);
     const name = path.basename(file);
     this.assets.set(name.toLowerCase(), { name, file });
-    this.sounds.push(this.E('sound', { name: p.name, j: this.join(node, 'join', 'd'), loop: bool(p.loop), releasestop: bool(p.releaseStop) }, [], name, node));
+    this.sounds.push(this.withXml(this.E('sound', { name: p.name, j: this.join(node, 'join', 'd'), loop: bool(p.loop), releasestop: bool(p.releaseStop) }, [], name, node), node));
   }
 
   // ── items ────────────────────────────────────────────────────────
 
   private item(node: VNode): XNode {
+    if (node.type === 'Raw') return this.raw(node);
+    return this.withXml(this.itemXml(node), node);
+  }
+
+  private itemXml(node: VNode): XNode {
     if (!ITEMS.has(node.type)) throw this.err(node, `can't be inside a page or subpage`);
     const p = node.props;
     const geom = { x: p.x ?? 0, y: p.y ?? 0, w: p.w, h: p.h };
@@ -508,8 +593,9 @@ export class Builder {
         }, [], String(p.text ?? this.text(node) ?? ''), node);
       case 'Image': {
         const gestures = this.elements(node).map((g) => {
+          if (g.type === 'Raw') return this.raw(g);
           if (g.type !== 'Gesture') throw this.err(g, '<Image> takes only <Gesture>');
-          return this.gesture(g);
+          return this.withXml(this.gesture(g), g);
         });
         return this.E('img', {
           ...geom, j: this.join(node, 'join', 's'), clickthrough: bool(p.clickthrough), refresh: p.refresh ?? 0, l: 0,
@@ -523,9 +609,10 @@ export class Builder {
           : undefined;
         const ind = (state: number, img: unknown) => {
           const ref = typeof img === 'string' ? { src: img } : (img as any);
-          return this.E('indicator', {
-            state, offsetX: 0, offsetY: 0, x: ref?.x ?? 0, y: ref?.y ?? 0, w: ref?.w ?? 0, h: ref?.h ?? 0, t: '',
+          const x = this.E('indicator', {
+            state, offsetX: ref?.offsetX ?? 0, offsetY: ref?.offsetY ?? 0, x: ref?.x ?? 0, y: ref?.y ?? 0, w: ref?.w ?? 0, h: ref?.h ?? 0, t: '',
           }, [], drawn ?? (ref ? this.image(node, ref.src) : ''));
+          return ref?.xml ? this.withXml(x, { type: 'Slider', props: { xml: ref.xml }, children: [], $$iva: 1, source: node.source }) : x;
         };
         const thumbs = drawn || p.thumb !== undefined ? [ind(0, p.thumb), ind(1, p.activeThumb ?? p.thumb)] : [];
         return this.E('slider', {
@@ -560,7 +647,7 @@ export class Builder {
         return this.E('input', {
           j: 0, s: this.join(node, 'join', 's'), ...geom, pass: bool(p.password), autoFocus: bool(p.autoFocus), f: 0,
           t: this.styleTheme(node, 'input', { always: true }), l: 0, tags: tagsAttr(p.tags),
-        }, [], undefined, node);
+        }, [], p.text === undefined ? undefined : String(p.text), node);
       case 'Web':
         return this.E('web', {
           ...geom, j: p.join ?? 0, title: p.titleJoin ?? 0, back: p.backJoin ?? 0, forward: p.forwardJoin ?? 0, refresh: p.refreshJoin ?? 0, stop: p.stopJoin ?? 0,
@@ -666,7 +753,7 @@ export class Builder {
     return this.E('btn', {
       j: this.join(node, 'join', 'd'), ...geom, t: this.styleTheme(node, 'button', { always: true, active: p.active }),
       flip: p.page ?? 'None', sim: FEEDBACK[p.feedback ?? 'momentary'] ?? this.fail(node, `feedback: 'momentary', 'toggle' or 'none'`),
-      l: 0, s: 0, js, cmd, repeatdelay: p.repeat, tags: tagsAttr(p.tags),
+      l: 0, s: 1, js, cmd, repeatdelay: p.repeat, tags: tagsAttr(p.tags),
     }, children, undefined, node);
   }
 

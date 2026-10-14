@@ -34,6 +34,11 @@ export interface ImageRef {
   y?: number;
   w?: number;
   h?: number;
+  /** slider thumbs: shift from the track */
+  offsetX?: number;
+  offsetY?: number;
+  /** raw attributes for the element (null removes one) */
+  xml?: Record<string, string | number | null>;
 }
 
 /** What a button does: a command name (string), or cmd()/macro()/js(). */
@@ -62,7 +67,7 @@ export type ActionList = (string | Action)[] | string | Action;
 // ── style ──────────────────────────────────────────────────────────
 
 /** Turned into a theme (.gui CSS), shared by every element with the same style. */
-export interface StyleProps {
+export interface StyleProps extends XmlProp {
   /** background colour: '#203040', 'rgba(0,0,0,0.5)', '#20304080' */
   bg?: string;
   /** background image (a file, relative to the .jsx) */
@@ -127,29 +132,40 @@ interface Placement {
 
 // ── elements ───────────────────────────────────────────────────────
 
-export interface ProjectProps {
+/** Every element takes `xml`: raw attributes for the .gui element, over what
+ * iva writes (`null` removes one). For what iva doesn't model. */
+interface XmlProp {
+  xml?: Record<string, string | number | null>;
+}
+
+export interface ProjectProps extends XmlProp {
   name: string;
   /** the panel size; width > height makes landscape the main orientation */
   width: number;
   height: number;
   /** the other orientation's size (default: width and height swapped) */
   otherSize?: [number, number];
-  autoposition?: 'scale' | 'none';
+  autoposition?: 'scale' | 'none' | null;
   /** first number given to named joins (default 1000) */
   joinBase?: number;
+  /** a folder whose files all ship with the project; images are also found
+   * there by bare name, as iViewer finds them (default './assets', if it exists) */
+  assets?: string;
+  /** raw XML for <properties> after <size> (default: iva's) */
+  properties?: string;
   children?: Child;
 }
-export interface PageProps extends Pick<StyleProps, 'bg' | 'image' | 'theme'> {
+export interface PageProps extends Pick<StyleProps, 'bg' | 'image' | 'theme'>, XmlProp {
   name: string;
   /** the page shown at start (default: the first page) */
   start?: boolean;
   tags?: string | string[];
   children?: Child;
 }
-export interface OrientationProps extends Pick<StyleProps, 'bg' | 'image' | 'theme'> {
+export interface OrientationProps extends Pick<StyleProps, 'bg' | 'image' | 'theme'>, XmlProp {
   children?: Child;
 }
-export interface SubpageProps extends Placement, Pick<StyleProps, 'bg' | 'image' | 'theme'> {
+export interface SubpageProps extends Placement, Pick<StyleProps, 'bg' | 'image' | 'theme'>, XmlProp {
   name: string;
   w: number;
   h: number;
@@ -157,10 +173,10 @@ export interface SubpageProps extends Placement, Pick<StyleProps, 'bg' | 'image'
   clip?: boolean;
   children?: Child;
 }
-export interface SubpageRefProps extends Placement {
+export interface SubpageRefProps extends Placement, XmlProp {
   name: string;
 }
-export interface ButtonProps extends Geom, StyleProps {
+export interface ButtonProps extends Geom, StyleProps, XmlProp {
   /** digital join (press / feedback) */
   join?: Join;
   /** feedback: 'momentary' (default), 'toggle', or 'none' (only the join) */
@@ -189,14 +205,14 @@ export interface ButtonProps extends Geom, StyleProps {
   /** ms before onHold (default 1000) */
   holdTime?: number;
 }
-export interface TextProps extends Geom, StyleProps {
+export interface TextProps extends Geom, StyleProps, XmlProp {
   /** serial join for the text */
   join?: Join;
   text?: string | number;
   wrap?: boolean;
   children?: Child;
 }
-export interface ImageProps extends Geom {
+export interface ImageProps extends Geom, XmlProp {
   /** a file (relative to the .jsx) or a URL */
   src?: string;
   /** serial join holding the image file / URL */
@@ -224,7 +240,7 @@ export interface MeterStyle {
   /** a <Theme type="gauge"> by name */
   theme?: string;
 }
-export interface SliderProps extends Geom, MeterStyle {
+export interface SliderProps extends Geom, MeterStyle, XmlProp {
   /** analog join */
   join?: Join;
   /** digital join, on while pressed */
@@ -246,16 +262,16 @@ export interface SliderProps extends Geom, MeterStyle {
   pressCmd?: string;
   releaseCmd?: string;
 }
-export interface GaugeProps extends Geom, MeterStyle {
+export interface GaugeProps extends Geom, MeterStyle, XmlProp {
   /** analog join */
   join?: Join;
 }
-export interface ListProps extends Geom, Pick<StyleProps, 'bg' | 'theme'> {
+export interface ListProps extends Geom, Pick<StyleProps, 'bg' | 'theme'>, XmlProp {
   /** list join */
   join?: Join;
   orientation?: 'vertical' | 'horizontal';
   /** subpage for each item: a name, or a <Subpage> defined right here */
-  item: string | VNode;
+  item?: string | VNode;
   header?: string | VNode;
   title?: string | VNode;
   footer?: string | VNode;
@@ -265,13 +281,15 @@ export interface ListProps extends Geom, Pick<StyleProps, 'bg' | 'theme'> {
   listEndCmd?: string;
   listEndOffset?: number;
 }
-export interface InputProps extends Geom, StyleProps {
+export interface InputProps extends Geom, StyleProps, XmlProp {
   /** serial join with the text */
   join?: Join;
+  /** initial text */
+  text?: string | number;
   password?: boolean;
   autoFocus?: boolean;
 }
-export interface WebProps extends Geom {
+export interface WebProps extends Geom, XmlProp {
   url: string;
   join?: number;
   titleJoin?: number;
@@ -280,7 +298,7 @@ export interface WebProps extends Geom {
   refreshJoin?: number;
   stopJoin?: number;
 }
-export interface VideoProps extends Geom {
+export interface VideoProps extends Geom, XmlProp {
   url: string;
   join?: number;
   playJoin?: number;
@@ -294,7 +312,7 @@ export interface VideoProps extends Geom {
 }
 /** js code, or set a join: { join: 'd10', value: 1 } ([x], [y] tokens allowed) */
 export type GestureAction = string | { js?: string; join?: string | JoinRef; value?: string | number };
-export interface GestureProps {
+export interface GestureProps extends XmlProp {
   type: 'tap' | 'swipe' | 'pan' | 'press' | 'rotate' | 'pinch';
   name?: string;
   touches?: number;
@@ -304,7 +322,7 @@ export interface GestureProps {
   onChange?: GestureAction | GestureAction[];
   onEnd?: GestureAction | GestureAction[];
 }
-export interface SystemProps {
+export interface SystemProps extends XmlProp {
   name: string;
   /** IP or host name ('127.0.0.1' = loopback, handled inside the panel) */
   host: string;
@@ -329,7 +347,7 @@ export interface SystemProps {
   maxConnections?: number;
   children?: Child;
 }
-export interface CommandProps {
+export interface CommandProps extends XmlProp {
   name: string;
   /** what it sends (also as children); \\xNN escapes, [tokens] */
   send?: string;
@@ -342,13 +360,17 @@ export interface CommandProps {
   folder?: string;
   children?: Child;
 }
-export interface FeedbackProps {
+export interface FeedbackProps extends XmlProp {
   name: string;
   /** regular expression; (?ims) flags allowed at the start */
   regex: string;
   children?: Child;
 }
-export interface CaptureProps {
+export interface CaptureProps extends XmlProp {
+  /** how the capture is read (default: the join's type): 'a' = a number
+   * (transform, min / max), 'd' = on / off (onVal / offVal), 's' = text.
+   * `type="a" join="s2"` puts a number, transformed, into serial join 2. */
+  type?: 'd' | 'a' | 's';
   /** capture group (default 1) */
   index?: number;
   /** the join that gets it: d(5), 's:title', 'a10' ... */
@@ -365,29 +387,29 @@ export interface CaptureProps {
   unit?: 'decimal' | 'hex' | 'hexb';
   setToken?: boolean;
 }
-export interface OnMatchProps {
+export interface OnMatchProps extends XmlProp {
   target?: string | JoinRef;
   value?: string | number;
   cmd?: string;
   token?: string;
 }
-export interface MacroProps {
+export interface MacroProps extends XmlProp {
   name: string;
   children?: Child;
 }
-export interface StepProps {
+export interface StepProps extends XmlProp {
   /** command name */
   command: string;
   /** ms from the macro start */
   delay?: number;
 }
-export interface TokenProps {
+export interface TokenProps extends XmlProp {
   /** [brackets] optional */
   name: string;
   value?: string | number;
   persist?: boolean;
 }
-export interface ScriptProps {
+export interface ScriptProps extends XmlProp {
   /** a .js file (relative to the .jsx) */
   src?: string;
   /** name in the project (default: the file name) */
@@ -395,7 +417,7 @@ export interface ScriptProps {
   /** inline code instead of src */
   code?: string;
 }
-export interface SoundProps {
+export interface SoundProps extends XmlProp {
   name: string;
   src: string;
   /** digital join that plays it */
@@ -403,13 +425,21 @@ export interface SoundProps {
   loop?: boolean;
   releaseStop?: boolean;
 }
-export interface ThemeProps extends Omit<StyleProps, 'theme'> {
+export interface ThemeProps extends Omit<StyleProps, 'theme'>, XmlProp {
   name: string;
+  /** the CSS of each state, exactly as written (instead of style props) */
+  states?: string[];
   type: 'button' | 'text' | 'background' | 'gauge' | 'input' | 'list';
   /** style when active (buttons) */
   active?: StyleProps;
 }
 
+/** A .gui element written as is: `<Raw xml='<timer j="1" interval="0" />' />` */
+export interface RawProps {
+  xml: string;
+}
+
+export const Raw = intrinsic<RawProps>('Raw');
 export const Project = intrinsic<ProjectProps>('Project');
 export const Page = intrinsic<PageProps>('Page');
 export const Landscape = intrinsic<OrientationProps>('Landscape');
@@ -442,7 +472,7 @@ const PLACEMENT = ['x', 'y', 'join', 'visible', 'in', 'out', 'topmost', 'clickth
 
 /** The props each element takes (children aside). */
 export const PROPS: Record<string, string[]> = {
-  Project: ['name', 'width', 'height', 'otherSize', 'autoposition', 'joinBase'],
+  Project: ['name', 'width', 'height', 'otherSize', 'autoposition', 'joinBase', 'assets', 'properties'],
   Page: ['name', 'start', 'bg', 'image', 'theme', 'tags'],
   Landscape: ['bg', 'image', 'theme'],
   Portrait: ['bg', 'image', 'theme'],
@@ -456,7 +486,7 @@ export const PROPS: Record<string, string[]> = {
     'dragCmd', 'pressCmd', 'releaseCmd', ...METER],
   Gauge: [...GEOM, 'tags', 'join', ...METER],
   List: [...GEOM, 'tags', 'join', 'orientation', 'item', 'header', 'title', 'footer', 'swipeDelete', 'scrollCmd', 'scrollInterval', 'listEndCmd', 'listEndOffset', 'bg', 'theme'],
-  Input: [...GEOM, 'tags', 'join', 'password', 'autoFocus', ...STYLE],
+  Input: [...GEOM, 'tags', 'join', 'text', 'password', 'autoFocus', ...STYLE],
   Web: [...GEOM, 'tags', 'url', 'join', 'titleJoin', 'backJoin', 'forwardJoin', 'refreshJoin', 'stopJoin'],
   Video: [...GEOM, 'tags', 'url', 'join', 'playJoin', 'stopJoin', 'format', 'autoplay', 'controls', 'bg', 'cache', 'auth'],
   Gesture: ['type', 'name', 'touches', 'taps', 'direction', 'onBegin', 'onChange', 'onEnd'],
@@ -464,15 +494,17 @@ export const PROPS: Record<string, string[]> = {
     'heartbeat', 'startupCmd', 'startupMacro', 'maxConnections'],
   Command: ['name', 'send', 'js', 'jsSendsCommand', 'target', 'value', 'folder'],
   Feedback: ['name', 'regex'],
-  Capture: ['index', 'join', 'name', 'onVal', 'offVal', 'transform', 'min', 'max', 'unit', 'setToken'],
+  Capture: ['index', 'join', 'type', 'name', 'onVal', 'offVal', 'transform', 'min', 'max', 'unit', 'setToken'],
   OnMatch: ['target', 'value', 'cmd', 'token'],
   Macro: ['name'],
   Step: ['command', 'delay'],
   Token: ['name', 'value', 'persist'],
   Script: ['src', 'name', 'code'],
   Sound: ['name', 'src', 'join', 'loop', 'releaseStop'],
-  Theme: ['name', 'type', 'active', ...STYLE.filter((p) => p !== 'theme')],
+  Theme: ['name', 'type', 'active', 'states', ...STYLE.filter((p) => p !== 'theme')],
+  Raw: ['xml'],
 };
+for (const [name, props] of Object.entries(PROPS)) if (name !== 'Raw') props.push('xml');
 
 /** Required props (a missing one is an error). */
 export const REQUIRED: Record<string, string[]> = {
@@ -481,7 +513,7 @@ export const REQUIRED: Record<string, string[]> = {
   Subpage: ['name', 'w', 'h'],
   SubpageRef: ['name'],
   Button: ['w', 'h'], Text: ['w', 'h'], Image: ['w', 'h'], Slider: ['w', 'h'], Gauge: ['w', 'h'],
-  List: ['w', 'h', 'item'], Input: ['w', 'h'], Web: ['w', 'h', 'url'], Video: ['w', 'h', 'url'],
+  List: ['w', 'h'], Input: ['w', 'h'], Web: ['w', 'h', 'url'], Video: ['w', 'h', 'url'],
   Gesture: ['type'],
   System: ['name', 'host', 'port'],
   Command: ['name'],
@@ -492,6 +524,7 @@ export const REQUIRED: Record<string, string[]> = {
   Token: ['name'],
   Sound: ['name', 'src'],
   Theme: ['name', 'type'],
+  Raw: ['xml'],
 };
 
 /** Style props allowed inside `active={{...}}` and <Theme>. */

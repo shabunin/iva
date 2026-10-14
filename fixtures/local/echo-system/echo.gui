@@ -6,6 +6,10 @@
       <portrait width="768" height="1024" />
       <landscape width="1024" height="768" />
     </size>
+    <autoposition />
+    <imagefolder>
+    </imagefolder>
+    <debug loaderrors="0" connectionerrors="0" />
   </properties>
   <themes>
     <theme type="background" name=".Bg"><![CDATA[background-color: #20242a;]]></theme>
@@ -15,24 +19,25 @@
   </themes>
   <systems>
     <!-- 127.0.0.2, not .1: cf-runtime handles 127.0.0.1 systems in-process (loopback) -->
-    <system name="Echo" ip="127.0.0.2" port="5199" protocol="tcp" alwayson="1" eom="\x0D" connectionStatus="100" disconnectionStatus="0">
+    <system name="Echo" ip="127.0.0.2" port="5199" origin="0" protocol="tcp" alwayson="1" offlinequeue="0" accept="0" acceptBroadcasts="0" ssl="0" maxconnections="0" heartbeatRx="" heartbeatTx="" heartbeatMode="-1" eom="\x0D" connectionStatus="100" disconnectionStatus="0" startupCmd="" startupMacro="" textEncoding="" js="">
       <cmd name="Ping">hello\x0D</cmd>
       <fb name="reply" regex="echo:(.*)">
         <group index="1" name="" datatype="s" target="s10" />
       </fb>
     </system>
   </systems>
-  <page name="Main" start="1" j="0">
+  <page name="Main" j="0" transition="" subtype="" time="0" ease="" start="1">
+    <portrait />
     <landscape t="Bg">
-      <btn j="0" x="80" y="80" w="240" h="80" t="Btn" sim="1" cmd="Ping">
+      <btn j="0" x="80" y="80" w="240" h="80" t="Btn" flip="None" sim="1" l="0" s="1" cmd="Ping">
         <inactive s="0">Send Ping</inactive>
         <active s="0">Send Ping</active>
       </btn>
-      <btn j="100" x="360" y="80" w="240" h="80" t="Btn">
+      <btn j="100" x="360" y="80" w="240" h="80" t="Btn" flip="None" sim="0" l="0" s="1">
         <inactive s="0">offline</inactive>
         <active s="0">connected</active>
       </btn>
-      <txt j="10" x="80" y="200" w="800" h="60" t="Big">(waiting for a reply)</txt>
+      <txt j="10" x="80" y="200" w="800" h="60" t="Big" wrap="False" l="0">(waiting for a reply)</txt>
     </landscape>
   </page>
 </gui>

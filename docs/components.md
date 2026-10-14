@@ -8,9 +8,9 @@ injected); `import { Button } from 'iva'` works too.
 
 | JSX | `.gui` | Key props |
 |---|---|---|
-| `<Project>` | `<gui>` + `<properties>` | `name`, `width`, `height` (wider than tall → landscape is the main orientation), `otherSize`, `autoposition`, `joinBase` |
-| `<Page>` | `<page>` + `<portrait>`/`<landscape>` | `name`, `start`, `bg`, `image`, `theme`, `tags`. Items go into the main orientation |
-| `<Landscape>` / `<Portrait>` | `<landscape>` / `<portrait>` | `bg`, `image`, `theme`: for a page laid out for both orientations |
+| `<Project>` | `<gui>` + `<properties>` | `name`, `width`, `height` (wider than tall → landscape is the main orientation), `otherSize`, `autoposition`, `joinBase`, `assets` (a folder shipped whole; images found there by bare name; default `./assets`), `properties` (raw XML after `<size>`) |
+| `<Page>` | `<page>` + `<portrait>`/`<landscape>` | `name`, `start`, `bg`, `image`, `theme`, `tags`. Items go into the main orientation (the other is written empty, as GUI Designer does) |
+| `<Landscape>` / `<Portrait>` | `<landscape>` / `<portrait>` | `bg`, `image`, `theme`. With these, the page has exactly the orientations given, in that order |
 | `<Subpage>` | `<subpage name w h>` (definition) + placement | `name`, `w`, `h`, `clip`, `bg`/`image`/`theme`. Inside a page it is defined *and* placed (`x`, `y`, `join`, `visible`, `in`, `out`, `topmost`, `clickthrough`); in `<Project>` it is only defined |
 | `<SubpageRef>` | `<subpage name x y j …>` | `name` + the placement props: places a subpage defined elsewhere |
 
@@ -24,7 +24,7 @@ injected); `import { Button } from 'iva'` works too.
 | `<Slider>` | `<slider>` + `<indicator>`×2 | `join` analog; `pressJoin` digital | `min`, `max`, `decimals`, `invert`, `feedback`, `dragCmd` / `pressCmd` / `releaseCmd`; looks: `bg`/`image` (track), `fill`/`fillImage`, `radius`, `thumb`/`activeThumb` or `thumbColor` + `thumbSize` |
 | `<Gauge>` | `<gauge>` | `join` analog | `bg`/`image`, `fill`/`fillImage`, `radius`, `theme` |
 | `<List>` | `<list>` | `join` list | `item` (subpage name or an inline `<Subpage>`), `header`, `title`, `footer`, `orientation`, `swipeDelete`, `scrollCmd`, `scrollInterval`, `listEndCmd`, `listEndOffset`, `bg` |
-| `<Input>` | `<input>` | `join` serial (`s=`) | `password`, `autoFocus`, style props |
+| `<Input>` | `<input>` | `join` serial (`s=`) | `text` (initial), `password`, `autoFocus`, style props |
 | `<Web>` | `<web>` | `join`, `titleJoin`, `backJoin`, `forwardJoin`, `refreshJoin`, `stopJoin` (numbers) | `url` |
 | `<Video>` | `<video>` | `join`, `playJoin`, `stopJoin` (numbers) | `url`, `format` (`mjpeg`·`mpeg4`), `autoplay`, `controls`, `bg`, `cache`, `auth={{user, password, …}}` |
 | `<Gesture>` | `<gesture>` + `<action phase>` | in actions: `join: 'd10'` / `d(10)` | `type` (`tap`·`swipe`·`pan`·`press`·`rotate`·`pinch`), `touches`, `taps`, `direction`, `onBegin` / `onChange` / `onEnd` (js string or `{ js, join, value }`) |
@@ -38,13 +38,14 @@ All items take `x`, `y` (default 0), `w`, `h` (required) and `tags`.
 | `<System>` | `<systems><system>` | `name`, `host`, `port`, `protocol` (`tcp`·`udp`), `localPort`, `accept`, `acceptBroadcasts`, `eom`, `alwaysOn`, `offlineQueue`, `connectJoin` / `disconnectJoin`, `heartbeat={{tx, rx, mode}}`, `startupCmd`, `startupMacro`, `maxConnections`; children `<Command>`, `<Feedback>` |
 | `<Command>` | `<cmd>` | `name`, `send` (or children; `\xNN`, `[tokens]`), `js` + `jsSendsCommand`, `target` + `value` (set a join), `folder` |
 | `<Feedback>` | `<fb>` | `name`, `regex` (`(?ims)` flags allowed); children `<Capture>`, `<OnMatch>` |
-| `<Capture>` | `<group>` | `join` (`d(5)`, `'s12'`, `'a:level'`), `index`, `name`, `onVal` / `offVal`, `transform`, `min` / `max`, `unit`, `setToken` |
+| `<Capture>` | `<group>` | `join` (`d(5)`, `'s12'`, `'a:level'`), `type` (how it's read, default: the join's type: `type="a" join="s2"` = a number, transformed, into a serial join), `index`, `name`, `onVal` / `offVal`, `transform`, `min` / `max`, `unit`, `setToken` |
 | `<OnMatch>` | `<onmatch>` | `target`, `value`, `cmd`, `token` |
 | `<Macro>` + `<Step>` | `<macros><macro>` + `<command delay>` | `name`; steps: `command`, `delay` (ms from the start) |
 | `<Token>` | `<tokens><token>` | `name` (`[brackets]` optional), `value`, `persist` |
 | `<Script>` | `<scripts><script>` + the file | `src` (copied), or `name` + `code` |
 | `<Sound>` | `<sounds><sound>` + the file | `name`, `src`, `join` digital, `loop`, `releaseStop` |
-| `<Theme>` | `<themes><theme>` | `name`, `type` (`button`·`text`·`background`·`gauge`·`input`·`list`), style props, `active`: a named theme, used with `theme="Name"` |
+| `<Theme>` | `<themes><theme>` | `name`, `type` (`button`·`text`·`background`·`gauge`·`input`·`list`), style props + `active`, or `states={[css0, css1, …]}` (exact CSS): a named theme, used with `theme="Name"` |
+| `<Raw>` | the element as written | `xml`: one .gui element, verbatim (anywhere an item, a system / feedback / macro child, or a project section goes) |
 
 ## Style props → themes
 
@@ -82,3 +83,10 @@ script, loaded first, so project scripts write `CF.setJoin(Joins.s.title, …)`.
 | `onHold={[macro('AllOff')]}` + `holdTime={1500}` | `<press hold="1500" macro="AllOff"/>` |
 | `onRelease={[js('stop()', { delay: 100 })]}` | `<release delay="100" js="stop()"/>` |
 | `page="Settings"` | `flip="Settings"` |
+
+## What iva doesn't model
+
+Every element takes `xml={{ attr: 'value' }}`: attributes written over what
+iva writes, `null` removing one. `<Raw xml={`<timer j="1" interval="0" />`} />`
+writes an element as is. The decompiler uses both, so any `.gui` survives a
+round trip; in new code they're rarely needed.

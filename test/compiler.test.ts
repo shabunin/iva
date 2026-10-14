@@ -38,7 +38,7 @@ test('the hello example reads back through cf-runtime', async () => {
   const r = await compile(HELLO);
   const gui = await parseGUI(r.xml);
   assert.deepEqual(Object.keys(gui.pages), ['Home', 'Settings']);
-  assert.equal(gui.startPage, 'Home');
+  assert.equal(gui.startPage, ''); // no start page: the first one
   assert.deepEqual(gui.properties.landscape, { width: 1024, height: 768 });
   const home = gui.pages.Home.landscape!;
   const lights = home.find((n) => n.type === 'btn' && n.inactiveText === 'Lights')!;
@@ -115,11 +115,13 @@ test('a slider drawn from colours gets generated images', async () => {
   assert.match(gui.themes[slider.t!].states['1']['background-image'], /iva_fill_/);
 });
 
-test('images are copied by name, and must exist', async () => {
+test('images are copied by name; a missing one is a warning', async () => {
   const png = circle(8, '#fff');
   const r = await build(wrap(`<Image w={10} h={10} src="./logo.png" />`), { 'logo.png': png });
   assert.deepEqual(r.assets.map((a) => a.name), ['logo.png']);
-  await fails(wrap(`<Image w={10} h={10} src="./nope.png" />`), /image not found: \.\/nope\.png/);
+  const missing = await build(wrap(`<Image w={10} h={10} src="./nope.png" />`));
+  assert.match(missing.warnings.join('\n'), /image not found: \.\/nope\.png/);
+  assert.match(missing.xml, />nope\.png<\/img>/);
 });
 
 test('mistakes are reported with a suggestion and the line', async () => {

@@ -28,6 +28,23 @@ node bin/iva.mjs build examples/hello/app.jsx # -> examples/hello/dist/: .gui, i
 Every element and prop: [docs/components.md](docs/components.md).
 Build errors point at the file and line, with "did you mean" for typos.
 
+## `iva decompile`
+
+An existing project (from GUI Designer, or anywhere) into JSX:
+
+```bash
+node bin/iva.mjs decompile "path/to/Project.gui" my-panel
+```
+
+`my-panel/` gets `app.jsx`, `themes.jsx`, `systems.jsx`, `pages/*.jsx`,
+`subpages/*.jsx`, and the project's images and sounds (`assets/`) and scripts
+(`scripts/`). It is checked before it's handed over: decompile compiles it
+back and compares with the original element by element, and fixes what comes
+out different. All 48 CommandFusion demos come back as the same `.gui`
+(`node --import tsx tools/roundtrip.ts fixtures/DemoUserInterfaces`).
+Attributes iva doesn't model are kept in `xml={{ ... }}`, elements it doesn't
+model (`<timer>`) as `<Raw xml={...} />`.
+
 ## `iva dev`
 
 Previews a JSX project, or existing `.gui` files:
@@ -75,6 +92,8 @@ Not in the backend yet: hosting HTTP / WebSocket servers, mDNS, device APIs.
 bin/iva.mjs            CLI entry (runs the TypeScript through tsx)
 src/cli/               commands
 src/compiler/          JSX -> .gui: runtime, components, build, themes, joins, images
+src/decompiler/        .gui -> JSX, and the .gui comparison it checks itself with
+tools/roundtrip.ts     decompile + compile + compare every .gui under a folder
 src/server/            dev server, project loader, host backend
 src/preview/           the preview page (+ bridge/ for agapi's host classes)
 test/                  node:test

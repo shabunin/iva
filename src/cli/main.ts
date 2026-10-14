@@ -5,7 +5,8 @@ import { parseArgs } from 'node:util';
 import fs from 'node:fs';
 import path from 'node:path';
 import { resolveAgapi, startDev } from '../server/dev.js';
-import { compile, IvaError, writeBuild } from '../compiler/index.js';
+import { compile, IvaError, slug, writeBuild } from '../compiler/index.js';
+import { decompile } from '../decompiler/index.js';
 
 const HELP = `iva - iViewer assistant (CommandFusion .gui projects)
 
@@ -15,6 +16,10 @@ Usage:
   iva dev [target]     live preview of a JSX project (app.jsx), a .gui, or a
                        folder of .gui files, backed by a Node runtime: real
                        TCP/UDP/HTTP from this machine; reloads on save
+  iva decompile <file.gui> [dir]
+                       turn a .gui (with its images and scripts) into a JSX
+                       project in dir (default: a folder named after it), and
+                       check that it compiles back to the same .gui
   iva help
 
 Options (build):
@@ -59,6 +64,25 @@ async function main(argv: string[]) {
         return;
       }
       throw e;
+    }
+    return;
+  }
+  if (cmd === 'decompile') {
+    const { positionals, values } = parseArgs({ args: rest, allowPositionals: true, options: { force: { type: 'boolean', short: 'f' } } });
+    const gui = positionals[0];
+    if (!gui || !fs.existsSync(gui)) throw new Error('give the .gui to decompile: iva decompile path/to/project.gui');
+    const out = path.resolve(positionals[1] ?? slug(path.basename(gui, path.extname(gui))));
+    if (fs.existsSync(out) && fs.readdirSync(out).length && !values.force) throw new Error(`${path.relative(process.cwd(), out)} isn't empty (use --force to write into it)`);
+    const r = await decompile(gui, out);
+    for (const w of [...new Set(r.warnings)]) process.stderr.write(`warning: ${w}\n`);
+    const raw = Object.entries(r.raw).map(([k, v]) => `${v} <${k}>`).join(', ');
+    process.stdout.write(`${path.relative(process.cwd(), r.entry)}: ${r.files.length} files${raw ? `; kept as <Raw>: ${raw}` : ''}\n`);
+    // decompile() already compiled it back and compared
+    if (r.differences.length) {
+      process.stderr.write(`round trip: ${r.differences.length} differences from the original:\n${r.differences.slice(0, 20).map((d) => `  ${d}`).join('\n')}\n`);
+      process.exitCode = 1;
+    } else {
+      process.stdout.write('round trip: compiles back to the same .gui\n');
     }
     return;
   }
