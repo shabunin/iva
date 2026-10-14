@@ -6,6 +6,9 @@
 
 import { intrinsic, type Child, type VNode } from './runtime.js';
 
+/** An iva element: used as <Name ...props />. */
+export type Component<P> = (props: P) => VNode;
+
 // ── values ─────────────────────────────────────────────────────────
 
 export type JoinType = 'd' | 'a' | 's' | 'l';
@@ -16,14 +19,15 @@ export interface JoinRef {
   id: number | string;
 }
 const joinRef = (type: JoinType) => (id: number | string): JoinRef => ({ $$join: 1, type, id });
+type JoinHelper = (id: number | string) => JoinRef;
 /** digital join: `d(12)`, `d('power')` */
-export const d = joinRef('d');
+export const d: JoinHelper = joinRef('d');
 /** analog join */
-export const a = joinRef('a');
+export const a: JoinHelper = joinRef('a');
 /** serial join */
-export const s = joinRef('s');
+export const s: JoinHelper = joinRef('s');
 /** list join */
-export const l = joinRef('l');
+export const l: JoinHelper = joinRef('l');
 
 /** A join prop whose type the element fixes: `join={12}`, `join="power"` (named) or `d(12)`. */
 export type Join = number | string | JoinRef;
@@ -56,12 +60,13 @@ export interface ActionOptions {
   repeat?: number;
 }
 const action = (kind: Action['kind']) => (value: string, opts: ActionOptions = {}): Action => ({ $$action: 1, kind, value, ...opts });
+type ActionHelper = (value: string, opts?: ActionOptions) => Action;
 /** run a <Command> by name */
-export const cmd = action('command');
+export const cmd: ActionHelper = action('command');
 /** run a <Macro> by name */
-export const macro = action('macro');
+export const macro: ActionHelper = action('macro');
 /** run JavaScript */
-export const js = action('js');
+export const js: ActionHelper = action('js');
 export type ActionList = (string | Action)[] | string | Action;
 
 // ── style ──────────────────────────────────────────────────────────
@@ -75,8 +80,11 @@ export interface StyleProps extends XmlProp {
   /** 9-slice the image: px from each edge, `12` or `[top, right, bottom, left]` */
   slice?: number | [number, number, number, number];
   color?: string;
+  /** font family, as iOS / Android name it: 'Helvetica Neue', 'Avenir Next', 'Roboto' (default 'Arial') */
   font?: string;
-  /** iOS font name (CSS `font-name`), e.g. 'HelveticaNeue-Bold' */
+  /** a style of the family other than bold / italic: 'Medium', 'Light', 'Demi Bold', ... */
+  fontStyle?: string;
+  /** the device's font name (`font-name`); iva finds it from font + style, give it for fonts you ship */
   fontName?: string;
   fontSize?: number;
   bold?: boolean;
@@ -95,7 +103,7 @@ export interface StyleProps extends XmlProp {
   theme?: string;
 }
 
-const STYLE = ['bg', 'image', 'slice', 'color', 'font', 'fontName', 'fontSize', 'bold', 'italic', 'align', 'valign', 'shadow', 'opacity', 'padding', 'borderWidth', 'borderColor', 'css', 'theme'];
+const STYLE = ['bg', 'image', 'slice', 'color', 'font', 'fontStyle', 'fontName', 'fontSize', 'bold', 'italic', 'align', 'valign', 'shadow', 'opacity', 'padding', 'borderWidth', 'borderColor', 'css', 'theme'];
 const GEOM = ['x', 'y', 'w', 'h'];
 const METER = ['bg', 'image', 'fill', 'fillImage', 'radius', 'theme'];
 
@@ -138,11 +146,30 @@ interface XmlProp {
   xml?: Record<string, string | number | null>;
 }
 
+/** Panel sizes of the devices GUI Designer lists (landscape: width x height). */
+export const DEVICES = {
+  'iPad Pro 12.9': [1366, 1024],
+  'iPad Pro 11': [1194, 834],
+  'iPad Air 10.5': [1112, 834],
+  iPad: [1024, 768],
+  'iPhone XS Max': [896, 414],
+  'iPhone X': [812, 375],
+  'iPhone 8 Plus': [736, 414],
+  'iPhone 8': [667, 375],
+  'iPhone 5': [568, 320],
+  'iPhone 4': [480, 320],
+} as const satisfies Record<string, readonly [number, number]>;
+export type Device = keyof typeof DEVICES;
+
 export interface ProjectProps extends XmlProp {
   name: string;
+  /** a device's panel size (instead of width / height) */
+  device?: Device;
+  /** with device: the main orientation (default 'landscape') */
+  orientation?: 'landscape' | 'portrait';
   /** the panel size; width > height makes landscape the main orientation */
-  width: number;
-  height: number;
+  width?: number;
+  height?: number;
   /** the other orientation's size (default: width and height swapped) */
   otherSize?: [number, number];
   autoposition?: 'scale' | 'none' | null;
@@ -324,26 +351,42 @@ export interface GestureProps extends XmlProp {
 }
 export interface SystemProps extends XmlProp {
   name: string;
-  /** IP or host name ('127.0.0.1' = loopback, handled inside the panel) */
+  /** IP or host name of the remote ('127.0.0.1' = loopback, handled inside the panel; '0.0.0.0' for a server) */
   host: string;
+  /** the remote port (a TCP server listens on localPort) */
   port: number;
-  protocol?: 'tcp' | 'udp';
-  /** local (source) port */
+  /** 'tcp' (default), 'udp', 'http' */
+  protocol?: 'tcp' | 'udp' | 'http' | 'sip';
+  /** local port: the source port; a TCP server's listening port */
   localPort?: number;
-  /** listen for connections (server) */
+  /** TCP: be a server (accept connections); UDP: accept incoming (default true) */
   accept?: boolean;
+  /** UDP: accept broadcasts (default true) */
   acceptBroadcasts?: boolean;
   /** end of message, e.g. '\\x0D' */
   eom?: string;
-  /** keep connected (default true) */
-  alwaysOn?: boolean;
+  /** TCP client: 'alwaysOn' (default) stays connected; 'transitory' connects to send, then
+   * disconnects after idleTimeout; 'dialog' also waits for each reply (dialogTimeout) */
+  mode?: 'alwaysOn' | 'transitory' | 'dialog';
+  /** ms a transitory / dialog connection stays open with no traffic */
+  idleTimeout?: number;
+  /** ms to wait for a reply in dialog mode (0 = for ever) */
+  dialogTimeout?: number;
+  /** TCP: queue what's sent while offline (default true) */
   offlineQueue?: boolean;
   /** digital join, on while connected */
   connectJoin?: Join;
+  /** digital join, on while disconnected */
   disconnectJoin?: Join;
-  heartbeat?: { tx?: string; rx?: string; mode?: number };
+  /** heartbeat: 'reply' answers rx with tx; 'initiate' sends tx and expects rx */
+  heartbeat?: { mode: 'reply' | 'initiate'; tx?: string; rx?: string };
+  ssl?: boolean;
+  textEncoding?: string;
+  /** name of a JavaScript function that sends the data instead of the system */
+  sendHandler?: string;
   startupCmd?: string;
   startupMacro?: string;
+  /** TCP server: connections at most (0 = no limit) */
   maxConnections?: number;
   children?: Child;
 }
@@ -439,40 +482,41 @@ export interface RawProps {
   xml: string;
 }
 
-export const Raw = intrinsic<RawProps>('Raw');
-export const Project = intrinsic<ProjectProps>('Project');
-export const Page = intrinsic<PageProps>('Page');
-export const Landscape = intrinsic<OrientationProps>('Landscape');
-export const Portrait = intrinsic<OrientationProps>('Portrait');
-export const Subpage = intrinsic<SubpageProps>('Subpage');
-export const SubpageRef = intrinsic<SubpageRefProps>('SubpageRef');
-export const Button = intrinsic<ButtonProps>('Button');
-export const Text = intrinsic<TextProps>('Text');
-export const Image = intrinsic<ImageProps>('Image');
-export const Slider = intrinsic<SliderProps>('Slider');
-export const Gauge = intrinsic<GaugeProps>('Gauge');
-export const List = intrinsic<ListProps>('List');
-export const Input = intrinsic<InputProps>('Input');
-export const Web = intrinsic<WebProps>('Web');
-export const Video = intrinsic<VideoProps>('Video');
-export const Gesture = intrinsic<GestureProps>('Gesture');
-export const System = intrinsic<SystemProps>('System');
-export const Command = intrinsic<CommandProps>('Command');
-export const Feedback = intrinsic<FeedbackProps>('Feedback');
-export const Capture = intrinsic<CaptureProps>('Capture');
-export const OnMatch = intrinsic<OnMatchProps>('OnMatch');
-export const Macro = intrinsic<MacroProps>('Macro');
-export const Step = intrinsic<StepProps>('Step');
-export const Token = intrinsic<TokenProps>('Token');
-export const Script = intrinsic<ScriptProps>('Script');
-export const Sound = intrinsic<SoundProps>('Sound');
-export const Theme = intrinsic<ThemeProps>('Theme');
+export const Raw: Component<RawProps> = intrinsic<RawProps>('Raw');
+export const Project: Component<ProjectProps> = intrinsic<ProjectProps>('Project');
+export const Page: Component<PageProps> = intrinsic<PageProps>('Page');
+export const Landscape: Component<OrientationProps> = intrinsic<OrientationProps>('Landscape');
+export const Portrait: Component<OrientationProps> = intrinsic<OrientationProps>('Portrait');
+export const Subpage: Component<SubpageProps> = intrinsic<SubpageProps>('Subpage');
+export const SubpageRef: Component<SubpageRefProps> = intrinsic<SubpageRefProps>('SubpageRef');
+export const Button: Component<ButtonProps> = intrinsic<ButtonProps>('Button');
+export const Text: Component<TextProps> = intrinsic<TextProps>('Text');
+export const Image: Component<ImageProps> = intrinsic<ImageProps>('Image');
+export const Slider: Component<SliderProps> = intrinsic<SliderProps>('Slider');
+export const Gauge: Component<GaugeProps> = intrinsic<GaugeProps>('Gauge');
+export const List: Component<ListProps> = intrinsic<ListProps>('List');
+export const Input: Component<InputProps> = intrinsic<InputProps>('Input');
+export const Web: Component<WebProps> = intrinsic<WebProps>('Web');
+export const Video: Component<VideoProps> = intrinsic<VideoProps>('Video');
+export const Gesture: Component<GestureProps> = intrinsic<GestureProps>('Gesture');
+export const System: Component<SystemProps> = intrinsic<SystemProps>('System');
+export const Command: Component<CommandProps> = intrinsic<CommandProps>('Command');
+export const Feedback: Component<FeedbackProps> = intrinsic<FeedbackProps>('Feedback');
+export const Capture: Component<CaptureProps> = intrinsic<CaptureProps>('Capture');
+export const OnMatch: Component<OnMatchProps> = intrinsic<OnMatchProps>('OnMatch');
+export const Macro: Component<MacroProps> = intrinsic<MacroProps>('Macro');
+export const Step: Component<StepProps> = intrinsic<StepProps>('Step');
+export const Token: Component<TokenProps> = intrinsic<TokenProps>('Token');
+export const Script: Component<ScriptProps> = intrinsic<ScriptProps>('Script');
+export const Sound: Component<SoundProps> = intrinsic<SoundProps>('Sound');
+export const Theme: Component<ThemeProps> = intrinsic<ThemeProps>('Theme');
 
 const PLACEMENT = ['x', 'y', 'join', 'visible', 'in', 'out', 'topmost', 'clickthrough', 'tags'];
 
-/** The props each element takes (children aside). */
+/** The props each element takes (children aside).
+ * @internal */
 export const PROPS: Record<string, string[]> = {
-  Project: ['name', 'width', 'height', 'otherSize', 'autoposition', 'joinBase', 'assets', 'properties'],
+  Project: ['name', 'device', 'orientation', 'width', 'height', 'otherSize', 'autoposition', 'joinBase', 'assets', 'properties'],
   Page: ['name', 'start', 'bg', 'image', 'theme', 'tags'],
   Landscape: ['bg', 'image', 'theme'],
   Portrait: ['bg', 'image', 'theme'],
@@ -490,8 +534,8 @@ export const PROPS: Record<string, string[]> = {
   Web: [...GEOM, 'tags', 'url', 'join', 'titleJoin', 'backJoin', 'forwardJoin', 'refreshJoin', 'stopJoin'],
   Video: [...GEOM, 'tags', 'url', 'join', 'playJoin', 'stopJoin', 'format', 'autoplay', 'controls', 'bg', 'cache', 'auth'],
   Gesture: ['type', 'name', 'touches', 'taps', 'direction', 'onBegin', 'onChange', 'onEnd'],
-  System: ['name', 'host', 'port', 'protocol', 'localPort', 'accept', 'acceptBroadcasts', 'eom', 'alwaysOn', 'offlineQueue', 'connectJoin', 'disconnectJoin',
-    'heartbeat', 'startupCmd', 'startupMacro', 'maxConnections'],
+  System: ['name', 'host', 'port', 'protocol', 'localPort', 'accept', 'acceptBroadcasts', 'eom', 'mode', 'idleTimeout', 'dialogTimeout', 'offlineQueue',
+    'connectJoin', 'disconnectJoin', 'heartbeat', 'ssl', 'textEncoding', 'sendHandler', 'startupCmd', 'startupMacro', 'maxConnections'],
   Command: ['name', 'send', 'js', 'jsSendsCommand', 'target', 'value', 'folder'],
   Feedback: ['name', 'regex'],
   Capture: ['index', 'join', 'type', 'name', 'onVal', 'offVal', 'transform', 'min', 'max', 'unit', 'setToken'],
@@ -506,9 +550,10 @@ export const PROPS: Record<string, string[]> = {
 };
 for (const [name, props] of Object.entries(PROPS)) if (name !== 'Raw') props.push('xml');
 
-/** Required props (a missing one is an error). */
+/** Required props (a missing one is an error).
+ * @internal */
 export const REQUIRED: Record<string, string[]> = {
-  Project: ['name', 'width', 'height'],
+  Project: ['name'],
   Page: ['name'],
   Subpage: ['name', 'w', 'h'],
   SubpageRef: ['name'],
@@ -527,5 +572,6 @@ export const REQUIRED: Record<string, string[]> = {
   Raw: ['xml'],
 };
 
-/** Style props allowed inside `active={{...}}` and <Theme>. */
+/** Style props allowed inside `active={{...}}` and <Theme>.
+ * @internal */
 export const STYLE_PROPS = STYLE;

@@ -21,12 +21,37 @@ export default (
 ```
 
 ```bash
-node bin/iva.mjs dev examples/hello/app.jsx   # live preview, rebuilds on save
-node bin/iva.mjs build examples/hello/app.jsx # -> examples/hello/dist/: .gui, images, scripts, joins.json
+iva create my-panel --template demo   # or blank; --device "iPhone X"; --from Old.gui
+cd my-panel
+iva dev        # live preview, rebuilds on save; real TCP/UDP/HTTP to the devices
+iva check      # what the editor underlines + a test build
+iva build      # -> dist/: the .gui, images, scripts, joins.json
+iva designer   # build and open it in CommandFusion GUI Designer
 ```
+
+(`iva` = `node bin/iva.mjs` from this folder, or `npm link` it.)
 
 Every element and prop: [docs/components.md](docs/components.md).
 Build errors point at the file and line, with "did you mean" for typos.
+
+## A project
+
+`iva create` gives a folder with `app.jsx` (the entry), `assets/` (images,
+found by bare name as iViewer finds them), `scripts/` (iViewer JavaScript),
+`IVA.md` (the element reference), `AGENTS.md` / `CLAUDE.md` (for AI
+assistants), and `iva.d.ts` + `jsconfig.json`: open the folder in VS Code
+and elements, props and their values autocomplete, with docs on hover and
+mistakes underlined as you type (`fontSise` → "Did you mean 'fontSize'?").
+Your own components' untyped props are optional; give them JSDoc types to
+have them checked too. The types are generated from the compiler itself
+(`iva types` rewrites them).
+
+What iva writes is checked against GUI Designer: themes are laid out the
+way Designer writes them (a button's background colour shows in Designer
+only with its opacity triple, for one), `font="Helvetica Neue" bold` gets
+the device's font name (`HelveticaNeue-Bold`, from Designer's font list),
+systems take Designer's defaults per protocol, and `device="iPad Pro 11"`
+uses Designer's device sizes.
 
 ## `iva decompile`
 
@@ -93,7 +118,10 @@ bin/iva.mjs            CLI entry (runs the TypeScript through tsx)
 src/cli/               commands
 src/compiler/          JSX -> .gui: runtime, components, build, themes, joins, images
 src/decompiler/        .gui -> JSX, and the .gui comparison it checks itself with
+src/create.ts, check.ts, types.ts, designer.ts   the other commands
+templates/             iva create's templates (blank, demo) and the files every project gets
 tools/roundtrip.ts     decompile + compile + compare every .gui under a folder
+tools/gen-fonts.ts     src/compiler/fonts.json from GUI Designer's fontlist.xml
 src/server/            dev server, project loader, host backend
 src/preview/           the preview page (+ bridge/ for agapi's host classes)
 test/                  node:test

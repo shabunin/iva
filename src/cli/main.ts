@@ -7,10 +7,19 @@ import path from 'node:path';
 import { resolveAgapi, startDev } from '../server/dev.js';
 import { compile, IvaError, slug, writeBuild } from '../compiler/index.js';
 import { decompile } from '../decompiler/index.js';
+import { create, templates, VERSION } from '../create.js';
+import { check } from '../check.js';
+import { writeTypes } from '../types.js';
+import { DEVICES } from '../compiler/components.js';
+import { openInDesigner } from '../designer.js';
 
 const HELP = `iva - iViewer assistant (CommandFusion .gui projects)
 
 Usage:
+  iva create <dir>     a new project: --template blank|demo (default blank),
+                       --device "iPad" | "iPhone X" | ..., or --from file.gui
+  iva check [entry]    what the editor underlines + a test build
+  iva types [dir]      (re)write iva.d.ts and jsconfig.json for editors
   iva build [entry]    compile a JSX project (default: app.jsx) into dist/:
                        the .gui, its images and scripts, joins.json
   iva dev [target]     live preview of a JSX project (app.jsx), a .gui, or a
@@ -20,6 +29,9 @@ Usage:
                        turn a .gui (with its images and scripts) into a JSX
                        project in dir (default: a folder named after it), and
                        check that it compiles back to the same .gui
+  iva designer [entry | file.gui]
+                       build and open in CommandFusion GUI Designer (Wine on
+                       Linux / macOS: $IVA_DESIGNER, $IVA_WINEPREFIX)
   iva help
 
 Options (build):
@@ -36,6 +48,56 @@ async function main(argv: string[]) {
   const [cmd = 'help', ...rest] = argv;
   if (cmd === 'help' || cmd === '--help' || cmd === '-h') {
     process.stdout.write(HELP);
+    return;
+  }
+  if (cmd === 'create') {
+    const { values, positionals } = parseArgs({
+      args: rest,
+      allowPositionals: true,
+      options: { template: { type: 'string', short: 't' }, from: { type: 'string' }, device: { type: 'string' }, name: { type: 'string' } },
+    });
+    if (!positionals[0]) throw new Error(`where? iva create my-panel [--template ${templates().join('|')}] [--device "${Object.keys(DEVICES)[3]}"]`);
+    const r = await create(positionals[0], values);
+    for (const w of r.warnings) process.stderr.write(`warning: ${w}\n`);
+    const rel = path.relative(process.cwd(), r.dir) || '.';
+    process.stdout.write(`${rel}: ${r.files.length} files\n\n  cd ${rel}\n  iva dev\n`);
+    return;
+  }
+  if (cmd === 'check') {
+    const entry = path.resolve(rest[0] ?? 'app.jsx');
+    if (!fs.existsSync(entry)) throw new Error(`no ${path.relative(process.cwd(), entry)} (pass the entry: iva check app.jsx)`);
+    const r = await check(entry);
+    for (const n of r.notes) process.stdout.write(`${n}\n`);
+    for (const w of r.warnings) process.stderr.write(`warning: ${w}\n`);
+    for (const p of r.problems) process.stderr.write(`${p}\n`);
+    process.stdout.write(r.problems.length ? `${r.problems.length} problem${r.problems.length > 1 ? 's' : ''}\n` : 'ok\n');
+    process.exitCode = r.problems.length ? 1 : 0;
+    return;
+  }
+  if (cmd === 'designer') {
+    let target = path.resolve(rest[0] ?? 'app.jsx');
+    if (!fs.existsSync(target)) throw new Error(`no ${path.relative(process.cwd(), target)}`);
+    if (!target.toLowerCase().endsWith('.gui')) {
+      try {
+        const result = await compile(target);
+        for (const w of result.warnings) process.stderr.write(`warning: ${w}\n`);
+        target = writeBuild(result, path.join(path.dirname(target), 'dist'));
+      } catch (e) {
+        if (e instanceof IvaError) {
+          process.stderr.write(`${e.format()}\n`);
+          process.exitCode = 1;
+          return;
+        }
+        throw e;
+      }
+    }
+    const { exe } = openInDesigner(target);
+    process.stdout.write(`opening ${path.relative(process.cwd(), target)} in ${exe}\n`);
+    return;
+  }
+  if (cmd === 'types') {
+    const dir = path.resolve(rest[0] ?? '.');
+    process.stdout.write(`${writeTypes(dir, VERSION).join(', ')}\n`);
     return;
   }
   if (cmd === 'build') {

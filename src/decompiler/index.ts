@@ -511,24 +511,27 @@ class Decompiler {
 
   system(n: XNode): JNode {
     const a = new Attrs(n);
-    const hb: Record<string, PropValue> = {};
+    const protocol = a.str('protocol') ?? 'tcp';
+    const udp = protocol === 'udp';
+    const modes: Record<string, string> = { '0': 'transitory', '2': 'dialog' };
+    const alwayson = a.str('alwayson');
+    const hbMode = a.str('heartbeatMode');
     const rx = a.str('heartbeatRx');
     const tx = a.str('heartbeatTx');
-    const mode = a.num('heartbeatMode');
-    if (rx) hb.rx = rx;
-    if (tx) hb.tx = tx;
-    if (mode !== undefined && mode !== -1) hb.mode = mode;
-    const protocol = a.str('protocol');
+    const heartbeat = hbMode === '0' || hbMode === '1' ? { mode: hbMode === '0' ? 'reply' : 'initiate', rx: rx || undefined, tx: tx || undefined } : undefined;
+    const extra: Record<string, string> = {};
+    if (!heartbeat && (rx || tx || (hbMode !== undefined && hbMode !== '-1'))) Object.assign(extra, { heartbeatMode: hbMode ?? '', heartbeatRx: rx ?? '', heartbeatTx: tx ?? '' });
+    if (alwayson !== undefined && alwayson !== '1' && !modes[alwayson]) extra.alwayson = alwayson;
     const props: [string, PropValue][] = [
       ['name', a.str('name')], ['host', a.str('ip') ?? ''], ['port', a.num('port') ?? 0], ['protocol', protocol === 'tcp' ? undefined : protocol],
-      ['localPort', a.optNum('origin', 0)], ['accept', a.flag('accept')], ['acceptBroadcasts', a.flag('acceptBroadcasts')], ['eom', a.str('eom') || undefined],
-      ['alwaysOn', a.flag('alwayson', true)], ['offlineQueue', a.flag('offlinequeue')], ['connectJoin', a.join('connectionStatus')],
-      ['disconnectJoin', a.join('disconnectionStatus')], ['heartbeat', Object.keys(hb).length ? hb : undefined], ['startupCmd', a.str('startupCmd') || undefined],
-      ['startupMacro', a.str('startupMacro') || undefined], ['maxConnections', a.optNum('maxconnections', 0)],
+      ['localPort', a.optNum('origin', 0)], ['mode', alwayson ? modes[alwayson] : undefined], ['idleTimeout', a.num('idleTimeout')], ['dialogTimeout', a.num('dialogTimeout')],
+      ['accept', a.flag('accept', udp)], ['acceptBroadcasts', a.flag('acceptBroadcasts', udp)], ['eom', a.str('eom') || undefined],
+      ['offlineQueue', a.flag('offlinequeue', !udp)], ['connectJoin', a.join('connectionStatus')],
+      ['disconnectJoin', a.join('disconnectionStatus')], ['heartbeat', heartbeat], ['ssl', a.flag('ssl')],
+      ['textEncoding', a.str('textEncoding') || undefined], ['sendHandler', a.str('js') || undefined],
+      ['startupCmd', a.str('startupCmd') || undefined], ['startupMacro', a.str('startupMacro') || undefined], ['maxConnections', a.optNum('maxconnections', 0)],
+      ...(Object.keys(extra).length ? [['xml', extra] as [string, PropValue]] : []),
     ];
-    a.skip('ssl', '0');
-    a.skip('textEncoding', '');
-    a.skip('js', '');
     const kids = n.children.map((c) => {
       let jn: JNode;
       try {

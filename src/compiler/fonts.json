@@ -1,0 +1,358 @@
+{
+ "ios": {
+  "Academy Engraved LET": {
+   "Regular": "AcademyEngravedLetPlain"
+  },
+  "American Typewriter": {
+   "Regular": "AmericanTypewriter",
+   "Bold": "AmericanTypewriter-Bold",
+   "Condensed": "AmericanTypewriter-Condensed",
+   "Condensed Bold": "AmericanTypewriter-CondensedBold",
+   "Condensed Light": "AmericanTypewriter-CondensedLight",
+   "Light": "AmericanTypewriter-Light"
+  },
+  "Apple Color Emoji": {
+   "Regular": "AppleColorEmoji"
+  },
+  "Apple SD Gothic Neo": {
+   "Bold": "AppleSDGothicNeo-Bold",
+   "Medium": "AppleSDGothicNeo-Medium"
+  },
+  "Arial": {
+   "Regular": "ArialMT",
+   "Bold Italic": "Arial-BoldItalicMT",
+   "Bold": "Arial-BoldMT",
+   "Italic": "Arial-ItalicMT"
+  },
+  "Arial Hebrew": {
+   "Regular": "ArialHebrew",
+   "Bold": "ArialHebrew-Bold"
+  },
+  "Arial Rounded MT Bold": {
+   "Regular": "ArialRoundedMTBold"
+  },
+  "Avenir": {
+   "Black": "Avenir-Black",
+   "Black Italic": "Avenir-BlackOblique",
+   "Book": "Avenir-Book",
+   "Book Italic": "Avenir-BookOblique",
+   "Heavy": "Avenir-Heavy",
+   "Heavy Italic": "Avenir-HeavyOblique",
+   "Light": "Avenir-Light",
+   "Light Italic": "Avenir-LightOblique",
+   "Medium": "Avenir-Medium",
+   "Medium Italic": "Avenir-MediumOblique",
+   "Italic": "Avenir-Oblique",
+   "Roman": "Avenir-Roman"
+  },
+  "Avenir Next": {
+   "Bold": "AvenirNext-Bold",
+   "Bold Italic": "AvenirNext-BoldItalic",
+   "Demi Bold": "AvenirNext-DemiBold",
+   "Demi Bold Italic": "AvenirNext-DemiBoldItalic",
+   "Heavy": "AvenirNext-Heavy",
+   "Heavy Italic": "AvenirNext-HeavyItalic",
+   "Italic": "AvenirNext-Italic",
+   "Medium": "AvenirNext-Medium",
+   "Medium Italic": "AvenirNext-MediumItalic",
+   "Regular": "AvenirNext-Regular",
+   "Ultra Light": "AvenirNext-UltraLight",
+   "Ultra Light Italic": "AvenirNext-UltraLightItalic"
+  },
+  "Avenir Next Condensed": {
+   "Bold": "AvenirNextCondensed-Bold",
+   "Bold Italic": "AvenirNextCondensed-BoldItalic",
+   "Demi Bold": "AvenirNextCondensed-DemiBold",
+   "Demi Bold Italic": "AvenirNextCondensed-DemiBoldItalic",
+   "Heavy": "AvenirNextCondensed-Heavy",
+   "Heavy Italic": "AvenirNextCondensed-HeavyItalic",
+   "Italic": "AvenirNextCondensed-Italic",
+   "Medium": "AvenirNextCondensed-Medium",
+   "Medium Italic": "AvenirNextCondensed-MediumItalic",
+   "Regular": "AvenirNextCondensed-Regular",
+   "Ultra Light": "AvenirNextCondensed-UltraLight",
+   "Ultra Light Italic": "AvenirNextCondensed-UltraLightItalic"
+  },
+  "Bangla Sangam MN": {
+   "Regular": "BanglaSangamMN",
+   "Bold": "BanglaSangamMN-Bold"
+  },
+  "Baskerville": {
+   "Regular": "Baskerville",
+   "Bold": "Baskerville-Bold",
+   "Bold Italic": "Baskerville-BoldItalic",
+   "Italic": "Baskerville-Italic",
+   "Semi Bold": "Baskerville-SemiBold",
+   "Semi Bold Italic": "Baskerville-SemiBoldItalic"
+  },
+  "Bodoni Ornaments": {
+   "Regular": "BodoniOrnamentsITCTT"
+  },
+  "Bodoni 72": {
+   "Bold": "BodoniSvtyTwoITCTT-Bold",
+   "Book": "BodoniSvtyTwoITCTT-Book",
+   "Book Italic": "BodoniSvtyTwoITCTT-BookIta"
+  },
+  "Bodoni 72 Oldstyle": {
+   "Bold": "BodoniSvtyTwoOSITCTT-Bold",
+   "Book": "BodoniSvtyTwoSCITCTT-Book",
+   "Book Italic": "BodoniSvtyTwoOSITCTT-BookIt"
+  },
+  "Bradley Hand": {
+   "Bold": "BradleyHandITCTT-Bold"
+  },
+  "Chalkboard SE": {
+   "Bold": "ChalkboardSE-Bold",
+   "Light": "ChalkboardSE-Light",
+   "Regular": "ChalkboardSE-Regular"
+  },
+  "Chalkduster": {
+   "Regular": "Chalkduster"
+  },
+  "Cochin": {
+   "Regular": "Cochin",
+   "Bold": "Cochin-Bold",
+   "Bold Italic": "Cochin-BoldItalic",
+   "Italic": "Cochin-Italic"
+  },
+  "Copperplate": {
+   "Regular": "Copperplate",
+   "Bold": "Copperplate-Bold",
+   "Light": "Copperplate-Light"
+  },
+  "Courier": {
+   "Regular": "Courier",
+   "Bold": "Courier-Bold",
+   "Bold Italic": "Courier-BoldOblique",
+   "Italic": "Courier-Oblique"
+  },
+  "Courier New": {
+   "Bold Italic": "CourierNewPS-BoldItalicMT",
+   "Bold": "CourierNewPS-BoldMT",
+   "Italic": "CourierNewPS-ItalicMT",
+   "Regular": "CourierNewPSMT"
+  },
+  "DB LCD Temp": {
+   "Regular": "DBLCDTempBlack"
+  },
+  "Devanagari Sangam MN": {
+   "Regular": "DevanagariSangamMN",
+   "Bold": "DevanagariSangamMN-Bold"
+  },
+  "Didot": {
+   "Regular": "Didot",
+   "Bold": "Didot-Bold",
+   "Italic": "Didot-Italic"
+  },
+  "Euphemia UCAS": {
+   "Regular": "EuphemiaUCAS",
+   "Bold": "EuphemiaUCAS-Bold",
+   "Italic": "EuphemiaUCAS-Italic"
+  },
+  "Futura": {
+   "Condensed Extra Bold": "Futura-CondensedExtraBold",
+   "Condensed Medium": "Futura-CondensedMedium",
+   "Medium": "Futura-Medium",
+   "Medium Italic": "Futura-MediumItalic"
+  },
+  "Geeza Pro": {
+   "Regular": "GeezaPro",
+   "Bold": "GeezaPro-Bold"
+  },
+  "Georgia": {
+   "Regular": "Georgia",
+   "Bold": "Georgia-Bold",
+   "Bold Italic": "Georgia-BoldItalic",
+   "Italic": "Georgia-Italic"
+  },
+  "Gill Sans": {
+   "Regular": "GillSans",
+   "Bold": "GillSans-Bold",
+   "Bold Italic": "GillSans-BoldItalic",
+   "Italic": "GillSans-Italic",
+   "Light": "GillSans-Light",
+   "Light Italic": "GillSans-LightItalic"
+  },
+  "Gujarati Sangam MN": {
+   "Regular": "GujaratiSangamMN",
+   "Bold": "GujaratiSangamMN-Bold"
+  },
+  "Gurmukhi MN": {
+   "Regular": "GurmukhiMN",
+   "Bold": "GurmukhiMN-Bold"
+  },
+  "Heiti SC": {
+   "Light": "STHeitiSC-Light",
+   "Medium": "STHeitiSC-Medium"
+  },
+  "Heiti TC": {
+   "Light": "STHeitiTC-Light",
+   "Medium": "STHeitiTC-Medium"
+  },
+  "Helvetica": {
+   "Regular": "Helvetica",
+   "Bold": "Helvetica-Bold",
+   "Bold Italic": "Helvetica-BoldOblique",
+   "Light": "Helvetica-Light",
+   "Light Italic": "Helvetica-LightOblique",
+   "Italic": "Helvetica-Oblique"
+  },
+  "Helvetica Neue": {
+   "Regular": "HelveticaNeue",
+   "Bold": "HelveticaNeue-Bold",
+   "Bold Italic": "HelveticaNeue-BoldItalic",
+   "Condensed Black": "HelveticaNeue-CondensedBlack",
+   "Condensed Bold": "HelveticaNeue-CondensedBold",
+   "Italic": "HelveticaNeue-Italic",
+   "Light": "HelveticaNeue-Light",
+   "Light Italic": "HelveticaNeue-LightItalic",
+   "Medium": "HelveticaNeue-Medium",
+   "Ultra Light": "HelveticaNeue-UltraLight",
+   "Ultra Light Italic": "HelveticaNeue-UltraLightItalic"
+  },
+  "Hiragino Kaku Gothic ProN": {
+   "W3": "HiraKakuProN-W3",
+   "W6": "HiraKakuProN-W6"
+  },
+  "Hiragino Mincho ProN": {
+   "W3": "HiraMinProN-W3",
+   "W6": "HiraMinProN-W6"
+  },
+  "Hoefler Text": {
+   "Black": "HoeflerText-Black",
+   "Black Italic": "HoeflerText-BlackItalic",
+   "Italic": "HoeflerText-Italic",
+   "Regular": "HoeflerText-Regular"
+  },
+  "Kailasa": {
+   "Regular": "Kailasa",
+   "Bold": "Kailasa-Bold"
+  },
+  "Kannada Sangam MN": {
+   "Regular": "KannadaSangamMN",
+   "Bold": "KannadaSangamMN-Bold"
+  },
+  "Malayalam Sangam MN": {
+   "Regular": "MalayalamSangamMN",
+   "Bold": "MalayalamSangamMN-Bold"
+  },
+  "Marion": {
+   "Bold": "Marion-Bold",
+   "Italic": "Marion-Italic",
+   "Regular": "Marion-Regular"
+  },
+  "Marker Felt": {
+   "Thin": "MarkerFelt-Thin",
+   "Wide": "MarkerFelt-Wide"
+  },
+  "Noteworthy": {
+   "Bold": "Noteworthy-Bold",
+   "Light": "Noteworthy-Light"
+  },
+  "Optima": {
+   "Bold": "Optima-Bold",
+   "Bold Italic": "Optima-BoldItalic",
+   "Extra Black": "Optima-ExtraBlack",
+   "Italic": "Optima-Italic",
+   "Regular": "Optima-Regular"
+  },
+  "Oriya Sangam MN": {
+   "Regular": "OriyaSangamMN",
+   "Bold": "OriyaSangamMN-Bold"
+  },
+  "Palatino": {
+   "Bold": "Palatino-Bold",
+   "Bold Italic": "Palatino-BoldItalic",
+   "Italic": "Palatino-Italic",
+   "Roman": "Palatino-Roman"
+  },
+  "Papyrus": {
+   "Regular": "Papyrus",
+   "Condensed": "Papyrus-Condensed"
+  },
+  "Party LET": {
+   "Regular": "PartyLetPlain"
+  },
+  "Sinhala Sangam MN": {
+   "Regular": "SinhalaSangamMN",
+   "Bold": "SinhalaSangamMN-Bold"
+  },
+  "Snell Roundhand": {
+   "Regular": "SnellRoundhand",
+   "Black": "SnellRoundhand-Black",
+   "Bold": "SnellRoundhand-Bold"
+  },
+  "Symbol": {
+   "Regular": "Symbol"
+  },
+  "Tamil Sangam MN": {
+   "Regular": "TamilSangamMN",
+   "Bold": "TamilSangamMN-Bold"
+  },
+  "Telugu Sangam MN": {
+   "Regular": "TeluguSangamMN",
+   "Bold": "TeluguSangamMN-Bold"
+  },
+  "Thonburi": {
+   "Regular": "Thonburi",
+   "Bold": "Thonburi-Bold"
+  },
+  "Times New Roman": {
+   "Bold Italic": "TimesNewRomanPS-BoldItalicMT",
+   "Bold": "TimesNewRomanPS-BoldMT",
+   "Italic": "TimesNewRomanPS-ItalicMT",
+   "Regular": "TimesNewRomanPSMT"
+  },
+  "Trebuchet MS": {
+   "Bold Italic": "TrebuchetMS-BoldItalic",
+   "Regular": "TrebuchetMS",
+   "Bold": "TrebuchetMS-Bold",
+   "Italic": "TrebuchetMS-Italic"
+  },
+  "Verdana": {
+   "Regular": "Verdana",
+   "Bold": "Verdana-Bold",
+   "Bold Italic": "Verdana-BoldItalic",
+   "Italic": "Verdana-Italic"
+  },
+  "Zapf Dingbats": {
+   "Regular": "ZapfDingbatsITC"
+  },
+  "Zapfino": {
+   "Regular": "Zapfino"
+  }
+ },
+ "android": {
+  "Droid Sans": {
+   "Regular": "DroidSans",
+   "Bold": "DroidSans-Bold"
+  },
+  "Droid Serif": {
+   "Regular": "DroidSerif",
+   "Bold": "DroidSerif-Bold",
+   "Italic": "DroidSerif-Italic",
+   "Bold Italic": "DroidSerif-BoldItalic"
+  },
+  "Droid Sans Mono": {
+   "Regular": "DroidSansMono"
+  },
+  "Roboto": {
+   "Regular": "Roboto",
+   "Italic": "Roboto-Italic",
+   "Thin": "Roboto",
+   "Thin Italic": "Roboto-ThinItalic",
+   "Light": "Roboto-Light",
+   "Light Italic": "Roboto-LightItalic",
+   "Medium": "Roboto-Medium",
+   "Medium Italic": "Roboto-MediumItalic",
+   "Bold": "Roboto-Bold",
+   "Bold Condensed": "Roboto-BoldCondensed",
+   "Bold Condensed Italic": "Roboto-BoldCondensedItalic",
+   "Bold Italic": "Roboto-BoldItalic",
+   "Black": "Roboto-Black",
+   "Black Italic": "Roboto-BlackItalic",
+   "Condensed": "Roboto-Condensed",
+   "Condensed Italic": "Roboto-CondensedItalic"
+  }
+ }
+}

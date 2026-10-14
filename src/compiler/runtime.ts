@@ -24,11 +24,13 @@ const INTRINSIC = Symbol.for('iva.intrinsic');
 
 export const Fragment = Symbol.for('iva.fragment');
 
+/** @internal */
 export function isVNode(v: unknown): v is VNode {
   return !!v && typeof v === 'object' && (v as VNode).$$iva === 1;
 }
 
-/** An iva element: `<Button>` etc. Calling it directly works too. */
+/** An iva element: `<Button>` etc. Calling it directly works too.
+ * @internal */
 export function intrinsic<P>(name: string): (props: P) => VNode {
   const fn = (props: any) => make(name, props);
   Object.defineProperty(fn, 'name', { value: name });
@@ -42,7 +44,8 @@ function make(type: string, props: Record<string, any> | null, source?: Source):
 }
 
 /** Thrown with the element's place in the source. (The compiler checks the
- * name, not the class: the project bundle carries its own copy of this file.) */
+ * name, not the class: the project bundle carries its own copy of this file.)
+ * @internal */
 export class JsxError extends Error {
   name = 'JsxError';
   constructor(message: string, public source?: Source) {
@@ -50,6 +53,7 @@ export class JsxError extends Error {
   }
 }
 
+/** @internal */
 export function jsxDEV(type: any, props: Record<string, any> | null, _key?: unknown, _static?: boolean, source?: Source): Child {
   if (type === Fragment) return (props?.children ?? []) as Child;
   if (typeof type === 'function') {
@@ -72,3 +76,16 @@ export function jsxDEV(type: any, props: Record<string, any> | null, _key?: unkn
 
 export const jsx = (type: any, props: Record<string, any> | null, key?: unknown) => jsxDEV(type, props, key);
 export const jsxs = jsx;
+
+/** What editors check JSX against: iva elements are functions, there are no HTML tags. */
+export declare namespace JSX {
+  type Element = VNode;
+  interface IntrinsicElements {}
+  interface ElementChildrenAttribute {
+    children: {};
+  }
+  /** props typed `any` (a plain-JS component's untyped props) */
+  type UntypedKeys<P> = { [K in keyof P]-?: 0 extends 1 & P[K] ? K : never }[keyof P];
+  /** A component's untyped props are optional; typed ones (iva's, JSDoc'd) are checked as declared. */
+  type LibraryManagedAttributes<C, P> = [UntypedKeys<P>] extends [never] ? P : Omit<P, UntypedKeys<P>> & Partial<Pick<P, UntypedKeys<P>>>;
+}

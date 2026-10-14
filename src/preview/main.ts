@@ -2,6 +2,7 @@ import { installStdlib } from '@agapi/stdlib';
 import { loadProject, type Orientation, type LoadProjectResult } from '@agapi/cf-runtime';
 import { createIvaHost } from './host';
 import { control, ensureConnected } from './bridge/transport';
+import { installFonts } from './fonts';
 
 interface GuiEntry { rel: string; name: string }
 interface Manifest {
@@ -112,6 +113,7 @@ async function boot(gui: string) {
 }
 
 async function main() {
+  await installFonts();
   const guis: GuiEntry[] = await (await fetch('/__iva/guis')).json();
   if (!guis.length) {
     setStatus('no .gui files found', 'err');

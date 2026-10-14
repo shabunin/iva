@@ -8,7 +8,7 @@ injected); `import { Button } from 'iva'` works too.
 
 | JSX | `.gui` | Key props |
 |---|---|---|
-| `<Project>` | `<gui>` + `<properties>` | `name`, `width`, `height` (wider than tall → landscape is the main orientation), `otherSize`, `autoposition`, `joinBase`, `assets` (a folder shipped whole; images found there by bare name; default `./assets`), `properties` (raw XML after `<size>`) |
+| `<Project>` | `<gui>` + `<properties>` | `name`; `device` (`iPad`, `iPad Pro 11`, `iPad Pro 12.9`, `iPad Air 10.5`, `iPhone X`, `iPhone XS Max`, `iPhone 8`, `iPhone 8 Plus`, `iPhone 5`, `iPhone 4`) + `orientation`, or `width` / `height` (wider than tall → landscape is the main orientation); `otherSize`, `autoposition`, `joinBase`, `assets` (a folder shipped whole; images found there by bare name; default `./assets`), `properties` (raw XML after `<size>`) |
 | `<Page>` | `<page>` + `<portrait>`/`<landscape>` | `name`, `start`, `bg`, `image`, `theme`, `tags`. Items go into the main orientation (the other is written empty, as GUI Designer does) |
 | `<Landscape>` / `<Portrait>` | `<landscape>` / `<portrait>` | `bg`, `image`, `theme`. With these, the page has exactly the orientations given, in that order |
 | `<Subpage>` | `<subpage name w h>` (definition) + placement | `name`, `w`, `h`, `clip`, `bg`/`image`/`theme`. Inside a page it is defined *and* placed (`x`, `y`, `join`, `visible`, `in`, `out`, `topmost`, `clickthrough`); in `<Project>` it is only defined |
@@ -35,7 +35,7 @@ All items take `x`, `y` (default 0), `w`, `h` (required) and `tags`.
 
 | JSX | `.gui` | Key props |
 |---|---|---|
-| `<System>` | `<systems><system>` | `name`, `host`, `port`, `protocol` (`tcp`·`udp`), `localPort`, `accept`, `acceptBroadcasts`, `eom`, `alwaysOn`, `offlineQueue`, `connectJoin` / `disconnectJoin`, `heartbeat={{tx, rx, mode}}`, `startupCmd`, `startupMacro`, `maxConnections`; children `<Command>`, `<Feedback>` |
+| `<System>` | `<systems><system>` | `name`, `host`, `port`, `protocol` (`tcp`·`udp`·`http`), `localPort`, `mode` (`alwaysOn`·`transitory`·`dialog`) + `idleTimeout` / `dialogTimeout`, `accept` (TCP: server; UDP: incoming), `acceptBroadcasts`, `eom`, `offlineQueue`, `connectJoin` / `disconnectJoin`, `heartbeat={{ mode: 'reply'\|'initiate', tx, rx }}`, `ssl`, `textEncoding`, `sendHandler`, `startupCmd`, `startupMacro`, `maxConnections`; children `<Command>`, `<Feedback>`. Defaults are GUI Designer's for a new system of the protocol |
 | `<Command>` | `<cmd>` | `name`, `send` (or children; `\xNN`, `[tokens]`), `js` + `jsSendsCommand`, `target` + `value` (set a join), `folder` |
 | `<Feedback>` | `<fb>` | `name`, `regex` (`(?ims)` flags allowed); children `<Capture>`, `<OnMatch>` |
 | `<Capture>` | `<group>` | `join` (`d(5)`, `'s12'`, `'a:level'`), `type` (how it's read, default: the join's type: `type="a" join="s2"` = a number, transformed, into a serial join), `index`, `name`, `onVal` / `offVal`, `transform`, `min` / `max`, `unit`, `setToken` |
@@ -49,9 +49,16 @@ All items take `x`, `y` (default 0), `w`, `h` (required) and `tags`.
 
 ## Style props → themes
 
-`bg`, `image` (+ `slice` for 9-slice), `color`, `font`, `fontName`, `fontSize`,
-`bold`, `italic`, `align`, `valign`, `shadow`, `opacity`, `padding`,
-`borderWidth`, `borderColor`, `css` (raw extra CSS). A `.gui` styles objects
+`bg`, `image` (+ `slice` for 9-slice), `color`, `font`, `fontStyle`, `fontName`,
+`fontSize`, `bold`, `italic`, `align`, `valign`, `shadow`, `opacity`,
+`padding`, `borderWidth`, `borderColor`, `css` (raw extra CSS).
+
+Fonts: `font` is the family as iOS / Android name it (`'Helvetica Neue'`,
+`'Avenir Next'`, `'Roboto'`; default `'Arial'`), `bold` / `italic` or
+`fontStyle` (`'Medium'`, `'Light'`, `'Demi Bold'`, ...) pick the style, and
+iva writes the device's font name for it (`font-name: 'HelveticaNeue-Bold'`,
+from GUI Designer's font list). A family or style the devices don't have is
+a warning; give `fontName` for fonts you ship. A `.gui` styles objects
 only through named CSS themes, so each distinct style becomes one generated
 theme (`btn_1a2b3c`), shared by every element that looks the same. Text
 themes get the full text block GUI Designer writes. Buttons have two states:

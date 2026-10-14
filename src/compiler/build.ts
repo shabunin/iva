@@ -6,7 +6,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { PROPS, REQUIRED, STYLE_PROPS, type StyleProps, type Transition } from './components.js';
+import { DEVICES, PROPS, REQUIRED, STYLE_PROPS, type StyleProps, type Transition } from './components.js';
 import { fixedJoin, JoinAllocator, JoinSlot, typedJoin } from './joins.js';
 import { isVNode, type Child, type Source, type VNode } from './runtime.js';
 import { styleCss, Themes, type ThemeType } from './style.js';
@@ -97,7 +97,17 @@ export class Builder {
     this.check(project);
     const p = project.props;
     this.joins = new JoinAllocator(p.joinBase ?? 1000);
-    const [w, h] = [p.width, p.height];
+    let [w, h] = [p.width, p.height];
+    if (p.device !== undefined) {
+      const size = (DEVICES as Record<string, readonly [number, number]>)[p.device];
+      if (!size) throw this.err(project, `device: no "${p.device}"${didYouMean(p.device, Object.keys(DEVICES))} (or give width and height)`);
+      if (w !== undefined || h !== undefined) throw this.err(project, 'device or width / height, not both');
+      [w, h] = p.orientation === 'portrait' ? [size[1], size[0]] : [size[0], size[1]];
+    } else if (p.orientation !== undefined) {
+      throw this.err(project, 'orientation goes with device (with width / height, the larger one decides)');
+    } else if (w === undefined || h === undefined) {
+      throw this.err(project, `give device="iPad" (${Object.keys(DEVICES).join(', ')}) or width and height`);
+    }
     this.primary = w >= h ? 'landscape' : 'portrait';
     const other = p.otherSize ?? [h, w];
     const land = this.primary === 'landscape' ? [w, h] : other;
@@ -367,8 +377,9 @@ export class Builder {
     if (!opts.always && !hasStyle(p) && !opts.active) return '';
     const base = pickStyle(p);
     const img = (src: string) => this.image(node, src);
-    const states = [styleCss(type, base, img)];
-    if (type === 'button') states.push(styleCss(type, { ...base, ...(opts.active ?? {}) }, img));
+    const warn = this.warner(node);
+    const states = [styleCss(type, base, img, warn)];
+    if (type === 'button') states.push(styleCss(type, { ...base, ...(opts.active ?? {}) }, img, warn));
     return this.themes.generated(type, states);
   }
 
@@ -378,6 +389,14 @@ export class Builder {
       this.warnings.push(`${this.where(node)}<${node.type}>: no <Theme name="${name}">${didYouMean(name, this.themes.names())}`);
     }
     return name;
+  }
+
+  /** A warning about this element (once per message). */
+  private warner(node: VNode) {
+    return (msg: string) => {
+      const text = `${this.where(node)}<${node.type}>: ${msg}`;
+      if (!this.warnings.includes(text)) this.warnings.push(text);
+    };
   }
 
   private where(node: VNode) {
@@ -405,9 +424,10 @@ export class Builder {
       return;
     }
     const img = (src: string) => this.image(node, src);
+    const warn = this.warner(node);
     const base = pickStyle(p);
-    const states = [styleCss(p.type, base, img)];
-    if (p.type === 'button' || p.type === 'gauge') states.push(styleCss(p.type, { ...base, ...(p.active ?? {}) }, img));
+    const states = [styleCss(p.type, base, img, warn)];
+    if (p.type === 'button' || p.type === 'gauge') states.push(styleCss(p.type, { ...base, ...(p.active ?? {}) }, img, warn));
     else if (p.active) throw this.err(node, 'only button and gauge themes have an active state (for a gauge: the fill)');
     try {
       this.themes.define(p.name, p.type, states);
@@ -478,13 +498,21 @@ export class Builder {
       if (c.type === 'Raw') return this.raw(c);
       throw this.err(c, '<System> takes <Command>, <Feedback> and <Raw>');
     });
-    const hb = p.heartbeat ?? {};
+    // defaults as GUI Designer gives a new system of the kind (its systems/*.json)
+    const protocol = p.protocol ?? 'tcp';
+    const udp = protocol === 'udp';
+    const MODES: Record<string, number> = { transitory: 0, alwaysOn: 1, dialog: 2 };
+    if (p.mode !== undefined && MODES[p.mode] === undefined) throw this.err(node, `mode: 'alwaysOn', 'transitory' or 'dialog'`);
+    const hb = p.heartbeat;
+    if (hb && hb.mode !== 'reply' && hb.mode !== 'initiate') throw this.err(node, `heartbeat.mode: 'reply' or 'initiate'`);
     this.systems.push(this.withXml(this.E('system', {
-      name: p.name, ip: p.host, port: p.port, origin: p.localPort ?? 0, protocol: p.protocol ?? 'tcp',
-      alwayson: bool(p.alwaysOn, true), offlinequeue: bool(p.offlineQueue), accept: bool(p.accept), acceptBroadcasts: bool(p.acceptBroadcasts),
-      ssl: 0, maxconnections: p.maxConnections ?? 0, heartbeatRx: hb.rx ?? '', heartbeatTx: hb.tx ?? '', heartbeatMode: hb.mode ?? -1,
+      name: p.name, ip: p.host, port: p.port, origin: p.localPort ?? 0, protocol,
+      alwayson: MODES[p.mode ?? 'alwaysOn'], idleTimeout: p.idleTimeout, dialogTimeout: p.dialogTimeout,
+      offlinequeue: bool(p.offlineQueue, !udp), accept: bool(p.accept, udp), acceptBroadcasts: bool(p.acceptBroadcasts, udp),
+      ssl: bool(p.ssl), maxconnections: p.maxConnections ?? 0,
+      heartbeatRx: hb?.rx ?? '', heartbeatTx: hb?.tx ?? '', heartbeatMode: hb ? (hb.mode === 'reply' ? 0 : 1) : -1,
       eom: p.eom ?? '', connectionStatus: this.join(node, 'connectJoin', 'd'), disconnectionStatus: this.join(node, 'disconnectJoin', 'd'),
-      startupCmd: p.startupCmd ?? '', startupMacro: p.startupMacro ?? '', textEncoding: '', js: '',
+      startupCmd: p.startupCmd ?? '', startupMacro: p.startupMacro ?? '', textEncoding: p.textEncoding ?? '', js: p.sendHandler ?? '',
     }, children, undefined, node), node));
   }
 

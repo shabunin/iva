@@ -1,0 +1,45 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { create, templates } from '../src/create.ts';
+import { check } from '../src/check.ts';
+
+const tmp = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'iva-create-')), 'panel');
+
+for (const template of templates()) {
+  test(`template ${template}: created, checks clean, builds`, async () => {
+    const r = await create(tmp(), { template });
+    for (const f of ['app.jsx', 'iva.d.ts', 'jsconfig.json', 'IVA.md', 'AGENTS.md', 'CLAUDE.md', 'README.md', '.gitignore']) {
+      assert.ok(fs.existsSync(path.join(r.dir, f)), f);
+    }
+    assert.deepEqual(r.warnings, []);
+    const c = await check(path.join(r.dir, 'app.jsx'));
+    assert.deepEqual(c.problems, []);
+  });
+}
+
+test('a device sets the panel size', async () => {
+  const r = await create(tmp(), { device: 'iPhone X' });
+  assert.match(fs.readFileSync(path.join(r.dir, 'app.jsx'), 'utf8'), /device="iPhone X"/);
+  await assert.rejects(create(tmp(), { device: 'iPhone Y' }), /no device "iPhone Y" \(did you mean "iPhone X"\?\)/);
+});
+
+test('check: what the editor underlines, and the build', async () => {
+  const r = await create(tmp(), { template: 'blank' });
+  const app = path.join(r.dir, 'app.jsx');
+  fs.writeFileSync(app, fs.readFileSync(app, 'utf8').replace('fontSize={34}', 'fontSise={34}'));
+  const c = await check(app);
+  assert.equal(c.problems.length, 2); // the editor's and the build's
+  assert.match(c.problems[0], /app\.jsx:4:\d+: .*'fontSise' does not exist .*Did you mean 'fontSize'\?/s);
+  assert.match(c.problems[1], /unknown prop "fontSise" \(did you mean "fontSize"\?\)/);
+});
+
+test('from a .gui: decompiled, with the same extras', async () => {
+  const r = await create(tmp(), { from: path.resolve(import.meta.dirname, '../fixtures/local/echo-system/echo.gui') });
+  assert.ok(fs.existsSync(path.join(r.dir, 'pages/Main.jsx')));
+  assert.ok(fs.existsSync(path.join(r.dir, 'iva.d.ts')));
+  const c = await check(path.join(r.dir, 'app.jsx'));
+  assert.deepEqual(c.problems, []);
+});
