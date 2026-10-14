@@ -14,8 +14,9 @@ export default (
       <Text x={440} y={178} w={152} h={40} join={s('days2Text')} align="right" color={t.muted} font={t.font} fontSize={19} />
     </ui.Card>
 
-    <ui.AlarmCard x={16} y={344} w={620} title="Wake up" on="wakeOn" onValue time="wake" value="06:45" days="wakeDays" daysValue={31} />
-    <ui.AlarmCard x={16} y={570} w={620} title="Weekend (12 h, 15-minute steps)" on="weekendOn" time="weekend" value="09:00" ampm days="weekendDays" daysValue={96} />
+    <ui.AlarmCard x={16} y={344} w={620} title="Wake up" on="wakeOn" onValue hour="alarmH" minute="alarmM" value="06:45" days="wakeDays" daysValue={31} />
+    <ui.AlarmCard x={16} y={570} w={620} title="Weekend (12 h, 15-minute steps)" timeTitle="Weekend" on="weekendOn" hour="weekendH" minute="weekendM"
+                  value="09:00" ampm minuteStep={15} days="weekendDays" daysValue={96} />
 
     <ui.Card title="PinPad" x={652} y={88} w={612} h={560}>
       <ui.PinPad x={28} y={64} code={s('code')} onEnter="CF.setJoin(Joins.s.entered, 'Code entered: ' + code.length + ' digits');" />

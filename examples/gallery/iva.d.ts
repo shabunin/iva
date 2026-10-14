@@ -1206,14 +1206,17 @@ declare module 'iva/ui' {
       /** digital join: the alarm on */
       on: Join;
       onValue?: boolean;
-      /** analog join: the time, minutes since midnight */
-      time: Join;
+      /** analog joins: the hour (0-23) and the minute (0-59), as numbers (a TimePicker) */
+      hour: Join;
+      minute: Join;
       /** the time it starts at: "06:45" */
       value?: string;
-      /** minutes a - / + step moves it (default 15) */
-      step?: number;
+      /** the minutes drum in steps (5: 00, 05, 10 ...) */
+      minuteStep?: number;
       /** 12 h with AM / PM */
       ampm?: boolean;
+      /** the time picker's title (default: the card's) */
+      timeTitle?: string;
       /** analog join: the days (WeekDays bitmask) */
       days: Join;
       daysValue?: number;

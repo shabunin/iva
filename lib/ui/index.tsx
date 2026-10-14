@@ -528,14 +528,17 @@ export interface AlarmCardProps {
   /** digital join: the alarm on */
   on: Join;
   onValue?: boolean;
-  /** analog join: the time, minutes since midnight */
-  time: Join;
+  /** analog joins: the hour (0-23) and the minute (0-59), as numbers (a TimePicker) */
+  hour: Join;
+  minute: Join;
   /** the time it starts at: "06:45" */
   value?: string;
-  /** minutes a - / + step moves it (default 15) */
-  step?: number;
+  /** the minutes drum in steps (5: 00, 05, 10 ...) */
+  minuteStep?: number;
   /** 12 h with AM / PM */
   ampm?: boolean;
+  /** the time picker's title (default: the card's) */
+  timeTitle?: string;
   /** analog join: the days (WeekDays bitmask) */
   days: Join;
   daysValue?: number;
@@ -1161,32 +1164,21 @@ export function createUi(theme: Partial<UiTheme> = {}): Ui {
     );
   }
 
-  function AlarmCard({ title, on, onValue, time, value = '07:00', step = 15, ampm = false, days, daysValue = 31, x = 0, y = 0, w = 620 }: AlarmCardProps): VNode {
-    const key = keyOf(time);
-    const id = JSON.stringify(key);
-    const text: JoinRef = s(`ui_${key}_time`);
+  /** An alarm: its title, on / off, the time (a TimePicker: a tap opens the drums), the days and their summary. */
+  function AlarmCard({ title, on, onValue, hour, minute, value = '07:00', minuteStep = 1, ampm = false, timeTitle, days, daysValue = 31,
+                       x = 0, y = 0, w = 620 }: AlarmCardProps): VNode {
     const summary: JoinRef = s(`ui_${keyOf(days)}_summary`);
-    const [hh, mm] = value.split(':').map(Number);
     const h = 210;
-    const arrow = (dir: number, ax: number) => (
-      <Button x={ax} y={56} w={56} h={64} radius={t.radius} bg={t.raised} active={{ bg: t.accent }}
-              icon={fa(dir > 0 ? 'chevron-up' : 'chevron-down', { size: 20, color: t.muted })} js={`IvaUI.timeStep(${id}, ${dir})`} repeat={300} />
-    );
     return (
       <Group x={x} y={y}>
         <Box w={w} h={h} bg={t.surface} radius={t.radius + 4} />
         <Text x={28} y={12} w={w - 160} h={40} text={title} color={t.muted} font={font} fontSize={21} />
         <Button x={w - 124} y={12} w={96} h={36} join={on} feedback="toggle" text="OFF" activeText="ON" radius={18} bg={t.raised} color={t.muted}
                 active={{ bg: t.accent, color: t.text }} font={font} fontSize={15} />
-        <Box x={24} y={56} w={ampm ? 230 : 180} h={64} bg={t.raised} radius={t.radius + 2} />
-        <Text x={24} y={56} w={ampm ? 230 : 180} h={64} join={text} align="center" font={font} fontSize={44} />
-        {arrow(-1, (ampm ? 230 : 180) + 36)}
-        {arrow(1, (ampm ? 230 : 180) + 100)}
+        <TimePicker x={24} y={56} w={ampm ? 260 : 200} h={64} hour={hour} minute={minute} value={value} minuteStep={minuteStep} ampm={ampm}
+                    title={timeTitle ?? title} fontSize={40} />
         <Text x={w - 220} y={56} w={192} h={64} join={summary} align="right" color={t.muted} font={font} fontSize={21} />
         <WeekDays x={24} y={138} join={days} value={daysValue} textJoin={summary} size={52} />
-        {runtime}
-        <OnStart js={`IvaUI.time(${id}, { join: ${jsJoin('a', time)}, text: ${jsJoin('s', text)}, step: ${step}, ampm: ${ampm}, value: ${hh * 60 + mm} });`}
-                 joins={[typeof time === 'object' ? time : a(time), text]} />
         {onValue && <OnStart js={`CF.setJoin(${jsJoin('d', on)}, 1);`} />}
       </Group>
     );

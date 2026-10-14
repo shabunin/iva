@@ -73,7 +73,10 @@ test('forms, lists, schedule: popups last, list rows defined, icons drawn at the
   const icon = r.assets.find((a) => /^iva_icon_\w+\.png$/.test(a.name))!;
   assert.equal(icon.data!.readUInt32BE(16), 26);
   const start = r.scripts.find((s) => s.name === 'iva-start.js')!.code!;
-  for (const f of ['IvaUI.fill(', 'IvaUI.days(', 'IvaUI.pin(', 'IvaUI.time(']) assert.ok(start.includes(f), f);
+  for (const f of ['IvaUI.fill(', 'IvaUI.days(', 'IvaUI.pin(']) assert.ok(start.includes(f), f);
+  // an alarm's time is a TimePicker
+  assert.match(start, /IvaUI\.picker\("time_alarmH_\w+", \{ kind: 'time'/);
+  assert.match(start, /IvaUI\.picker\("time_weekendH_\w+", \{ kind: 'time'[^\n]*step: 15, ampm: true/);
 });
 
 test('ColorPicker, TextField, SearchSelect: wheel and marker in a subpage, the swatch server once, inputs', async () => {

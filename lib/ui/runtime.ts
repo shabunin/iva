@@ -9,7 +9,6 @@ var IvaUI = (function () {
   var steppers = {};
   var dials = {};
   var pins = {};
-  var times = {};
   var colors = {};
   var servers = {};
   var pickers = {};
@@ -257,24 +256,6 @@ var IvaUI = (function () {
       p.code = '';
       IvaUI.pinShow(id);
       if (p.onEnter) p.onEnter(code);
-    },
-    /** a time of day: minutes since midnight in an analog join, shown in a serial join */
-    time: function (id, o) {
-      times[id] = o;
-      CF.watch(CF.JoinChangeEvent, o.join, function (j, v) {
-        var m = Number(v) || 0, h = Math.floor(m / 60) % 24, mm = m % 60;
-        var text = o.ampm ? ((h % 12) || 12) + ':' + pad(mm) + (h < 12 ? ' AM' : ' PM') : pad(h) + ':' + pad(mm);
-        CF.setJoin(o.text, text);
-      }, true);
-      if (o.value !== undefined) CF.setJoin(o.join, o.value);
-    },
-    timeStep: function (id, dir) {
-      var o = times[id];
-      if (!o) return;
-      CF.getJoin(o.join, function (j, v) {
-        var m = ((Math.round((Number(v) || 0) / o.step) + dir) * o.step + 1440) % 1440;
-        CF.setJoin(o.join, m);
-      });
     },
     /**
      * a colour picker: hue and saturation on a wheel (o.size square, in a

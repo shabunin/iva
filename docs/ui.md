@@ -66,7 +66,7 @@ it as a value in min..max.
 | `DataList` | a CF list of headers, rows, alerts, spacers, filled at start | `join` (list), `items: [{ header } \| { icon, title, subtitle, value, alert } \| { spacer }]` |
 | `ScrollBox` | a list of lines to drag through | `join` (list), `lines` |
 | `WeekDays` | seven day toggles; the bitmask (Mon 1 … Sun 64) and a summary ("Weekdays", "Sun, Mon") | `join` (bitmask), `value`, `first` (`mon`·`sun`), `labels`, `textJoin`, `size` |
-| `AlarmCard` | a titled card: on / off, a time stepped up / down, the days | `title`, `on`, `time` (minutes since midnight), `value` ("06:45"), `step`, `ampm`, `days`, `daysValue` |
+| `AlarmCard` | a titled card: on / off, the time (a TimePicker: a tap opens the drums), the days | `title`, `on`, `hour` / `minute` (analog joins, as numbers), `value` ("06:45"), `minuteStep`, `ampm`, `timeTitle`, `days`, `daysValue` |
 | `TextField` | a label, a field (an icon, a placeholder while empty), the text in a serial join | `join`, `label`, `value`, `placeholder`, `password`, `icon`, `cmd` (sent on Return) |
 | `SearchSelect` | a select box for long lists: the field opens a search field over the options, which filter as you type; a tap picks one | `options`, or `source` (a serial join with a JSON array: a script or a feedback fills it), `join` (the index), `value`, `mode`, `title`, `placeholder`, `empty`, `rows` |
 | `TimePicker` | a time field; a tap opens hour and minute drums, OK writes them | `hour` / `minute` (analog joins, as numbers: 0-23, 0-59), `value` ('07:30'), `minuteStep`, `ampm`, `now` (a button: the panel's time), `mode`, `title`, `fontSize`, `showIcon` |
