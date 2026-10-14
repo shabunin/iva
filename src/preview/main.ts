@@ -86,7 +86,8 @@ async function boot(gui: string) {
   setStatus(`loading ${gui}…`);
   const res = await fetch(`/__iva/manifest?gui=${encodeURIComponent(gui)}`);
   if (!res.ok) {
-    setStatus(await res.text(), 'err');
+    showBuildError(await res.text());
+    setStatus('build failed', 'err');
     return;
   }
   const m: Manifest = await res.json();
@@ -128,8 +129,19 @@ async function main() {
   await boot(chosen);
 }
 
+/** A failed build: the message over the last good panel, until the next good build reloads. */
+function showBuildError(text: string) {
+  const box = $<HTMLDivElement>('build-error');
+  box.querySelector('pre')!.textContent = text;
+  box.hidden = false;
+}
+
 control.onMessage = (msg) => {
   if (msg.t === 'reload') location.reload();
+  else if (msg.t === 'error') {
+    showBuildError(msg.text);
+    setStatus('build failed', 'err');
+  }
   else if (msg.t === 'backend-closed') setStatus('iva dev stopped - reload when it is back', 'err');
 };
 

@@ -14,7 +14,8 @@ import { fileURLToPath } from 'node:url';
 import { createServer as createVite, type Alias } from 'vite';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { HostSession } from './host/session.js';
-import { findGuis, loadManifest, rootDir, safeJoin } from './project.js';
+import { findGuis, loadManifest, rootDir, safeJoin, type GuiEntry, type ProjectManifest } from './project.js';
+import { compile, IvaError, slug, type CompileResult } from '../compiler/index.js';
 
 const IVA_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PREVIEW_DIR = path.join(IVA_ROOT, 'src', 'preview');
@@ -28,7 +29,7 @@ const MIME: Record<string, string> = {
 };
 
 export interface DevOptions {
-  /** A .gui file, or a folder searched for .gui files. */
+  /** A .gui file, a folder searched for .gui files, or a JSX entry (app.jsx). */
   target: string;
   port: number;
   host: string;
@@ -81,12 +82,78 @@ function send(res: http.ServerResponse, status: number, body: string | Buffer, t
   res.end(body);
 }
 
+export const isEntry = (file: string) => /\.(jsx|tsx|js|ts|mjs)$/i.test(file);
+
+/** What the preview shows: .gui files on disk, or a JSX project compiled in memory. */
+interface ProjectSource {
+  /** the folder to watch */
+  dir: string;
+  guis(): GuiEntry[];
+  manifest(gui: string): ProjectManifest;
+  /** a file the manifest points at: its path, or its content (images iva drew) */
+  file(rel: string): string | Buffer | null;
+  /** after a change; resolves to an error message, or null when it's fine to reload */
+  refresh(): Promise<string | null>;
+}
+
+function guiSource(target: string): ProjectSource {
+  const base = rootDir(target);
+  return {
+    dir: base,
+    guis: () => findGuis(target),
+    manifest: (gui) => loadManifest(base, gui, (rel) => `/__iva/files/${encodePath(rel)}`),
+    file: (rel) => safeJoin(base, rel),
+    refresh: async () => null,
+  };
+}
+
+async function jsxSource(entry: string, log: (m: string) => void): Promise<ProjectSource> {
+  let result: CompileResult | null = null;
+  let error: IvaError | null = null;
+  const build = async () => {
+    const t0 = Date.now();
+    try {
+      result = await compile(entry);
+      error = null;
+      for (const w of result.warnings) log(`warning: ${w}`);
+      log(`built ${path.basename(entry)} in ${Date.now() - t0} ms`);
+      return null;
+    } catch (e: any) {
+      error = e instanceof IvaError ? e : new IvaError(String(e?.stack ?? e));
+      const text = error.format(path.dirname(entry));
+      log(`build failed:\n${text}`);
+      return text;
+    }
+  };
+  await build();
+  return {
+    dir: path.dirname(entry),
+    guis: () => [{ rel: `${slug(result?.name ?? path.basename(entry))}.gui`, name: path.basename(entry) }],
+    manifest: () => {
+      if (error || !result) throw Object.assign(new Error(error?.format(path.dirname(entry)) ?? 'not built'), { status: 422 });
+      const r: CompileResult = result;
+      const imageMap: Record<string, string> = {};
+      for (const a of r.assets) if (IMAGE_RE.test(a.name)) imageMap[a.name] = `/__iva/files/${encodeURIComponent(a.name)}`;
+      const scriptMap: Record<string, string> = {};
+      for (const sc of r.scripts) scriptMap[sc.name] = sc.code ?? fs.readFileSync(sc.file!, 'utf8');
+      return { gui: `${slug(r.name)}.gui`, title: r.name, guiXml: r.xml, imageMap, scriptMap, missingScripts: [] };
+    },
+    file: (rel) => {
+      const a = (result as CompileResult | null)?.assets.find((x) => x.name === rel);
+      return a ? (a.data ?? a.file ?? null) : null;
+    },
+    refresh: build,
+  };
+}
+
+const IMAGE_RE = /\.(png|jpe?g|gif|webp|svg|bmp)$/i;
+
 export async function startDev(opts: DevOptions) {
   const target = path.resolve(opts.target);
   if (!fs.existsSync(target)) throw new Error(`not found: ${opts.target}`);
-  const base = rootDir(target);
   const log = (msg: string) => console.log(`[iva] ${msg}`);
   const debug = opts.verbose ? log : () => {};
+  const source = isEntry(target) ? await jsxSource(target, log) : guiSource(target);
 
   const httpServer = http.createServer();
   const vite = await createVite({
@@ -112,22 +179,24 @@ export async function startDev(opts: DevOptions) {
     const url = new URL(req.url ?? '/', 'http://x');
     try {
       if (url.pathname === '/__iva/guis') {
-        return send(res, 200, JSON.stringify(findGuis(target)), 'application/json');
+        return send(res, 200, JSON.stringify(source.guis()), 'application/json');
       }
       if (url.pathname === '/__iva/manifest') {
         const gui = url.searchParams.get('gui') ?? '';
-        const manifest = loadManifest(base, gui, (rel) => `/__iva/files/${encodePath(rel)}`);
+        const manifest = source.manifest(gui);
         if (manifest.missingScripts.length) log(`${gui}: missing scripts ${manifest.missingScripts.join(', ')}`);
         return send(res, 200, JSON.stringify(manifest), 'application/json');
       }
       if (url.pathname.startsWith('/__iva/files/')) {
         const rel = decodeURIComponent(url.pathname.slice('/__iva/files/'.length));
-        const file = safeJoin(base, rel);
+        const file = source.file(rel);
+        const type = MIME[path.extname(rel).toLowerCase()] ?? 'application/octet-stream';
+        if (Buffer.isBuffer(file)) return send(res, 200, file, type);
         if (!file || !fs.existsSync(file) || !fs.statSync(file).isFile()) return send(res, 404, 'not found');
-        return send(res, 200, fs.readFileSync(file), MIME[path.extname(file).toLowerCase()] ?? 'application/octet-stream');
+        return send(res, 200, fs.readFileSync(file), type);
       }
     } catch (e: any) {
-      return send(res, 500, String(e?.message ?? e));
+      return send(res, e?.status ?? 500, String(e?.message ?? e));
     }
     vite.middlewares(req, res);
   });
@@ -168,12 +237,14 @@ export async function startDev(opts: DevOptions) {
 
   // ── reload on change ──
   let timer: NodeJS.Timeout | undefined;
-  const watcher = fs.watch(base, { recursive: true }, (_ev, file) => {
-    if (!file || /(^|[\\/])(\.|node_modules)/.test(String(file))) return;
+  const watcher = fs.watch(source.dir, { recursive: true }, (_ev, file) => {
+    if (!file || /(^|[\\/])(\.|node_modules|dist)([\\/]|$)/.test(String(file))) return;
     clearTimeout(timer);
-    timer = setTimeout(() => {
-      log(`changed: ${file} - reloading`);
-      for (const ws of pages) ws.send(JSON.stringify({ t: 'reload' }));
+    timer = setTimeout(async () => {
+      log(`changed: ${file}`);
+      const error = await source.refresh();
+      const msg = error ? { t: 'error', text: error } : { t: 'reload' };
+      for (const ws of pages) ws.send(JSON.stringify(msg));
     }, 150);
   });
 
@@ -182,9 +253,8 @@ export async function startDev(opts: DevOptions) {
     httpServer.listen(opts.port, opts.host, resolve);
   });
   const shown = opts.host === '0.0.0.0' || opts.host === '::' ? 'localhost' : opts.host;
-  const guis = findGuis(target);
   log(`agapi:   ${opts.agapi}`);
-  log(`project: ${target} (${guis.length} .gui)`);
+  log(`project: ${target}${isEntry(target) ? '' : ` (${source.guis().length} .gui)`}`);
   log(`preview: http://${shown}:${opts.port}/`);
 
   return {

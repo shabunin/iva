@@ -15,6 +15,8 @@
   },
   "dependencies": {
     "@pixi/ui": "^2.3.2",
+    "@xmldom/xmldom": "^0.9.12",
+    "esbuild": "^0.28.2",
     "motion": "^12.23.24",
     "pixi.js": "^8.18.1",
     "tsx": "^4.21.0",
@@ -24,6 +26,7 @@
   "devDependencies": {
     "@types/node": "^22.14.0",
     "@types/ws": "^8.5.12",
+    "linkedom": "^0.18.13",
     "typescript": "~5.8.2"
   }
 }
