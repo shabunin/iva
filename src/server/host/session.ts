@@ -1,7 +1,7 @@
 /**
- * One preview page's backend: the agapi host commands (the same names and
- * payloads agapi's Tauri/Rust side serves - tcp_connect, udp_bind, ...),
- * implemented on Node sockets. Everything a session opens is closed when its
+ * One preview page's backend: the host commands the runtime's sockets send
+ * (src/runtime/host: tcp_connect, udp_bind, ... - the names and payloads of
+ * agapi's Tauri host, where the runtime comes from), on Node sockets. Everything a session opens is closed when its
  * page goes away, so a reload never leaves a port bound.
  */
 

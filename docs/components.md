@@ -111,7 +111,7 @@ a logo cut out of an image), and the field you type into sits where the
 `<System accept>`) works too: the preview's backend listens on that port.
 A browser keeps other sites' pages to themselves, so for those the title
 join stays empty, and back / forward only go through the URLs the panel
-loaded. (This needs agapi with web view and input field support.)
+loaded.
 
 ## Joins
 

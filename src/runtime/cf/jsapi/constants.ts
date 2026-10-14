@@ -1,0 +1,77 @@
+export const EVENTS = {
+    PreloadingCompleteEvent: "PRELOADING_COMPLETE_EVENT",
+    JoinChangeEvent: "JOIN_CHANGE_EVENT",
+    InputFieldEditedEvent: "INPUT_FIELD_EDITED_EVENT",
+    KeyboardUpEvent: "KEYBOARD_UP_EVENT",
+    KeyboardDownEvent: "KEYBOARD_DOWN_EVENT",
+    ObjectPressedEvent: "OBJECT_PRESSED_EVENT",
+    ObjectDraggedEvent: "OBJECT_DRAGGED_EVENT",
+    ObjectReleasedEvent: "OBJECT_RELEASED_EVENT",
+    GUISuspendedEvent: "GUI_SUSPENDED_EVENT",
+    GUIResumedEvent: "GUI_RESUMED_EVENT",
+    OrientationChangeEvent: "ORIENTATION_CHANGE_EVENT",
+    PageFlipEvent: "PAGE_FLIP_EVENT",
+    ListWillStartScrollingEvent: "LIST_WILL_START_SCROLLING_EVENT",
+    ListDidScrollEvent: "LIST_DID_SCROLL_EVENT",
+    ListDidEndScrollingEvent: "LIST_DID_END_SCROLLING_EVENT",
+    NetworkStatusChangeEvent: "NETWORK_STATUS_CHANGE_EVENT",
+    ConnectionStatusChangeEvent: "CONNECTION_STATUS_CHANGE_EVENT",
+    FeedbackMatchedEvent: "FEEDBACK_MATCHED_EVENT",
+    MovieInfoReceivedEvent: "MOVIE_INFO_RECEIVED_EVENT",
+    MoviePlaybackStateChangedEvent: "MOVIE_PLAYBACK_STATE_CHANGED_EVENT",
+    MovieLoadStateChangedEvent: "MOVIE_LOAD_STATE_CHANGED_EVENT",
+    DevicePropertyChangedEvent: "DEVICE_PROPERTY_CHANGED_EVENT",
+    ApplicationCallbackEvent: "APPLICATION_CALLBACK_EVENT",
+    PushNotificationEvent: "PUSH_NOTIFICATION_EVENT",
+};
+
+export const CONSTANTS = {
+    guiURL: "URL",
+    GlobalTokensJoin: "e0",
+    AnimationCurveLinear: "ANIMATION_CURVE_LINEAR",
+    AnimationCurveEaseIn: "ANIMATION_CURVE_EASE_IN",
+    AnimationCurveEaseOut: "ANIMATION_CURVE_EASE_OUT",
+    AnimationCurveEaseInOut: "ANIMATION_CURVE_EASE_IN_OUT",
+    LastItem: "LAST_ITEM",
+    AllItems: "ALL_ITEMS",
+    TopPosition: "TOP_POSITION",
+    LeftPosition: "LEFT_POSITION",
+    MiddlePosition: "MIDDLE_POSITION",
+    BottomPosition: "BOTTOM_POSITION",
+    RightPosition: "RIGHT_POSITION",
+    VisiblePosition: "VISIBLE_POSITION",
+    RelativePosition: "RELATIVE_POSITION",
+    PixelPosition: "PIXEL_POSITION",
+    ItemPosition: "ITEM_POSITION",
+    AbsolutePosition: "ABSOLUTE_POSITION",
+    PortraitOrientation: "PORTRAIT_ORIENTATION",
+    LandscapeOrientation: "LANDSCAPE_ORIENTATION",
+    LandscapeOrienation: "LANDSCAPE_ORIENTATION", // Legacy typo
+    UTF8: "UTF8",
+    BINARY: "BINARY",
+
+    // Hash constants
+    Hash_MD5: "HASH_MD5",
+    Hash_SHA1: "HASH_SHA1",
+    Hash_SHA256: "HASH_SHA256",
+    Hash_SHA384: "HASH_SHA384",
+    Hash_SHA512: "HASH_SHA512",
+    
+    // CRC constants
+    CRC_8: "CRC_8",
+    CRC_16: "CRC_16",
+    CRC_16_CCITT: "CRC_16_CCITT",
+    CRC_16_MODBUS: "CRC_16_MODBUS",
+    CRC_32: "CRC_32",
+    CRC_32C: "CRC_32C",
+
+    // Output format constants
+    OUTPUT_NUMBER: 0,
+    OUTPUT_STRING: 1,
+    OUTPUT_BINARY: 2,
+    OUTPUT_BINARY_LE: 3,
+
+    // Sensors
+    Accelerometer: "ACCELEROMETER",
+    Gyroscope: "GYROSCOPE",
+};

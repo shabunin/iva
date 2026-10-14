@@ -4,7 +4,7 @@
 import { parseArgs } from 'node:util';
 import fs from 'node:fs';
 import path from 'node:path';
-import { resolveAgapi, startDev } from '../server/dev.js';
+import { startDev } from '../server/dev.js';
 import { compile, IvaError, slug, writeBuild } from '../compiler/index.js';
 import { decompile } from '../decompiler/index.js';
 import { create, templates, VERSION } from '../create.js';
@@ -46,7 +46,6 @@ Options (build):
 Options (dev):
   -p, --port <n>       port (default 5180)
       --host <addr>    address to listen on (default 127.0.0.1; 0.0.0.0 for LAN)
-      --agapi <dir>    agapi checkout (default: $IVA_AGAPI or ../agapi)
   -v, --verbose        log socket activity
 `;
 
@@ -189,7 +188,6 @@ async function main(argv: string[]) {
       options: {
         port: { type: 'string', short: 'p', default: '5180' },
         host: { type: 'string', default: '127.0.0.1' },
-        agapi: { type: 'string' },
         verbose: { type: 'boolean', short: 'v', default: false },
         help: { type: 'boolean', short: 'h' },
       },
@@ -202,7 +200,6 @@ async function main(argv: string[]) {
       target: positionals[0] ?? (fs.existsSync('app.jsx') ? 'app.jsx' : '.'),
       port: Number(values.port),
       host: values.host!,
-      agapi: resolveAgapi(values.agapi),
       verbose: values.verbose,
     });
     const stop = async () => {

@@ -19,34 +19,6 @@
     "resolveJsonModule": true,
     "baseUrl": ".",
     "paths": {
-      "@agapi/cf-runtime": [
-        "../agapi/packages/cf-runtime/src/index.ts"
-      ],
-      "@agapi/stdlib": [
-        "../agapi/packages/stdlib/src/index.ts"
-      ],
-      "@agapi/stdlib/*": [
-        "../agapi/packages/stdlib/src/*",
-        "../agapi/packages/stdlib/src/*/index.ts"
-      ],
-      "@agapi/host-protocol": [
-        "../agapi/packages/host-protocol/src/index.ts"
-      ],
-      "@agapi-src/*": [
-        "../agapi/packages/*"
-      ],
-      "@tauri-apps/api/core": [
-        "src/preview/bridge/tauri-core.ts"
-      ],
-      "@tauri-apps/api/event": [
-        "src/preview/bridge/tauri-event.ts"
-      ],
-      "@tauri-apps/plugin-http": [
-        "src/preview/bridge/tauri-plugin-http.ts"
-      ],
-      "@tauri-apps/plugin-websocket": [
-        "src/preview/bridge/tauri-plugin-websocket.ts"
-      ],
       "iva": [
         "src/compiler/prelude.ts"
       ],

@@ -1,8 +1,9 @@
 # iva — iViewer assistant
 
 Write CommandFusion iViewer interfaces in JSX; iva compiles them into an
-ordinary `.gui` (the format GUI Designer writes) and previews them live on
-agapi's cf-runtime. The iViewer twin of [`ira`](../i3-web).
+ordinary `.gui` (the format GUI Designer writes) and previews them live in a
+CommandFusion runtime of its own (`src/runtime`). The iViewer twin of
+[`ira`](../i3-web).
 
 ```jsx
 // app.jsx
@@ -115,31 +116,32 @@ node bin/iva.mjs dev fixtures/DemoUserInterfaces   # after `npm run fixtures`
 
 Open http://127.0.0.1:5180/. Saving any file in the project reloads the page.
 Options: `--port`, `--host 0.0.0.0` (preview from a tablet on the LAN),
-`--agapi <dir>`, `-v` (log sockets).
+`-v` (log sockets).
 
 One Node process serves:
 
 ```
 browser page                                   Node (iva dev)
 ──────────────────────────────                 ──────────────────────────────
-@agapi/cf-runtime  (parser, Pixi, CF.*, systems)
-   │ agapi.net / dgram / tls / dns / http
-@agapi/stdlib
+src/runtime/cf      (parser, Pixi, CF.*, systems)
+   │ net / dgram / tls / dns / http
+src/runtime/stdlib
    │
-agapi host-tauri classes  ── invoke/listen ──► /__iva/host (WebSocket)
- (@tauri-apps/* aliased to                      HostSession: node:net, dgram,
-  src/preview/bridge/)                          tls, dns, http(s)
+src/runtime/host    ── invoke/listen ──────► /__iva/host (WebSocket)
+ (sockets, TLS, DNS, HTTP;                      HostSession: node:net, dgram,
+  bridge/: the WebSocket)                       tls, dns, http(s)
                                                /__iva/manifest, /__iva/files/…
 ```
 
-- **Runtime**: agapi's `cf-runtime`, used from source (`../agapi`, or
-  `--agapi` / `$IVA_AGAPI`). Nothing of agapi is copied or installed.
-- **Backend**: `src/server/host/session.ts` implements agapi's host commands
-  (`tcp_connect`, `udp_bind`, `tls_connect`, `dns_lookup`, …: the ones its
-  Rust side serves) on Node sockets, plus `http_fetch` (no CORS, self-signed
-  certs OK). agapi's own client classes run in the page unchanged: their
-  `@tauri-apps/api/*` imports resolve to `src/preview/bridge/`, which sends
-  them over the WebSocket. No Tauri anywhere.
+- **Runtime**: `src/runtime`, iva's own: the CF runtime (`cf/`: the .gui
+  parser, Pixi rendering, the `CF.*` API, systems), sockets / UDP / HTTP /
+  DNS / TLS (`stdlib/`, `host/`). It started as a copy of
+  [agapi](https://github.com/shabunin/agapi)'s cf-runtime (see
+  `src/runtime/README.md`); nothing outside iva is needed.
+- **Backend**: `src/server/host/session.ts` serves the host commands the
+  page's sockets send (`tcp_connect`, `udp_bind`, `tls_connect`,
+  `dns_lookup`, …) on Node sockets, plus `http_fetch` (no CORS, self-signed
+  certs OK), over one WebSocket (`src/runtime/host/bridge/`).
 - One backend session per page: a reload closes every socket it opened.
 
 Not in the backend yet: hosting HTTP / WebSocket servers, mDNS, device APIs.
@@ -156,7 +158,8 @@ templates/             iva create's templates (blank, demo) and the files every 
 tools/roundtrip.ts     decompile + compile + compare every .gui under a folder
 tools/gen-fonts.ts     src/compiler/fonts.json from GUI Designer's fontlist.xml
 src/server/            dev server, project loader, host backend
-src/preview/           the preview page (+ bridge/ for agapi's host classes)
+src/runtime/           the CommandFusion runtime the preview runs (cf/, stdlib/, host/)
+src/preview/           the preview page
 test/                  node:test
 examples/hello/        a small JSX project
 docs/components.md     the elements, their props and what they become

@@ -6,7 +6,7 @@ import path from 'node:path';
 import { DOMParser } from 'linkedom';
 import { compile, IvaError } from '../src/compiler/index.ts';
 import { circle } from '../src/compiler/images.ts';
-import { parseGUI } from '../../agapi/packages/cf-runtime/src/parser.ts';
+import { parseGUI } from '../src/runtime/cf/parser.ts';
 
 (globalThis as any).DOMParser = DOMParser;
 

@@ -5,8 +5,8 @@
 export type Message = any;
 
 export default class WebSocket {
-  static async connect(): Promise<WebSocket> {
-    throw new Error('iva dev: use agapi.http.WebSocket (the browser WebSocket)');
+  static async connect(_url?: string, _options?: unknown): Promise<WebSocket> {
+    throw new Error('iva dev: use the browser WebSocket');
   }
   addListener(_cb: (msg: Message) => void): () => void {
     return () => {};

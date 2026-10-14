@@ -1,7 +1,7 @@
-import { installStdlib } from '@agapi/stdlib';
-import { loadProject, type Orientation, type LoadProjectResult, type LoadProjectOptions } from '@agapi/cf-runtime';
-import { createIvaHost } from './host';
-import { control, ensureConnected } from './bridge/transport';
+import { installHost } from '../runtime/stdlib';
+import { loadProject, type Orientation, type LoadProjectResult } from '../runtime/cf';
+import { createIvaHost } from '../runtime/host';
+import { control, ensureConnected } from '../runtime/host/bridge/transport';
 import { installFonts } from './fonts';
 
 interface GuiEntry { rel: string; name: string }
@@ -48,11 +48,7 @@ console.error = (...args: unknown[]) => {
 window.addEventListener('error', (e) => noteError(`${e.message} (${e.filename?.split('/').pop()}:${e.lineno})`));
 window.addEventListener('unhandledrejection', (e) => noteError(`unhandled: ${e.reason?.message ?? e.reason}`));
 
-installStdlib(createIvaHost());
-// cf-runtime routes CF.request and remote <img> loads through the host's HTTP
-// (no CORS, self-signed certs) only when it sees this Tauri marker; the iva
-// host serves the same, and nothing Tauri is loaded to read the marker otherwise.
-(window as any).__TAURI_INTERNALS__ ??= { iva: true };
+installHost(createIvaHost());
 ensureConnected();
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -107,12 +103,12 @@ async function boot(gui: string) {
   }
   const m: Manifest = await res.json();
   document.title = `${m.title} · iva`;
-  // fileUrl: a web view's url="page.html" is the project's own file (an older agapi ignores it)
-  const options: LoadProjectOptions & { fileUrl?: (name: string) => string } = {
+  current = await loadProject({
     guiXml: m.guiXml,
     imageMap: m.imageMap,
     scriptMap: m.scriptMap,
     canvas,
+    // a web view's url="page.html": the project's own file
     fileUrl: (name) => m.fileBase + name.split('/').map(encodeURIComponent).join('/'),
     orientation,
     onOrientationChange: (o) => setOrientation(o),
@@ -122,8 +118,7 @@ async function boot(gui: string) {
       fullscreenTarget: stage,
       host: { reload: () => location.reload() },
     },
-  };
-  current = await loadProject(options);
+  });
   fitStage();
   const warn = m.missingScripts.length ? ` · missing scripts: ${m.missingScripts.join(', ')}` : '';
   setStatus(`${m.title}${warn}`, warn ? 'warn' : 'ok');

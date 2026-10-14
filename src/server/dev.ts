@@ -1,6 +1,6 @@
 /**
  * `iva dev`: one Node process serving
- *   - the preview page (Vite, middleware mode) running agapi's cf-runtime,
+ *   - the preview page (Vite, middleware mode) running iva's CF runtime (src/runtime),
  *   - the backend the runtime talks to (/__iva/host WebSocket: real TCP / UDP /
  *     TLS / DNS / HTTP from this machine),
  *   - the project's files (/__iva/guis, /__iva/manifest, /__iva/files/...),
@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createServer as createVite, type Alias } from 'vite';
+import { createServer as createVite } from 'vite';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { HostSession } from './host/session.js';
 import { watchTree } from './watch.js';
@@ -20,7 +20,6 @@ import { compile, IvaError, slug, type CompileResult } from '../compiler/index.j
 
 const IVA_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PREVIEW_DIR = path.join(IVA_ROOT, 'src', 'preview');
-const BRIDGE_DIR = path.join(PREVIEW_DIR, 'bridge');
 
 const MIME: Record<string, string> = {
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
@@ -34,46 +33,7 @@ export interface DevOptions {
   target: string;
   port: number;
   host: string;
-  /** agapi checkout (its packages/ are used from source). */
-  agapi: string;
   verbose?: boolean;
-}
-
-/** Locate the agapi checkout: --agapi, $IVA_AGAPI, or ../agapi next to iva. */
-export function resolveAgapi(explicit?: string): string {
-  const candidates = [explicit, process.env.IVA_AGAPI, path.resolve(IVA_ROOT, '..', 'agapi')].filter(Boolean) as string[];
-  for (const c of candidates) {
-    const dir = path.resolve(c);
-    if (fs.existsSync(path.join(dir, 'packages', 'cf-runtime', 'package.json'))) return dir;
-  }
-  throw new Error(
-    `agapi not found (looked in: ${candidates.join(', ')}). ` +
-      'Clone it next to iva, or pass --agapi <dir> / set IVA_AGAPI.',
-  );
-}
-
-/** `@agapi/<pkg>[/sub]` -> agapi source, from each package's own exports map. */
-function agapiAliases(agapi: string): Alias[] {
-  const aliases: Alias[] = [];
-  for (const pkg of ['cf-runtime', 'stdlib', 'host-protocol']) {
-    const dir = path.join(agapi, 'packages', pkg);
-    const { name, exports } = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
-    const map: Record<string, string> = typeof exports === 'string' ? { '.': exports } : exports;
-    for (const [sub, file] of Object.entries(map)) {
-      const spec = sub === '.' ? name : `${name}/${sub.slice(2)}`;
-      aliases.push({ find: new RegExp(`^${spec.replace(/[/.@-]/g, '\\$&')}$`), replacement: path.join(dir, file) });
-    }
-  }
-  // agapi files by path (iva's preview reuses host-tauri's socket classes)
-  aliases.push({ find: /^@agapi-src\/(.*)$/, replacement: path.join(agapi, 'packages') + '/$1' });
-  // no Tauri: its IPC goes to the iva backend instead
-  aliases.push(
-    { find: /^@tauri-apps\/api\/core$/, replacement: path.join(BRIDGE_DIR, 'tauri-core.ts') },
-    { find: /^@tauri-apps\/api\/event$/, replacement: path.join(BRIDGE_DIR, 'tauri-event.ts') },
-    { find: /^@tauri-apps\/plugin-http$/, replacement: path.join(BRIDGE_DIR, 'tauri-plugin-http.ts') },
-    { find: /^@tauri-apps\/plugin-websocket$/, replacement: path.join(BRIDGE_DIR, 'tauri-plugin-websocket.ts') },
-  );
-  return aliases;
 }
 
 const encodePath = (rel: string) => rel.split('/').map(encodeURIComponent).join('/');
@@ -163,16 +123,11 @@ export async function startDev(opts: DevOptions) {
     logLevel: opts.verbose ? 'info' : 'warn',
     clearScreen: false,
     appType: 'spa',
-    resolve: {
-      alias: agapiAliases(opts.agapi),
-      // agapi sources live outside this package: take its libraries from iva's node_modules
-      dedupe: ['pixi.js', '@pixi/ui', 'motion'],
-    },
     optimizeDeps: { include: ['pixi.js', '@pixi/ui', 'motion'] },
     server: {
       middlewareMode: true,
       hmr: { server: httpServer },
-      fs: { allow: [IVA_ROOT, opts.agapi] },
+      fs: { allow: [IVA_ROOT] },
     },
   });
 
@@ -249,7 +204,6 @@ export async function startDev(opts: DevOptions) {
     httpServer.listen(opts.port, opts.host, resolve);
   });
   const shown = opts.host === '0.0.0.0' || opts.host === '::' ? 'localhost' : opts.host;
-  log(`agapi:   ${opts.agapi}`);
   log(`project: ${target}${isEntry(target) ? '' : ` (${source.guis().length} .gui)`}`);
   log(`preview: http://${shown}:${opts.port}/`);
 
