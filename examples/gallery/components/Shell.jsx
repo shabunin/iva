@@ -14,6 +14,7 @@ export const sections = [
   { page: 'Tables', icon: 'table', text: 'Tables & alarms', sub: 'DataTable, AlarmTable, AlarmBanner' },
   { page: 'Charts', icon: 'chart-line', text: 'Charts & 3D', sub: 'Trend, Chart, WebApp (three.js)' },
   { page: 'DragDrop', icon: 'hand', text: 'Drag & drop', sub: 'DragDrop: items onto targets' },
+  { page: 'Animations', icon: 'wand-magic-sparkles', text: 'Animations', sub: 'CF.setProperties, curves, subpage transitions' },
   { page: 'Navigation', icon: 'compass', text: 'Navigation & feedback', sub: 'Header, SideMenu, Breadcrumbs, Pager, Loader, ConfirmDialog' },
 ];
 

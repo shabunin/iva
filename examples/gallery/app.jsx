@@ -10,6 +10,7 @@ import Schedule from './pages/Schedule.jsx';
 import Tables from './pages/Tables.jsx';
 import Charts from './pages/Charts.jsx';
 import DragDrop from './pages/DragDrop.jsx';
+import Animations from './pages/Animations.jsx';
 import Navigation from './pages/Navigation.jsx';
 
 export default (
@@ -29,6 +30,7 @@ export default (
     {Tables}
     {Charts}
     {DragDrop}
+    {Animations}
     {Navigation}
   </Project>
 );

@@ -11,7 +11,7 @@ const GALLERY = path.resolve(import.meta.dirname, '../examples/gallery/app.jsx')
 
 test('the iva/ui gallery builds: one runtime script, the shared subpages once', async () => {
   const r = await compile(GALLERY);
-  assert.deepEqual(r.scripts.map((s) => s.name), ['iva-joins.js', 'iva-ui.js', 'iva-http.js', 'plant.js', 'iva-themes.js', 'iva-start.js']);
+  assert.deepEqual(r.scripts.map((s) => s.name), ['iva-joins.js', 'iva-ui.js', 'iva-http.js', 'plant.js', 'animations.js', 'iva-themes.js', 'iva-start.js']);
   // every script the panel gets is valid JavaScript
   for (const sc of r.scripts) assert.doesNotThrow(() => new Function(sc.code!), sc.name);
   const start = r.scripts.find((s) => s.name === 'iva-start.js')!.code!;
