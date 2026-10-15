@@ -9,7 +9,7 @@ GUI Designer open.
 ```bash
 iva dev            # live preview (app.jsx): rebuilds on save; real TCP/UDP/HTTP to devices
 iva check          # types (as the editor sees them) + a test build: run before handing over
-iva build          # -> dist/: the .gui, images/ (its image folder), scripts/, joins.json
+iva build          # -> dist/: the .gui, assets/ (its image folder: a folder per component type, scripts/), joins.json
 iva serve          # to iViewer on a real device (GUI File URL http://<this machine>:8019), reloads on save
 ```
 

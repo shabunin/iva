@@ -37,17 +37,27 @@ iva designer   # build and open it in CommandFusion GUI Designer
 
 ```
 dist/
-  my-panel.gui          <imagefolder>images</imagefolder>
-  images/               the project's images and files (assets/), and iva's own:
-    backgrounds/          drawn cards, buttons, rows
-    icons/                Font Awesome icons
-    controls/             dial, knob, slider frames
-    apps/                 web apps (<WebApp>)
+  my-panel.gui          <imagefolder>assets</imagefolder>
+  assets/               the project's own images and files (from assets/), and
+                        iva's drawings, a folder per component type:
+    dials/thermostat/     a dial's own folder (named after its label): its
+                          frames 0.png ... 50.png, track.png, dot.png
+    knobs/volume/         a knob's: ticks.png, knob.png
+    pickers/lamp/         a colour picker's: wheel.png, marker.png, frame.png
+    buttons/              120x44-r12-2b3137.png: size, corner radius, colour
+    boxes/ rows/ banners/ sliders/ backgrounds/    (a page's: its name)
+    icons/                lightbulb.png - another colour: lightbulb-00bc97.png
+    apps/                 web apps (<WebApp>): apps/<name>.js
     sounds/
     scripts/              <script name="scripts/main.js">, iva's scripts (iViewer
                           looks for a .gui's scripts in its image folder)
   joins.json
 ```
+
+A drawing made twice is one file, named after the first element it's for.
+In a build of several looks (`<Project themes>`) a drawing that differs gets
+the look's name too: `dials/thermostat-light/`, `backgrounds/home-light.png`.
+Russian labels are transliterated: `Термостат` makes `dials/termostat/`.
 
 `<Project folders={false}>` puts everything beside the .gui instead (a
 decompiled .gui keeps its own layout this way). `iva build --zip` also writes

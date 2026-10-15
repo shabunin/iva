@@ -116,7 +116,10 @@ test('a slider drawn from colours gets generated images', async () => {
   for (const p of pngs) assert.deepEqual([...p.data!.subarray(1, 4)], [0x50, 0x4e, 0x47]);
   const gui = await parseGUI(r.xml);
   const slider = gui.pages.Main.landscape![0];
-  assert.match(gui.themes[slider.t!].states['1']['background-image'], /iva_fill_/);
+  // named after what they look like, in the sliders' folder
+  assert.equal(gui.themes[slider.t!].states['0']['background-image'], 'url(sliders/200x20-r10-333-track.png)');
+  assert.equal(gui.themes[slider.t!].states['1']['background-image'], 'url(sliders/200x20-r10-08f-fill.png)');
+  assert.ok(r.assets.some((a) => a.name === 'sliders/thumb-20-fff.png'));
 });
 
 test('images are copied by name; a missing one is a warning', async () => {
@@ -162,10 +165,11 @@ test('radius / border: the background is drawn at the button\'s size, per state'
   const gui = await parseGUI(r.xml);
   const [filled, outline] = gui.pages.Main.landscape!;
   const t = gui.themes[filled.t!];
-  assert.match(t.states['0']['background-image'], /url\(backgrounds\/iva_btn_\w+\.png\)/);
-  assert.notEqual(t.states['0']['background-image'], t.states['1']['background-image']);
+  // in the buttons' folder, named after what they look like: size, corner radius, colour, border
+  assert.equal(t.states['0']['background-image'], 'url(buttons/200x60-r12-222.png)');
+  assert.equal(t.states['1']['background-image'], 'url(buttons/200x60-r12-06f.png)');
   assert.equal(t.states['0']['background-color'], undefined);
-  assert.match(gui.themes[outline.t!].states['0']['background-image'], /iva_btn_/);
+  assert.equal(gui.themes[outline.t!].states['0']['background-image'], 'url(buttons/200x60-r12-b2-06f.png)');
   // 1x and the retina @2x, twice the size
   const png = (n: string) => r.assets.find((a) => a.name === n)!.data!;
   const name = /url\((.*)\)/.exec(t.states['0']['background-image'])![1];
@@ -177,7 +181,8 @@ test('radius / border: the background is drawn at the button\'s size, per state'
 test('a subpage with radius gets a drawn background', async () => {
   const r = await build(wrap(`<Subpage name="Card" w={300} h={120} radius={16} bg="#222" />`));
   const gui = await parseGUI(r.xml);
-  assert.match(gui.themes[gui.subpages.Card.theme!].states['0']['background-image'], /url\(backgrounds\/iva_bg_\w+\.png\)/);
+  // named after the subpage
+  assert.equal(gui.themes[gui.subpages.Card.theme!].states['0']['background-image'], 'url(backgrounds/card.png)');
 });
 
 test('fa() icons: on buttons in the text colour (active too), as images, with "did you mean"', async () => {
@@ -188,12 +193,13 @@ test('fa() icons: on buttons in the text colour (active too), as images, with "d
   const [btn, img] = gui.pages.Main.landscape!;
   const off = btn.children.find((c) => c.type === 'inactive')!.children[0];
   const on = btn.children.find((c) => c.type === 'active')!.children[0];
-  assert.match(off.text!, /^icons\/iva_fa_\w+\.png$/);
-  assert.notEqual(off.text, on.text); // drawn in each state's colour
+  // by the icon's name; drawn again in another colour: its colour too
+  assert.equal(off.text, 'icons/lightbulb.png');
+  assert.equal(on.text, 'icons/lightbulb-fff.png');
   assert.deepEqual([off.x, off.y, off.w, off.h], [20, 20, 40, 40]);
   assert.match(gui.themes[btn.t!].states['0'].padding, /^0px 20px 0px 75px$/);
   assert.equal(gui.themes[btn.t!].states['0']['text-align'], 'left');
-  assert.match(img.content!, /^icons\/iva_fa_\w+\.png$/);
+  assert.equal(img.content, 'icons/brands-github.png');
   await fails(wrap(`<Image w={10} h={10} src={fa('lightbulp')} />`), /no Font Awesome icon "lightbulp" \(did you mean "lightbulb"\?\)/);
 });
 
@@ -207,7 +213,7 @@ test('<Box>: a drawn image touches go through; <Group>: moves its children', asy
   const [box, btn] = gui.pages.Main.landscape!;
   assert.equal(box.type, 'img');
   assert.deepEqual([box.x, box.y, box.attributes.clickthrough], [100, 50, '1']);
-  assert.match(box.content!, /^backgrounds\/iva_box_\w+\.png$/);
+  assert.equal(box.content, 'boxes/200x100-r12-222.png');
   assert.deepEqual([btn.x, btn.y], [110, 60]);
 });
 
@@ -298,7 +304,7 @@ test('<Input> actions, <Web> named joins, a <System> from a component: once', as
 
 test('<Text bg>: a drawn box behind the text (iViewer draws no text backgrounds)', async () => {
   const r = await build(wrap(`<Group x={10}><Text x={20} y={30} w={200} h={40} text="Hi" bg="#336699" radius={8} /></Group>`));
-  assert.match(r.xml, /<img x="30" y="30" w="200" h="40" j="0" clickthrough="1"[^>]*>backgrounds\/iva_box_\w+\.png<\/img>\s*<txt j="0" x="30" y="30" w="200" h="40"/);
+  assert.match(r.xml, /<img x="30" y="30" w="200" h="40" j="0" clickthrough="1"[^>]*>boxes\/200x40-r8-336699\.png<\/img>\s*<txt j="0" x="30" y="30" w="200" h="40"/);
   assert.doesNotMatch(r.xml, /type="text"[^\]]*background-color/);
 });
 
@@ -349,7 +355,7 @@ test('<WebApp>: bundled into the build, a web view on the panel\'s one web serve
       <Web y={320} w={160} h={72} url="panel:/iva-color/FFB000" />`),
   { 'app.js': app, 'look.js': `export const look = (v) => (v ? '#fff' : '#000');\n` });
   // the code, bundled with what it imports (iva/web too), ships as a project file
-  const bundle = r.assets.find((x) => x.name === 'apps/iva_app_app.js')!;
+  const bundle = r.assets.find((x) => x.name === 'apps/app.js')!;
   assert.ok(bundle.data && bundle.data.length > 1000);
   assert.doesNotThrow(() => new Function(bundle.data!.toString('utf8')));
   assert.ok(r.inputs.files.some((f) => f.endsWith('look.js')), 'its modules are watched');
@@ -390,7 +396,7 @@ test('<WebApp>: one app per name; the entry must exist and build', async () => {
   await fails(wrap(`<WebApp entry="iva:nope" w={9} h={9} />`), /no built-in web app "iva:nope" \(iva has: iva:trend, iva:chart\)/);
 });
 
-test('the build: the .gui, images/ (its image folder: drawings by kind, sounds, web apps, scripts - iViewer looks for scripts there); folders={false}: all beside it', async () => {
+test('the build: the .gui, assets/ (its image folder: drawings in a folder per component type, sounds, web apps, scripts - iViewer looks for scripts there); folders={false}: all beside it', async () => {
   const files = { 'beep.mp3': 'mp3', 'main.js': 'CF.log(1);' };
   const jsx = (folders: string) => `export default (
   <Project name="T" width={1024} height={768}${folders}>
@@ -402,20 +408,20 @@ test('the build: the .gui, images/ (its image folder: drawings by kind, sounds, 
   const tree = (dir: string) => (fs.readdirSync(dir, { recursive: true }) as string[]).map((f) => f.split(path.sep).join('/'))
     .filter((f) => fs.statSync(path.join(dir, f)).isFile()).map((f) => f.replace(/_[0-9a-f]{8}(@2x)?\.png$/, '_#$1.png')).sort();
   const r = await build(jsx(''), files);
-  assert.match(r.xml, /<imagefolder>images<\/imagefolder>/);
+  assert.match(r.xml, /<imagefolder>assets<\/imagefolder>/);
   assert.match(r.xml, /<script name="scripts\/main\.js" \/>/);
   assert.match(r.xml, /<sound name="beep" [^>]*>sounds\/beep\.mp3<\/sound>/);
   const out = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-dist-'));
   writeBuild(r, out);
-  assert.deepEqual(tree(out), ['T.gui', 'images/backgrounds/iva_box_#.png', 'images/backgrounds/iva_box_#@2x.png', 'images/icons/iva_fa_#.png',
-    'images/icons/iva_fa_#@2x.png', 'images/scripts/main.js', 'images/sounds/beep.mp3', 'joins.json'].sort());
+  assert.deepEqual(tree(out), ['T.gui', 'assets/boxes/100x50-r8-123456.png', 'assets/boxes/100x50-r8-123456@2x.png', 'assets/icons/lightbulb.png',
+    'assets/icons/lightbulb@2x.png', 'assets/scripts/main.js', 'assets/sounds/beep.mp3', 'joins.json'].sort());
   // as before: everything beside the .gui (a decompiled project keeps its own layout)
   const flat = await build(jsx(' folders={false}'), files);
   assert.match(flat.xml, /<imagefolder \/>/);
   assert.match(flat.xml, /<script name="main\.js" \/>/);
   const out2 = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-dist-'));
   writeBuild(flat, out2);
-  assert.ok(tree(out2).includes('backgrounds/iva_box_#.png') && tree(out2).includes('main.js') && tree(out2).includes('beep.mp3'));
+  assert.ok(tree(out2).includes('boxes/100x50-r8-123456.png') && tree(out2).includes('main.js') && tree(out2).includes('beep.mp3'));
 });
 
 test('screen sizes: screen() is the <Project>\'s size or the one asked for; <Project sizes> each in its own folder', async () => {
@@ -444,10 +450,10 @@ export default (
   const out = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-sizes-dist-'));
   const guis = writeBuilds([main, square, tall], out);
   assert.deepEqual(guis.map((g) => path.relative(out, g).split(path.sep).join('/')), ['T.gui', '1400w1400h/T.gui', '768w1024h/T.gui']);
-  assert.ok(fs.existsSync(path.join(out, '1400w1400h', 'images', 'bg.png')));
+  assert.ok(fs.existsSync(path.join(out, '1400w1400h', 'assets', 'bg.png')));
   const files = buildFilesAll([main, square, tall]).map(([f]) => f);
   assert.equal(files[0], 'T.gui');
-  assert.ok(files.includes('1400w1400h/T.gui') && files.includes('768w1024h/images/bg.png'));
+  assert.ok(files.includes('1400w1400h/T.gui') && files.includes('768w1024h/assets/bg.png'));
 });
 
 test('screen sizes: with runtime themes each look is built at the size; sizes are checked', async () => {
@@ -478,7 +484,7 @@ export default (
   assert.match(phone.xml, /<size autoposition="scale">/);
   assert.match(phone.xml, />x3<\/txt>/);
   // the box drawn at 3x (435 wide -> 1305 px), no @2x besides
-  const box = phone.assets.find((a) => /iva_box_/.test(a.name))!;
+  const box = phone.assets.find((a) => a.name.startsWith('boxes/'))!;
   assert.equal(box.data!.readUInt32BE(16), 435 * 3);
   assert.ok(!phone.assets.some((a) => a.name.includes('@2x')));
   assert.ok(main.assets.some((a) => a.name.includes('@2x')));

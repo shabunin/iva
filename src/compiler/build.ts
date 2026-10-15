@@ -7,7 +7,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { DEVICES, parseSize, PROPS, REQUIRED, sizeFolder, sizeLabel, STYLE_PROPS, type ScreenSize, type StyleProps, type Transition } from './components.js';
+import { DEVICES, parseSize, PROPS, REQUIRED, sizeFolder, sizeLabel, STYLE_PROPS, variant, type ScreenSize, type StyleProps, type Transition } from './components.js';
 import { fixedJoin, JoinAllocator, JoinSlot, typedJoin } from './joins.js';
 import { isVNode, type Child, type Source, type VNode } from './runtime.js';
 import { styleCss, Themes, type ThemeType } from './style.js';
@@ -16,6 +16,24 @@ import { arc, box, boxIcon, circle, cutout, dotOnRing, generatedName, icon, knob
 import type { DrawRef, IconRef } from './components.js';
 
 const isIcon = (v: unknown): v is IconRef => !!v && typeof v === 'object' && (v as IconRef).$$icon === 1;
+
+// ── readable names of the drawings (names.ts) ───────────────────────────
+/** a colour in a file name: #2B3137 -> 2b3137 */
+const tone = (c: unknown) => (typeof c === 'string' ? fileName(c) : '');
+/** what a drawn box looks like: 120x44-r12-2b3137-b2-00bc97 (size, corner radius, fill, border) */
+const boxLook = (w: number, h: number, radius?: number, fill?: unknown, borderWidth?: number, borderColor?: unknown) =>
+  [`${Math.round(w)}x${Math.round(h)}`, radius ? `r${Math.round(radius)}` : '', tone(fill), borderWidth && borderColor ? `b${borderWidth}-${tone(borderColor)}` : '']
+    .filter(Boolean).join('-');
+/** an icon by its name (icons/lightbulb), else with its colour, else its size too */
+const iconNames = (name: string, style: string | undefined, color: unknown, size: number) => {
+  const n = `icons/${fileName(name) || 'icon'}${style && style !== 'solid' ? `-${style}` : ''}`;
+  return [n, `${n}-${tone(color)}`, `${n}-${tone(color)}-${Math.round(size)}`];
+};
+/** a drawing of the project's own (draw.arc() ...): its kind and size */
+const drawLook = (d: DrawRef) => {
+  const o = d as unknown as { size?: number; w?: number; h?: number };
+  return `drawn/${d.kind}-${o.size !== undefined ? Math.round(o.size) : `${Math.round(o.w ?? 0)}x${Math.round(o.h ?? 0)}`}`;
+};
 const isDraw = (v: unknown): v is DrawRef => !!v && typeof v === 'object' && (v as DrawRef).$$draw === 1;
 
 /** A DrawRef drawn. */
@@ -32,10 +50,11 @@ function drawImage(d: DrawRef, sc: number): Buffer {
   }
 }
 import { el, parseXml, serialize, type XNode } from './xml.js';
+import { drawnFile, fileName } from './names.js';
 import { bundleWebApp, HTTP_RUNTIME, resolveEntry } from './web.js';
 
-/** The build's folders (<Project folders>, the default): images/ is iViewer's asset folder (<imagefolder>). */
-export const IMAGES_DIR = 'images';
+/** The build's folders (<Project folders>, the default): assets/ is iViewer's asset folder (<imagefolder>). */
+export const IMAGES_DIR = 'assets';
 export const SCRIPTS_DIR = 'scripts';
 
 export class CompileError extends Error {
@@ -515,13 +534,14 @@ export class Builder {
 
   /** An image file: its .gui name (copied with the build); URLs stay as they are. */
   private image(node: VNode, src: string | IconRef | DrawRef): string {
-    if (isDraw(src)) return this.generated(node, src.kind, (sc) => drawImage(src, sc), src.name);
+    if (isDraw(src)) return this.generated(node, src.kind, (sc) => drawImage(src, sc), src.name, [drawLook(src)]);
     if (isIcon(src)) {
       // an icon as a whole image: centred in the element's box; one with a fixed file name
       // (shared: list rows, scripts) at its own size, whatever element names it
       const p = node.props;
       const [w, h] = src.file && src.size ? [src.size, src.size] : [p.w ?? src.size ?? 32, p.h ?? src.size ?? 32];
-      return this.generated(node, 'fa', (sc) => icon(src.name, src.style, src.color ?? '#FFFFFF', src.size ?? Math.min(w, h), sc, w, h), src.file);
+      return this.generated(node, 'fa', (sc) => icon(src.name, src.style, src.color ?? '#FFFFFF', src.size ?? Math.min(w, h), sc, w, h), src.file,
+        iconNames(src.name, src.style, src.color ?? '#FFFFFF', src.size ?? Math.min(w, h)));
     }
     if (/^[a-z]+:\/\//i.test(src) || src === '') return src;
     if (this.assets.get(src.toLowerCase())?.data) return src; // drawn by iva
@@ -548,12 +568,14 @@ export class Builder {
   }
 
   /**
-   * An image iva drew, at 1x and 2x (name@2x.png: iViewer's retina version),
-   * named after its content. A build for a dense screen (size@3x, scaled up by
-   * iViewer) draws the image itself that sharp, and no @2x one when it's at
-   * least that.
+   * An image iva drew, at 1x and 2x (name@2x.png: iViewer's retina version).
+   * Named as its maker named it (iva/ui: a dial's frames in its folder), else
+   * readably - the first of `names` (what it's for, what it looks like) not
+   * another drawing's - and drawn twice, one file under its first name
+   * (names.ts). A build for a dense screen (size@3x, scaled up by iViewer)
+   * draws the image itself that sharp, and no @2x one when it's at least that.
    */
-  private generated(node: VNode, kind: string, draw: (scale: number) => Buffer, fixedName?: string): string {
+  private generated(node: VNode, kind: string, draw: (scale: number) => Buffer, fixedName?: string, names?: string[]): string {
     const sc = this.opts.size?.scale ?? 1;
     let data: Buffer;
     let data2: Buffer | null;
@@ -563,7 +585,10 @@ export class Builder {
     } catch (e: any) {
       throw this.err(node, e.message);
     }
-    const name = fixedName ? `${fixedName.replace(/\.png$/i, '')}.png` : generatedName(kind, data);
+    const sha = createHash('sha1').update(data).update(data2 ?? Buffer.alloc(0)).digest('hex');
+    const name = fixedName
+      ? `${fixedName.replace(/\.png$/i, '')}.png`
+      : `${drawnFile(`png:${sha}`, names?.length ? names : [generatedName(kind, data).replace(/\.png$/, '')])}.png`;
     const name2 = name.replace(/\.png$/, '@2x.png');
     const prev = this.assets.get(name.toLowerCase());
     if (fixedName && prev && !(prev.data ?? Buffer.alloc(0)).equals(data)) throw this.err(node, `two different drawings named ${name}`);
@@ -572,6 +597,13 @@ export class Builder {
       if (data2) this.assets.set(name2.toLowerCase(), { name: name2, data: data2 });
     }
     return name;
+  }
+
+  /** A drawing named after its element (a page's / subpage's background: backgrounds/<its name>; another look's: <its name>-<look>). */
+  private named(folder: string, node: VNode): string[] {
+    const n = typeof node.props.name === 'string' ? fileName(node.props.name) : '';
+    const look = fileName(variant());
+    return n ? [`${folder}/${n}`, ...(look ? [`${folder}/${n}-${look}`] : [])] : [];
   }
 
   /**
@@ -586,8 +618,10 @@ export class Builder {
     if (withIcon && size) {
       // themed builds: the state's background with its icon (one image: a theme swaps both)
       if (border && st.borderColor === undefined) throw this.err(node, 'borderWidth needs borderColor');
+      const look = boxLook(size.w, size.h, st.radius, st.bg, border ? st.borderWidth : 0, st.borderColor);
       const name = this.generated(node, 'btn', (sc) =>
-        boxIcon({ ...size, radius: st.radius, fill: st.bg, borderWidth: border ? st.borderWidth ?? 0 : 0, borderColor: st.borderColor }, withIcon, sc));
+        boxIcon({ ...size, radius: st.radius, fill: st.bg, borderWidth: border ? st.borderWidth ?? 0 : 0, borderColor: st.borderColor }, withIcon, sc),
+        undefined, [`buttons/${look}-${fileName(withIcon.name) || 'icon'}`, `buttons/${look}-${fileName(withIcon.name) || 'icon'}-${tone(withIcon.color)}`]);
       return { ...st, bg: undefined, radius: undefined, borderWidth: undefined, borderColor: undefined, image: name };
     }
     if (st.radius === undefined && !border) return st;
@@ -598,8 +632,10 @@ export class Builder {
     if (st.image !== undefined) throw this.err(node, 'radius / borderWidth: iva draws the background, so not image too');
     if (border && st.borderColor === undefined) throw this.err(node, 'borderWidth needs borderColor');
     if (!size) throw this.err(node, `radius / borderWidth are drawn at the element's size: give them on the <${type === 'button' ? 'Button' : 'Subpage'}>, not a <Theme>`);
+    const look = boxLook(size.w, size.h, st.radius, st.bg, st.borderWidth, st.borderColor);
     const name = this.generated(node, type === 'button' ? 'btn' : 'bg', (sc) =>
-      box({ ...size, radius: st.radius, fill: st.bg, borderWidth: st.borderWidth ?? 0, borderColor: st.borderColor }, sc));
+      box({ ...size, radius: st.radius, fill: st.bg, borderWidth: st.borderWidth ?? 0, borderColor: st.borderColor }, sc),
+      undefined, type === 'button' ? [`buttons/${look}`] : [...this.named('backgrounds', node), `backgrounds/${look}`]);
     return { ...st, bg: undefined, radius: undefined, borderWidth: undefined, borderColor: undefined, image: name };
   }
 
@@ -616,7 +652,9 @@ export class Builder {
     if (p.fill !== undefined && p.fillImage !== undefined) throw this.err(node, 'fill or fillImage, not both');
     const r = p.radius ?? Math.min(p.w, p.h) / 2;
     const part = (color: string | undefined, file: string | undefined, kind: string) =>
-      file !== undefined ? this.image(node, file) : color !== undefined ? this.generated(node, kind, (sc) => box({ w: p.w, h: p.h, radius: r, fill: color }, sc)) : undefined;
+      file !== undefined ? this.image(node, file)
+        : color !== undefined ? this.generated(node, kind, (sc) => box({ w: p.w, h: p.h, radius: r, fill: color }, sc), undefined, [`sliders/${boxLook(p.w, p.h, r, color)}-${kind}`])
+        : undefined;
     const off = part(p.bg, p.image, 'track');
     const on = part(p.fill, p.fillImage, 'fill');
     const css = (img: string | undefined) => (img ? `background-image: url(${img});` : '');
@@ -848,7 +886,8 @@ export class Builder {
     const p = node.props;
     if (!this.opts.themed || p.bg === undefined || p.image !== undefined || p.theme !== undefined) return null;
     const name = this.generated(node, 'bg', (sc) =>
-      box({ w, h, radius: p.radius, fill: p.bg, borderWidth: p.borderColor ? p.borderWidth ?? 0 : 0, borderColor: p.borderColor }, sc));
+      box({ w, h, radius: p.radius, fill: p.bg, borderWidth: p.borderColor ? p.borderWidth ?? 0 : 0, borderColor: p.borderColor }, sc),
+      undefined, [...this.named('backgrounds', node), `backgrounds/${boxLook(w, h, p.radius, p.bg, p.borderColor ? p.borderWidth : 0, p.borderColor)}`]);
     return this.E('img', { x: 0, y: 0, w, h, j: 0, clickthrough: 1, refresh: 0, l: 0, noCache: 0, downloadIndicator: 0, clearOnURLChange: 0 }, [], name);
   }
 
@@ -942,7 +981,7 @@ export class Builder {
   }
 
   /**
-   * <WebApp>: the module bundled into apps/iva_app_<name>.js (a project
+   * <WebApp>: the module bundled into apps/<name>.js (a project
    * file), a web view on the panel's web server at /<name>/, and
    * IvaHttp.app() at start. The same app placed again (on another page)
    * shares it all.
@@ -965,7 +1004,7 @@ export class Builder {
     } catch (e: any) {
       throw this.err(node, `entry ${p.entry}: ${e.message}`);
     }
-    const asset = `apps/iva_app_${name}.js`;
+    const asset = `apps/${name}.js`;
     const joins = Object.entries((p.joins ?? {}) as Record<string, unknown>).map(([k, j]) => {
       const t = this.target(node, `joins.${k}`, j);
       return `${JSON.stringify(k)}: ${this.jsJoin(t!)}`;
@@ -1142,7 +1181,8 @@ export class Builder {
       case 'Slider': {
         if (p.thumb !== undefined && p.thumbColor !== undefined) throw this.err(node, 'thumb or thumbColor, not both');
         const drawn = p.thumbColor !== undefined
-          ? this.generated(node, 'thumb', (sc) => circle(p.thumbSize ?? Math.min(p.w, p.h), p.thumbColor, sc))
+          ? this.generated(node, 'thumb', (sc) => circle(p.thumbSize ?? Math.min(p.w, p.h), p.thumbColor, sc), undefined,
+            [`sliders/thumb-${Math.round(p.thumbSize ?? Math.min(p.w, p.h))}-${tone(p.thumbColor)}`])
           : undefined;
         const ind = (state: number, img: unknown) => {
           const ref = typeof img === 'string' ? { src: img } : (img as any);
@@ -1214,7 +1254,8 @@ export class Builder {
       case 'Gesture': return this.gesture(node);
       case 'Box': {
         const name = this.generated(node, 'box', (sc) =>
-          box({ w: p.w, h: p.h, radius: p.radius, fill: p.bg, borderWidth: p.borderWidth ?? 0, borderColor: p.borderColor }, sc));
+          box({ w: p.w, h: p.h, radius: p.radius, fill: p.bg, borderWidth: p.borderWidth ?? 0, borderColor: p.borderColor }, sc),
+          undefined, [`boxes/${boxLook(p.w, p.h, p.radius, p.bg, p.borderWidth, p.borderColor)}`]);
         return this.E('img', {
           ...geom, j: 0, clickthrough: 1, refresh: 0, l: 0, noCache: 0, downloadIndicator: 0, clearOnURLChange: 0, tags: tagsAttr(p.tags),
         }, [], name, node);
@@ -1295,7 +1336,7 @@ export class Builder {
         const ic = ref.src;
         const size = ic.size ?? iconSize;
         const color = ic.color ?? (state === 1 ? p.active?.color ?? p.color : p.color) ?? '#FFFFFF';
-        const name = this.generated(node, 'fa', (sc) => icon(ic.name, ic.style, color, size, sc), ic.file);
+        const name = this.generated(node, 'fa', (sc) => icon(ic.name, ic.style, color, size, sc), ic.file, iconNames(ic.name, ic.style, color, size));
         return [this.E('img', { x: ref.x ?? iconPos.x, y: ref.y ?? iconPos.y, w: ref.w ?? size, h: ref.h ?? size }, [], name)];
       }
       return [this.E('img', { x: ref.x ?? 0, y: ref.y ?? 0, w: ref.w ?? p.w, h: ref.h ?? p.h }, [], this.image(node, ref.src))];

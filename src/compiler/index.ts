@@ -11,6 +11,7 @@ import { parseSize, sizeFolder, type ScreenSize } from './components.js';
 import { evaluate, LoadError } from './load.js';
 import { JsxError, type Child, type VNode } from './runtime.js';
 import { mergeThemes } from './themes.js';
+import { dropNames, newNames } from './names.js';
 import { serialize } from './xml.js';
 
 const COMPILER_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -121,6 +122,8 @@ export async function compile(entry: string, opts: CompileOptions = {}): Promise
   const asked = typeof opts.size === 'string' ? parseSize(opts.size) : opts.size;
   if (opts.size !== undefined && !asked) throw new IvaError(`size: "${opts.size}" isn't one - WIDTHxHEIGHT in pixels, like 1400x1400`);
   try {
+    // the drawings' names (names.ts): one registry for the build, from the evaluation its tree comes from on
+    newNames();
     // a first look: the <Project> - its size, its looks
     const first = await evaluateAt(file, asked ?? undefined);
     let { files } = first;
@@ -134,13 +137,15 @@ export async function compile(entry: string, opts: CompileOptions = {}): Promise
       let tree = first.tree;
       if (first.usedScreen && !asked && size) {
         // it laid itself out from screen() before iva knew the size: again, now that it does
+        newNames();
         const ev = await evaluateAt(file, size);
         files = [...new Set([...files, ...ev.files])];
         tree = ev.tree;
       }
       result = new Builder(baseDir, { size: asked ?? undefined }).build(tree);
     } else {
-      // once per look (the one it starts in first), merged into one .gui
+      // once per look (the one it starts in first), merged into one .gui - the looks naming their drawings together
+      newNames();
       const builds: BuildResult[] = [];
       for (const look of looks) {
         (globalThis as BuildGlobals).__ivaVariant = look;
@@ -163,6 +168,8 @@ export async function compile(entry: string, opts: CompileOptions = {}): Promise
     };
   } catch (e) {
     throw located(e, baseDir);
+  } finally {
+    dropNames();
   }
 }
 

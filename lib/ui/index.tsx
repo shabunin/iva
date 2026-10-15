@@ -16,7 +16,7 @@
 
 import {
   Box, Button as IvaButton, Gesture, Group, Image, Input, List, OnStart, Page, Script, Slider as IvaSlider, Subpage, Text as IvaText, Web, WebApp,
-  a, d, draw, drawnName, fa, js as jsAction, l, s, screen, variant,
+  a, d, draw, drawnFile, drawnFileName, drawnSet, fa, js as jsAction, l, s, screen, variant,
   type ButtonProps, type Child, type IconRef, type Join, type JoinRef, type TextProps, type VNode,
 } from 'iva';
 import { UI_RUNTIME } from './runtime.js';
@@ -930,6 +930,31 @@ export function jsJoin(type: 'd' | 'a' | 's' | 'l', j: Join): string {
 /** A name for joins a component makes for itself, from the join it was given. */
 const keyOf = (j: Join): string => (typeof j === 'object' ? `${j.type}${j.id}` : String(j)).replace(/[^\w]/g, '_');
 
+// ── the drawings' names (iva's names.ts: readable, one a drawing) ──────────
+/** a join as a name: its own (join="temp", a('temp')), else the component's and its number (dial 120) */
+const joinLabel = (j: Join | undefined, kind: string): string => {
+  const id = typeof j === 'object' ? j.id : j;
+  return typeof id === 'string' && !/^\d+$/.test(id) ? id : `${kind} ${id ?? ''}`.trim();
+};
+/** what a drawn box looks like: 600x46-r8-1e2329-b2-ff3b30 (size, corner radius, fill, border) */
+const boxLook = (o: { w: number; h: number; radius?: number; fill?: string; borderWidth?: number; borderColor?: string }): string =>
+  [`${Math.round(o.w)}x${Math.round(o.h)}`, o.radius ? `r${Math.round(o.radius)}` : '', drawnFileName(o.fill ?? ''),
+    o.borderWidth && o.borderColor ? `b${o.borderWidth}-${drawnFileName(o.borderColor)}` : ''].filter(Boolean).join('-');
+/** an icon's file: icons/<its name>, else with its colour, else its size too */
+const iconFileOf = (name: string, color: string, size: number): string => {
+  const n = `icons/${drawnFileName(name) || 'icon'}`;
+  return drawnFile(`icon|${name}|${color}|${size}`, [n, `${n}-${drawnFileName(color)}`, `${n}-${drawnFileName(color)}-${size}`]);
+};
+/** a set's place among its kind's (the 2nd dial): the same in each look's evaluation, as the looks are the same elements */
+const places = new Map<string, number>();
+const placeOf = (kind: string): string => {
+  const n = places.get(kind) ?? 0;
+  places.set(kind, n + 1);
+  return String(n);
+};
+/** a see-through image (a layer for the finger): backgrounds/clear-WxH */
+const clearOf = (w: number, h: number): string => drawnFile(`clear|${w}x${h}`, [`backgrounds/clear-${Math.round(w)}x${Math.round(h)}`]);
+
 /** How far right elements go (x + w), groups' offsets added: a sideways ScrollBox's content width. */
 function rightOf(c: Child, dx = 0): number {
   if (Array.isArray(c)) return c.reduce<number>((m, k) => Math.max(m, rightOf(k, dx)), 0);
@@ -1241,7 +1266,8 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     const key = keyOf(join);
     const id = JSON.stringify(key);
     const from = -sweep / 2;
-    const prefix = `${drawnName('dial', hash(`${size}|${th}|${sweep}|${steps}|${color}`))}_`;
+    // its drawings in a folder of its own, named after it (dials/thermostat/): the frames 0.png ..., the track, the dot
+    const prefix = `${drawnSet('dials', `${size}|${th}|${sweep}|${steps}|${color}|${t.raised}`, label ?? joinLabel(join, 'dial'), 'dial', variant(), placeOf('dials'))}/`;
     const frames = Array.from({ length: steps + 1 }, (_, i) => draw.arc({ size, thickness: th, from, to: from + (sweep * i) / steps, color, name: `${prefix}${i}` }));
     const arcJoin: JoinRef = s(`ui_${key}_arc`);
     const thumbJoin: JoinRef = s(`ui_${key}_thumb`);
@@ -1250,12 +1276,12 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     const o = { prefix, steps, sweep, size, min, max, step: step ?? 0, decimals, unit };
     return (
       <Group x={x} y={y}>
-        <Image w={size} h={size} src={draw.arc({ size, thickness: th, from, to: -from, color: t.raised })}>
+        <Image w={size} h={size} src={draw.arc({ size, thickness: th, from, to: -from, color: t.raised, name: `${prefix}track` })}>
           <Gesture type="tap" onBegin={touch} />
           <Gesture type="pan" onBegin={touch} onChange={touch} />
         </Image>
         <Image w={size} h={size} join={arcJoin} src={frames[0]} clickthrough />
-        <Image w={size} h={size} join={thumbJoin} src={draw.dot({ size, ring: size / 2 - th / 2 - 1, at: from, diameter: Math.round(th * 1.7), color: '#FFFFFF' })} clickthrough />
+        <Image w={size} h={size} join={thumbJoin} src={draw.dot({ size, ring: size / 2 - th / 2 - 1, at: from, diameter: Math.round(th * 1.7), color: '#FFFFFF', name: `${prefix}dot` })} clickthrough />
         <Text y={Math.round(size * 0.33)} w={size} h={Math.round(size * 0.26)} join={text} align="center" font={font} fontSize={Math.round(size * 0.18)} />
         {(label || labelJoin) && (
           <Text y={Math.round(size * 0.58)} w={size} h={Math.round(size * 0.12)} text={label} join={labelJoin} align="center" color={t.muted} font={font} fontSize={Math.round(size * 0.075)} />
@@ -1284,14 +1310,16 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     const text: JoinRef = s(`ui_${key}_value`);
     const touch = `IvaUI.dialTouch(${id}, gesture.x, gesture.y)`;
     const o = { prefix: '', steps: 0, sweep, size, min, max, step: step ?? 0, decimals, unit };
+    // its drawings in a folder of its own, named after it (knobs/volume/): the ticks, the knob
+    const folder = drawnSet('knobs', `${size}|${disc}|${color}|${pointer}|${sweep}|${t.muted}`, label ?? joinLabel(join, 'knob'), 'knob', variant(), placeOf('knobs'));
     return (
       <Group x={x} y={y}>
-        <Image w={size} h={size} src={draw.ticks({ size, count: 28, from, to: -from, length: Math.round(size * 0.07), width: 2, color: t.muted })}>
+        <Image w={size} h={size} src={draw.ticks({ size, count: 28, from, to: -from, length: Math.round(size * 0.07), width: 2, color: t.muted, name: `${folder}/ticks` })}>
           <Gesture type="tap" onBegin={touch} />
           <Gesture type="pan" onBegin={touch} onChange={touch} />
         </Image>
         <Image x={(size - disc) / 2} y={(size - disc) / 2} w={disc} h={disc} join={knobJoin} clickthrough
-               src={draw.knob({ size: disc, color, pointer, at: from })} />
+               src={draw.knob({ size: disc, color, pointer, at: from, name: `${folder}/knob` })} />
         <Text y={size + 4} w={size} h={36} join={text} align="center" font={font} fontSize={24} />
         {label && <Text y={size + 40} w={size} h={24} text={label} align="center" color={t.muted} font={font} fontSize={16} />}
         {runtime}
@@ -1442,7 +1470,7 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
   function DataList({ join, items, x = 0, y = 0, w = 560, h = 480 }: DataListProps): VNode {
     const key = keyOf(join);
     const sub = (kind: string) => `ui_dl_${w}_${kind}`;
-    const iconFile = (name: string, color: string) => drawnName('icon', hash(`${name}|${color}`));
+    const iconFile = (name: string, color: string) => iconFileOf(name, color, 26);
     const used = new Map<string, IconRef>();
     const rows = items.map((it) => {
       if ('header' in it) return { subpage: sub('header'), s1: it.header };
@@ -1767,6 +1795,8 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     const sw = 32;
     const gap = (rw - 4 * sw) / 3;
     const touch = `IvaUI.colorTouch(${id}, gesture.x, gesture.y)`;
+    // its drawings in a folder of its own (pickers/colour/): the wheel, the marker, the swatch's frame
+    const folder = drawnSet('pickers', `${size}|${m}|${rw}|${bg}|${t.radius}`, joinLabel(r, 'colour'), 'colour', variant(), placeOf('pickers'));
     const o = `{ size: ${size}, markSize: ${m}, mark: ${jsJoin('s', mark)}, v: ${jsJoin('a', level)}, r: ${jsJoin('a', r)}, g: ${jsJoin('a', g)}, b: ${jsJoin('a', b)}, ` +
       `hex: ${jsJoin('s', hexJoin)}, url: ${jsJoin('s', url)}, value: ${JSON.stringify(value ?? '')} }`;
     const ref = (j: Join): JoinRef => (typeof j === 'object' ? j : a(j));
@@ -1774,18 +1804,18 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
       <Group x={x} y={y}>
         {/* in a subpage of its own: the marker moves in the wheel's coordinates, wherever the wheel is */}
         <Subpage name={`ui_cp_${key}`} w={size} h={size}>
-          <Image w={size} h={size} src={draw.wheel({ size })}>
+          <Image w={size} h={size} src={draw.wheel({ size, name: `${folder}/wheel` })}>
             <Gesture type="tap" onBegin={touch} />
             <Gesture type="pan" onBegin={touch} onChange={touch} />
           </Image>
           <Image x={(size - m) / 2} y={(size - m) / 2} w={m} h={m} join={mark} clickthrough
-                 src={draw.ring({ size: m, thickness: 3, color: '#FFFFFF', outline: '#00000099' })} />
+                 src={draw.ring({ size: m, thickness: 3, color: '#FFFFFF', outline: '#00000099', name: `${folder}/marker` })} />
         </Subpage>
         <Image y={size + 22} w={18} h={18} src={fa('sun', { color: t.muted, size: 14, style: 'regular' })} />
         <IvaSlider x={28} y={size + 25} w={size - 56} h={12} join={level} min={0} max={100} bg={t.raised} fill={t.text} radius={3} />
         <Image x={size - 20} y={size + 20} w={22} h={22} src={fa('sun', { color: t.text, size: 20 })} />
         <Web x={right} w={rw} h={72} join={url} url="panel:/iva-color/000000" />
-        <Image x={right} w={rw} h={72} src={draw.cutout({ w: rw, h: 72, radius: t.radius, color: bg })} clickthrough />
+        <Image x={right} w={rw} h={72} src={draw.cutout({ w: rw, h: 72, radius: t.radius, color: bg, name: `${folder}/frame` })} clickthrough />
         <Text x={right} y={84} w={rw} h={30} join={hexJoin} font={font} fontSize={22} />
         {(swatches || []).slice(0, 8).map((c, i) => (
           <Button x={right + Math.round((i % 4) * (sw + gap))} y={128 + Math.floor(i / 4) * (sw + 12)} w={sw} h={sw} radius={sw / 2} bg={c}
@@ -2127,7 +2157,7 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
   function tableImages(key: string, w: number, rowH: number, badgeW: number) {
     const draws = new Map<string, ReturnType<typeof draw.box>>();
     const add = (o: Parameters<typeof draw.box>[0]) => {
-      const name = drawnName('row', hash(JSON.stringify(o)));
+      const name = drawnFile(`row|${JSON.stringify(o)}`, [`rows/${boxLook(o)}`]);
       draws.set(name, draw.box({ ...o, name }));
       return `${name}.png`;
     };
@@ -2370,11 +2400,11 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     const text: JoinRef = s(`ui_${key}_text`);
     const more: JoinRef = s(`ui_${key}_more`);
     const box = (fill: string, border?: string) => {
-      const name = drawnName('banner', hash(JSON.stringify([w, h, fill, border])));
+      const name = drawnFile(`banner|${JSON.stringify([w, h, fill, border, t.radius])}`, [`banners/${boxLook({ w, h, radius: t.radius, fill, borderWidth: border ? 2 : 0, borderColor: border })}`]);
       return { name, src: draw.box({ w, h, radius: t.radius, fill, borderWidth: border ? 2 : 0, borderColor: border, name }) };
     };
     const icon = (n: string, color: string) => {
-      const file = drawnName('icon', hash(`${n}|${color}|22`));
+      const file = iconFileOf(n, color, 22);
       return { name: file, src: fa(n, { size: 22, color, file }) };
     };
     const looks = {
@@ -2505,7 +2535,7 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
                   icon={it.icon ? fa(it.icon, { size: 28, color: t.accent }) : undefined} iconAlign="top" font={font} fontSize={16} />
         ))}
         {/* the layer the finger moves on: over everything (items and targets only show) */}
-        <Image w={w} h={h} join={area} src={draw.box({ w, h, fill: '#00000000' })}>
+        <Image w={w} h={h} join={area} src={draw.box({ w, h, fill: '#00000000', name: clearOf(w, h) })}>
           <Gesture type="pan" onBegin={gesture('ddBegin')} onChange={gesture('ddMove')} onEnd={`IvaUI.ddEnd(${JSON.stringify(key)})`} />
         </Image>
         {runtime}
@@ -2532,7 +2562,7 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
         {pages.map((page, i) => (
           <Subpage name={`ui_pg_${key}_${i}`} w={w} h={h - dotH} join={pageJoins[i]} in={fade} out={fade}>
             {/* a swipe on the page (where its own content doesn't take the touch) */}
-            <Image w={w} h={h - dotH} src={draw.box({ w: 4, h: 4, fill: '#00000000', name: drawnName('clear', '4') })}>
+            <Image w={w} h={h - dotH} src={draw.box({ w: 4, h: 4, fill: '#00000000', name: clearOf(4, 4) })}>
               <Gesture type="swipe" direction="left" onBegin={`IvaUI.pagerStep(${id}, 1)`} />
               <Gesture type="swipe" direction="right" onBegin={`IvaUI.pagerStep(${id}, -1)`} />
             </Image>

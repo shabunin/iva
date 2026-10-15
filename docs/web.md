@@ -130,7 +130,7 @@ client that asked while it is the only one connected.
 `node_modules`, then iva's: `three`, `chart.js`, `uplot`), CSS they import
 (added as a `<style>`). Target: Safari 15 / Chrome 90 (iViewer shows web views
 in the system WebView; three.js needs WebGL 2: iOS 15). The bundle is a
-project file, `iva_app_<name>.js`, read with `CF.loadAsset` - a GUI loaded as
+project file, `apps/<name>.js`, read with `CF.loadAsset` - a GUI loaded as
 a `.zip` must include it (`iva build` writes it next to the `.gui`).
 
 Editors: `iva types` writes `iva-web.d.ts` and `web/jsconfig.json` (the

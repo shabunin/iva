@@ -117,18 +117,18 @@ test('a JSX project is built and served from memory', async () => {
   try {
     assert.equal(s.name, 'Hello-iva.gui');
     const gui = (await get(s.port, '/Hello-iva.gui')).body;
-    // the build's folders: scripts/, images/ (the .gui's image folder)
-    assert.match(gui, /<imagefolder>images<\/imagefolder>/);
+    // the build's folders: scripts/, assets/ (the .gui's image folder)
+    assert.match(gui, /<imagefolder>assets<\/imagefolder>/);
     assert.match(gui, /<script name="scripts\/iva-joins\.js" \/>\s*<script name="scripts\/main\.js" \/>\s*<script name="iva-live\.js" \/>/);
-    const png = /controls\/iva_track_[0-9a-f]+\.png/.exec(gui)![0];
-    const image = await get(s.port, `/images/${png}`);
+    const png = /sliders\/[\w-]+-track\.png/.exec(gui)![0];
+    const image = await get(s.port, `/assets/${png}`);
     assert.equal(image.headers.get('content-type'), 'image/png');
     // the panel app's page (another origin) draws them with WebGL: CORS
     assert.equal(image.headers.get('access-control-allow-origin'), '*');
-    // scripts in the image folder: iViewer looks for <script name="scripts/x.js"> in images/
-    assert.match((await get(s.port, '/images/scripts/iva-joins.js')).body, /var Joins/);
+    // scripts in the image folder: iViewer looks for <script name="scripts/x.js"> in assets/
+    assert.match((await get(s.port, '/assets/scripts/iva-joins.js')).body, /var Joins/);
     assert.equal((await get(s.port, '/scripts/iva-joins.js')).status, 404);
-    assert.equal((await get(s.port, '/images/scripts/../iva-joins.js')).status, 404);
+    assert.equal((await get(s.port, '/assets/scripts/../iva-joins.js')).status, 404);
   } finally {
     await s.close();
   }
@@ -145,9 +145,9 @@ test('the whole build in one zip for the panel to keep, and 304 for the build it
     const etag = res.headers.get('etag')!;
     const files = readZip(Buffer.from(await res.arrayBuffer()));
     // the .gui and every file at the path it's served from (its case kept), the live script too
-    assert.match(files.get('Hello-iva.gui')!.toString('utf8'), /<imagefolder>images<\/imagefolder>/);
-    assert.ok([...files.keys()].some((n) => /^images\/controls\/iva_track_[0-9a-f]+\.png$/.test(n)));
-    assert.match(files.get('images/scripts/iva-joins.js')!.toString('utf8'), /var Joins/);
+    assert.match(files.get('Hello-iva.gui')!.toString('utf8'), /<imagefolder>assets<\/imagefolder>/);
+    assert.ok([...files.keys()].some((n) => /^assets\/sliders\/[\w-]+-track\.png$/.test(n)));
+    assert.match(files.get('assets/scripts/iva-joins.js')!.toString('utf8'), /var Joins/);
     assert.match(files.get('iva-live.js')!.toString('utf8'), /__iva\/wait/);
     // the same build again: not modified
     const again = { headers: { 'If-None-Match': etag } };

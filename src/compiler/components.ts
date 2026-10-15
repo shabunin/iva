@@ -32,16 +32,23 @@ export const l: JoinHelper = joinRef('l');
 /** A join prop whose type the element fixes: `join={12}`, `join="power"` (named) or `d(12)`. */
 export type Join = number | string | JoinRef;
 
-/** The folders of the build's image folder that iva's drawings go in, by kind. @internal */
+/**
+ * The folders of the build's image folder that iva's drawings go in, by what
+ * they're for (a folder per component type; a dial's, a knob's, a colour
+ * picker's drawings in a folder of their own in it). @internal
+ */
 export const DRAWN_FOLDERS: Record<string, string> = {
-  bg: 'backgrounds', box: 'backgrounds', btn: 'backgrounds', banner: 'backgrounds', row: 'backgrounds', cutout: 'backgrounds', clear: 'backgrounds',
+  bg: 'backgrounds', clear: 'backgrounds', box: 'boxes', btn: 'buttons', banner: 'banners', row: 'rows',
   fa: 'icons', icon: 'icons',
-  dial: 'controls', arc: 'controls', dot: 'controls', ticks: 'controls', knob: 'controls', wheel: 'controls', ring: 'controls', track: 'controls',
-  fill: 'controls', thumb: 'controls',
+  dial: 'dials', knob: 'knobs', wheel: 'pickers', ring: 'pickers', cutout: 'pickers',
+  track: 'sliders', fill: 'sliders', thumb: 'sliders',
+  arc: 'drawn', dot: 'drawn', ticks: 'drawn',
 };
 
-/** An iva drawing's file (no extension), in its folder: drawnName('fa', 'a1b2c3d4') -> 'icons/iva_fa_a1b2c3d4'. @internal */
-export const drawnName = (kind: string, id: string): string => `${DRAWN_FOLDERS[kind] ?? 'drawn'}/iva_${kind}_${id}`;
+/** A drawing's file (no extension) by its kind and an id, in its folder: drawnName('fa', 'a1b2c3d4') -> 'icons/fa-a1b2c3d4'. @internal */
+export const drawnName = (kind: string, id: string): string => `${DRAWN_FOLDERS[kind] ?? 'drawn'}/${kind}-${id}`;
+
+export { drawnFile, drawnSet, fileName as drawnFileName } from './names.js';
 
 /** A Font Awesome icon, drawn into an image at build time: fa('lightbulb'). */
 export interface IconRef {
