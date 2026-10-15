@@ -6,7 +6,6 @@ use serde::Serialize;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
 use tokio_rustls::TlsConnector;
 use uuid::Uuid;
 
@@ -117,7 +116,7 @@ pub async fn tls_connect<R: tauri::Runtime>(
     let sni = server_name.unwrap_or_else(|| host.clone());
 
     let addr = format!("{}:{}", host, port);
-    let stream = TcpStream::connect(&addr)
+    let stream = super::connect(&addr)
         .await
         .map_err(|e| format!("connect failed: {}", e))?;
 

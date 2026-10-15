@@ -2,7 +2,7 @@ use super::NetState;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -57,7 +57,7 @@ pub async fn tcp_connect<R: tauri::Runtime>(
     port: u16,
 ) -> Result<TcpConnectResult, String> {
     let addr = format!("{}:{}", host, port);
-    let mut stream = TcpStream::connect(&addr).await.map_err(|e| e.to_string())?;
+    let mut stream = super::connect(&addr).await.map_err(|e| e.to_string())?;
     
     let peer_addr = stream.peer_addr().map_err(|e| e.to_string())?;
     let local_addr = stream.local_addr().map_err(|e| e.to_string())?;
