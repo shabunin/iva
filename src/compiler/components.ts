@@ -311,6 +311,8 @@ export interface ButtonProps extends Geom, StyleProps, XmlProp {
   active?: StyleProps;
   /** go to this page on release ('Return' = previous page) */
   page?: string;
+  /** open this on release: "cf://host:port/other.gui" loads that GUI (GUI linking), another URL opens outside */
+  href?: string;
   /** run this command on press */
   cmd?: string;
   /** JavaScript run on press (gets join, value, tokens, list, listIndex) */
@@ -686,7 +688,7 @@ export const PROPS: Record<string, string[]> = {
   Subpage: ['name', 'w', 'h', 'clip', 'define', 'bg', 'image', 'radius', 'borderWidth', 'borderColor', 'theme', ...PLACEMENT],
   SubpageRef: ['name', ...PLACEMENT],
   Button: [...GEOM, 'tags', 'join', 'feedback', 'text', 'activeText', 'textJoin', 'activeTextJoin', 'icon', 'activeIcon', 'active',
-    'iconAlign', 'page', 'cmd', 'js', 'repeat', 'onPress', 'onRelease', 'onHold', 'holdTime', ...STYLE],
+    'iconAlign', 'page', 'href', 'cmd', 'js', 'repeat', 'onPress', 'onRelease', 'onHold', 'holdTime', ...STYLE],
   Text: [...GEOM, 'tags', 'join', 'text', 'wrap', ...STYLE],
   Image: [...GEOM, 'tags', 'src', 'join', 'clickthrough', 'refresh', 'noCache', 'downloadIndicator', 'clearOnURLChange'],
   Slider: [...GEOM, 'tags', 'join', 'pressJoin', 'min', 'max', 'decimals', 'invert', 'feedback', 'thumb', 'activeThumb', 'thumbColor', 'thumbSize',

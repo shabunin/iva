@@ -53,6 +53,14 @@ export interface LoadProjectOptions {
    * its backend). undefined: the URL as it is.
    */
   webUrl?: (url: string) => string | undefined;
+  /**
+   * Load another GUI (CF.loadGUI, CF.openURL("cf://..."), a button's
+   * href="cf://..."): `url` as the GUI gave it ('' reloads this one),
+   * `settings` CF.loadGUI's (startPage, reloadGUI, ...).
+   */
+  loadGui?: (url: string, settings: Record<string, unknown>) => void;
+  /** The page to show first (CF.loadGUI's startPage), when the GUI has it. */
+  startPage?: string;
   /** Previous renderer to tear down (stage children only). */
   previousRenderer?: CFRenderer | null;
   /** Destroy previous web menu when reloading a project. */
@@ -151,6 +159,8 @@ export async function loadProject(options: LoadProjectOptions): Promise<LoadProj
   const renderer = new CFRenderer(app, project, imageMap);
   renderer.fileUrl = options.fileUrl;
   renderer.webUrl = options.webUrl;
+  renderer.loadGui = options.loadGui;
+  renderer.startPage = options.startPage;
   renderer.targetOrientation = orientation;
   renderer.setDebugMode(debugMode);
 

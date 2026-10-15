@@ -167,6 +167,20 @@ script, loaded first, so project scripts write `CF.setJoin(Joins.s.title, …)`.
 | `onHold={[macro('AllOff')]}` + `holdTime={1500}` | `<press hold="1500" macro="AllOff"/>` |
 | `onRelease={[js('stop()', { delay: 100 })]}` | `<release delay="100" js="stop()"/>` |
 | `page="Settings"` | `flip="Settings"` |
+| `href="cf://192.168.0.10:8019/other.gui"` | `href="…"`: on release, iViewer loads that GUI (GUI linking); another URL opens outside |
+
+## GUI linking
+
+A button's `href="cf://host:port/other.gui"`, `CF.openURL("cf://…")` and
+`CF.loadGUI(url, { startPage })` load another GUI (`CF.loadGUI("")`: this
+one again). In `iva dev` the GUI it names is, in order: a `.gui` of the
+project being previewed with that file name (the link's own folder first -
+CommandFusion's GUILinking demo links `cf://192.168.0.10:8019/gui-B.gui`,
+the preview opens this machine's `gui-B.gui` and says so in the status
+bar); else the URL, fetched by `iva dev` with its images and scripts (the
+browser can't fetch another site's files) - `iva dev http://host/x.gui`
+previews one too. iViewer 5 profiles (`profile:Name`) are the device's
+own: not in the preview.
 
 ## What iva doesn't model
 

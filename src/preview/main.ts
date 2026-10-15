@@ -61,6 +61,8 @@ const chrome = $<HTMLDivElement>('chrome');
 const params = new URLSearchParams(location.search);
 let orientation: Orientation = params.get('o') === 'portrait' ? 'portrait' : 'landscape';
 let current: LoadProjectResult | null = null;
+/** the GUI shown: a .gui of the project (its path), or a URL */
+let shown = '';
 
 function setStatus(text: string, kind: 'ok' | 'warn' | 'err' = 'ok') {
   status.textContent = text;
@@ -93,7 +95,33 @@ function setOrientation(o: Orientation) {
   fitStage();
 }
 
+/**
+ * CF.loadGUI / a cf:// link: the GUI it names (the server says where that
+ * is: a .gui of the project by that name, else the URL), '' this one again;
+ * in a new page - the runtime keeps globals (CF, scripts, sockets) per page.
+ */
+async function loadGui(url: string, settings: Record<string, unknown>) {
+  let gui = shown;
+  if (url) {
+    setStatus(`loading ${url}…`);
+    const res = await fetch(`/__iva/resolve?from=${encodeURIComponent(shown)}&url=${encodeURIComponent(url)}`);
+    if (!res.ok) {
+      setStatus(`CF.loadGUI(${url}): ${await res.text()}`, 'err');
+      return;
+    }
+    const r: { gui: string; note?: string } = await res.json();
+    gui = r.gui;
+    if (r.note) sessionStorage.setItem('iva-note', r.note);
+  }
+  const next = new URL(location.href);
+  next.searchParams.set('gui', gui);
+  if (typeof settings.startPage === 'string' && settings.startPage) next.searchParams.set('page', settings.startPage);
+  else next.searchParams.delete('page');
+  location.href = next.toString();
+}
+
 async function boot(gui: string) {
+  shown = gui;
   setStatus(`loading ${gui}…`);
   const res = await fetch(`/__iva/manifest?gui=${encodeURIComponent(gui)}`);
   if (!res.ok) {
@@ -115,6 +143,8 @@ async function boot(gui: string) {
       const lo = /^http:\/\/(?:127\.0\.0\.1|localhost)(?::(\d+))?(\/[^#]*)?(#.*)?$/i.exec(url);
       return lo ? `/__iva/loop/${lo[1] ?? '80'}${lo[2] ?? '/'}${lo[3] ?? ''}` : undefined;
     },
+    loadGui: (url, settings) => void loadGui(url, settings),
+    startPage: params.get('page') ?? undefined,
     orientation,
     onOrientationChange: (o) => setOrientation(o),
     menu: {
@@ -126,7 +156,10 @@ async function boot(gui: string) {
   });
   fitStage();
   const warn = m.missingScripts.length ? ` · missing scripts: ${m.missingScripts.join(', ')}` : '';
-  setStatus(`${m.title}${warn}`, warn ? 'warn' : 'ok');
+  // how a link got here (cf://... -> the project's own .gui)
+  const note = sessionStorage.getItem('iva-note');
+  sessionStorage.removeItem('iva-note');
+  setStatus(`${m.title}${note ? ` · ${note}` : ''}${warn}`, warn ? 'warn' : 'ok');
 }
 
 async function main() {
@@ -136,7 +169,10 @@ async function main() {
     setStatus('no .gui files found', 'err');
     return;
   }
-  const chosen = params.get('gui') && guis.some((g) => g.rel === params.get('gui')) ? params.get('gui')! : guis[0].rel;
+  const asked = params.get('gui') ?? '';
+  // a GUI of the project, or one from a web server (a link, CF.loadGUI)
+  const chosen = guis.some((g) => g.rel === asked) || /^(https?|cf):\/\//i.test(asked) ? asked : guis[0].rel;
+  if (!guis.some((g) => g.rel === chosen)) guis.push({ rel: chosen, name: chosen });
   for (const g of guis) picker.add(new Option(g.name, g.rel, false, g.rel === chosen));
   picker.hidden = guis.length < 2;
   picker.onchange = () => {

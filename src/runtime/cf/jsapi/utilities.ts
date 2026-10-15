@@ -147,19 +147,32 @@ export function hash(
     });
 }
 
+/** A URL: cf://host/file.gui loads that GUI (as iViewer does), anything else opens outside. */
 export function openURL(
     ctx: CFContext,
     url: string
 ) {
+    if (/^cf:\/\//i.test(String(url))) return loadGUI(ctx, url, {});
     window.open(url, "_blank");
 }
 
+/**
+ * Another GUI - a URL, cf://host/file.gui, a name next to this one - or
+ * this one again ('' / null), with CF.loadGUI's settings (startPage...).
+ * The host does it (the preview: a new page with that GUI).
+ */
 export function loadGUI(
     ctx: CFContext,
     url: string,
     settings: any
 ) {
-    console.log(`CF STUB: loadGUI(${url}, ${JSON.stringify(settings)})`);
+    const renderer = (ctx as any).renderer;
+    if (/^profile:/i.test(String(url ?? ''))) {
+        console.warn(`CF.loadGUI(${url}): iViewer 5 profiles are the device's own - not something the preview has`);
+        return;
+    }
+    if (renderer?.loadGui) renderer.loadGui(String(url ?? ''), settings && typeof settings === 'object' ? settings : {});
+    else console.log(`CF.loadGUI(${url}, ${JSON.stringify(settings)}): nothing here to load it`);
 }
 
 /**

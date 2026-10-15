@@ -224,6 +224,8 @@ class Decompiler {
     ];
     const flip = a.str('flip');
     if (flip !== undefined && flip !== 'None') props.push(['page', flip]);
+    const href = a.str('href');
+    if (href) props.push(['href', href]);
     const sim = a.str('sim');
     const feedback: Record<string, string> = { '0': 'none', '2': 'toggle' };
     if (sim !== undefined && sim !== '1') {

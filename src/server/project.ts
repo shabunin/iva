@@ -123,3 +123,70 @@ export function loadManifest(base: string, guiRel: string, assetUrl: (rel: strin
   const fileBase = dirRel ? `${assetUrl(dirRel)}/` : assetUrl('');
   return { gui: guiRel, title, guiXml, imageMap, scriptMap, missingScripts, fileBase };
 }
+
+/** cf://host/file.gui is http://host/file.gui (iViewer's GUI links). */
+export const guiUrl = (url: string) => url.replace(/^cf:\/\//i, 'http://');
+export const isUrl = (s: string) => /^(https?|cf):\/\//i.test(s);
+
+/** The image files a .gui names: <img>file.png</img>, url(file.png) in its themes, ... */
+function imageNames(xml: string): string[] {
+  const names = new Set<string>();
+  for (const m of xml.matchAll(/>\s*([^<>"]+?\.(?:png|jpe?g|gif|webp|bmp|svg))\s*</gi)) names.add(m[1].trim());
+  for (const m of xml.matchAll(/url\(\s*['"]?([^'")]+?\.(?:png|jpe?g|gif|webp|bmp|svg))['"]?\s*\)/gi)) names.add(m[1].trim());
+  return [...names].filter((n) => !/^[a-z][a-z0-9+.-]*:/i.test(n));
+}
+
+/**
+ * The manifest for a .gui on a web server (http://, https://, cf://): its
+ * images and scripts next to it, as iViewer fetches them - through `proxy`
+ * (the dev server: the browser can't fetch other sites' files itself).
+ */
+export async function loadRemoteManifest(url: string, proxy: (abs: string) => string): Promise<ProjectManifest> {
+  const at = guiUrl(url);
+  const get = async (u: string) => {
+    const res = await fetch(u, { signal: AbortSignal.timeout(15000) });
+    if (!res.ok) throw new Error(`${u}: HTTP ${res.status}`);
+    return Buffer.from(await res.arrayBuffer());
+  };
+  const guiXml = decodeXml(await get(at));
+  const base = new URL('.', at).href;
+  const imageMap: Record<string, string> = {};
+  for (const name of imageNames(guiXml)) imageMap[name.replace(/\\/g, '/').split('/').pop()!] = proxy(new URL(name.replace(/\\/g, '/'), base).href);
+  const scriptMap: Record<string, string> = {};
+  const missingScripts: string[] = [];
+  await Promise.all(scriptNames(guiXml).map(async (name) => {
+    try {
+      scriptMap[name] = (await get(new URL(name.replace(/\\/g, '/'), base).href)).toString('utf8');
+    } catch {
+      missingScripts.push(name);
+    }
+  }));
+  const title = guiXml.match(/<project>([^<]*)<\/project>/)?.[1]?.trim() || decodeURIComponent(at.split('/').pop() ?? at);
+  return { gui: url, title, guiXml, imageMap, scriptMap, missingScripts, fileBase: proxy(base) };
+}
+
+/**
+ * Where a GUI link goes (CF.loadGUI(url), href="cf://host/x.gui") from the
+ * GUI shown: a .gui of the previewed project of that file name (its own
+ * folder first) - what you're working on; else the URL, to be fetched.
+ */
+export function resolveGuiLink(guis: GuiEntry[], from: string, url: string): { gui: string; note?: string } {
+  const fromUrl = isUrl(from);
+  let abs: string | null = null;
+  if (isUrl(url)) abs = guiUrl(url);
+  else if (fromUrl) abs = new URL(url, guiUrl(from)).href;
+  else {
+    const rel = path.posix.normalize(path.posix.join(path.posix.dirname(from), url.replace(/\\/g, '/')));
+    if (guis.some((g) => g.rel === rel)) return { gui: rel };
+  }
+  const leaf = decodeURIComponent((abs ? new URL(abs).pathname : url).split('/').pop() ?? '').toLowerCase();
+  const local = guis.filter((g) => !isUrl(g.rel) && g.rel.split('/').pop()!.toLowerCase() === leaf);
+  if (local.length) {
+    const dir = fromUrl ? null : path.posix.dirname(from);
+    const pick = local.find((g) => path.posix.dirname(g.rel) === dir) ?? local[0];
+    return { gui: pick.rel, note: abs ? `${url} - this machine's ${pick.rel}` : undefined };
+  }
+  if (!abs) throw Object.assign(new Error(`no ${url} next to ${from}`), { status: 404 });
+  return { gui: abs };
+}
+

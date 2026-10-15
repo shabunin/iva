@@ -74,6 +74,10 @@ export class CFRenderer {
   fileUrl?: (name: string) => string | undefined;
   /** the host's way to a web view's URL (see LoadProjectOptions.webUrl) */
   webUrl?: (url: string) => string | undefined;
+  /** the host loads another GUI (CF.loadGUI; see LoadProjectOptions.loadGui) */
+  loadGui?: (url: string, settings: Record<string, unknown>) => void;
+  /** the page to show first instead of the GUI's start page */
+  startPage?: string;
   fpsContainer?: Container;
   fpsText?: Text;
   fpsBg?: Graphics;
@@ -1000,7 +1004,10 @@ export class CFRenderer {
     this.pageHistory = [];
     this.initStore();
     await this.loadAssets();
-    if (this.project.startPage) {
+    // CF.loadGUI(url, { startPage }): that page, if the GUI has it
+    if (this.startPage && this.project.pages[this.startPage]) {
+      this.navigate(this.startPage);
+    } else if (this.project.startPage) {
       this.navigate(this.project.startPage);
     } else {
       const firstPage = Object.keys(this.project.pages)[0];

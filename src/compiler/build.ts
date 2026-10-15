@@ -1147,7 +1147,7 @@ export class Builder {
         // the text beside / below the icon: GUI Designer's way, padding (+ left-aligned beside it)
         extra: textRoom ? { padding: textRoom, ...(align === 'left' ? { align: 'left' as const } : { valign: 'bottom' as const }) } : undefined,
       }),
-      flip: p.page ?? 'None', sim: FEEDBACK[p.feedback ?? 'momentary'] ?? this.fail(node, `feedback: 'momentary', 'toggle' or 'none'`),
+      href: p.href, flip: p.page ?? 'None', sim: FEEDBACK[p.feedback ?? 'momentary'] ?? this.fail(node, `feedback: 'momentary', 'toggle' or 'none'`),
       l: 0, s: 1, js, cmd, repeatdelay: p.repeat, tags: tagsAttr(p.tags),
     }, children, undefined, node);
   }

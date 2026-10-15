@@ -365,6 +365,8 @@ declare module 'iva' {
       active?: StyleProps;
       /** go to this page on release ('Return' = previous page) */
       page?: string;
+      /** open this on release: "cf://host:port/other.gui" loads that GUI (GUI linking), another URL opens outside */
+      href?: string;
       /** run this command on press */
       cmd?: string;
       /** JavaScript run on press (gets join, value, tokens, list, listIndex) */

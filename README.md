@@ -121,6 +121,7 @@ Previews a JSX project, or existing `.gui` files:
 npm install
 node bin/iva.mjs dev path/to/project.gui      # or a folder: every .gui in it, with a picker
 node bin/iva.mjs dev fixtures/DemoUserInterfaces   # after `npm run fixtures`
+node bin/iva.mjs dev http://192.168.0.10:8019/my.gui   # a .gui on a web server
 ```
 
 Open http://127.0.0.1:5180/. Saving a file the project is built from (its .jsx
@@ -143,6 +144,7 @@ src/runtime/host    ── invoke/listen ──────► /__iva/host (WebS
   bridge/: the WebSocket)                       tls, dns, http(s)
                                                /__iva/manifest, /__iva/files/…
                                                /__iva/loop/<port>/… (the panel's own servers)
+                                               /__iva/remote/… (GUIs on web servers)
 ```
 
 - **Runtime**: `src/runtime`, iva's own: the CF runtime (`cf/`: the .gui
@@ -155,6 +157,10 @@ src/runtime/host    ── invoke/listen ──────► /__iva/host (WebS
   `dns_lookup`, …) on Node sockets, plus `http_fetch` (no CORS, self-signed
   certs OK), over one WebSocket (`src/runtime/host/bridge/`).
 - One backend session per page: a reload closes every socket it opened.
+
+- GUI links (`href="cf://…"`, `CF.loadGUI`) open the GUI they name: the
+  project's own `.gui` of that name, else the URL
+  ([docs/components.md](docs/components.md#gui-linking)).
 
 Not in the backend yet: WebSocket servers, mDNS, device APIs.
 

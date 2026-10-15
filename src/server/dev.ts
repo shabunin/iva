@@ -15,7 +15,7 @@ import { createServer as createVite } from 'vite';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { HostSession } from './host/session.js';
 import { watchInputs, watchTree } from './watch.js';
-import { findGuis, loadManifest, rootDir, safeJoin, type GuiEntry, type ProjectManifest } from './project.js';
+import { findGuis, guiUrl, isUrl, loadManifest, loadRemoteManifest, resolveGuiLink, rootDir, safeJoin, type GuiEntry, type ProjectManifest } from './project.js';
 import { compile, IvaError, slug, type CompileResult } from '../compiler/index.js';
 
 const IVA_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -29,7 +29,7 @@ const MIME: Record<string, string> = {
 };
 
 export interface DevOptions {
-  /** A .gui file, a folder searched for .gui files, or a JSX entry (app.jsx). */
+  /** A .gui file, a folder searched for .gui files, a JSX entry (app.jsx), or a .gui's URL (http://, cf://). */
   target: string;
   port: number;
   host: string;
@@ -45,10 +45,10 @@ function send(res: http.ServerResponse, status: number, body: string | Buffer, t
 
 export const isEntry = (file: string) => /\.(jsx|tsx|js|ts|mjs)$/i.test(file);
 
-/** What the preview shows: .gui files on disk, or a JSX project compiled in memory. */
+/** What the preview shows: .gui files on disk, a JSX project compiled in memory, or a .gui on a web server. */
 interface ProjectSource {
-  /** the folder to watch */
-  dir: string;
+  /** the folder to watch (none: a .gui on a web server) */
+  dir: string | null;
   guis(): GuiEntry[];
   manifest(gui: string): ProjectManifest;
   /** a file the manifest points at: its path, or its content (images iva drew) */
@@ -112,13 +112,55 @@ async function jsxSource(entry: string, log: (m: string) => void): Promise<Proje
 
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|svg|bmp)$/i;
 
+/** A .gui on a web server (iva dev http://host/x.gui): loaded as iViewer would, nothing to watch. */
+function urlSource(url: string): ProjectSource {
+  return {
+    dir: null,
+    guis: () => [{ rel: url, name: url }],
+    manifest: () => {
+      throw new Error('remote');
+    },
+    file: () => null,
+    refresh: async () => null,
+  };
+}
+
 export async function startDev(opts: DevOptions) {
-  const target = path.resolve(opts.target);
-  if (!fs.existsSync(target)) throw new Error(`not found: ${opts.target}`);
+  const remoteTarget = isUrl(opts.target);
+  const target = remoteTarget ? opts.target : path.resolve(opts.target);
+  if (!remoteTarget && !fs.existsSync(target)) throw new Error(`not found: ${opts.target}`);
   const log = (msg: string) => console.log(`[iva] ${msg}`);
   const debug = opts.verbose ? log : () => {};
-  const source = isEntry(target) ? await jsxSource(target, log) : guiSource(target);
+  const source = remoteTarget ? urlSource(target) : isEntry(target) ? await jsxSource(target, log) : guiSource(target);
 
+  // ── GUIs on web servers (CF.loadGUI, cf:// links, iva dev <url>) ──
+  /** the folders of the remote GUIs loaded: their files go through /__iva/remote/ */
+  const remoteBases = new Set<string>();
+  const remotePath = (abs: string) => {
+    const u = new URL(abs);
+    return `/__iva/remote/${u.protocol.replace(':', '')}/${u.host}${u.pathname}${u.search}`;
+  };
+  const remoteManifest = async (gui: string): Promise<ProjectManifest> => {
+    const m = await loadRemoteManifest(gui, (abs) => {
+      if (abs.endsWith('/')) remoteBases.add(abs);
+      return remotePath(abs);
+    });
+    remoteBases.add(new URL('.', guiUrl(gui)).href);
+    return m;
+  };
+  /** A file of a remote GUI (an image, a page): fetched here (the browser can't from another site). */
+  async function remote(res: http.ServerResponse, url: URL) {
+    const m = /^\/__iva\/remote\/(https?)\/([^/]+)(\/.*)?$/.exec(url.pathname);
+    const abs = m ? `${m[1]}://${m[2]}${m[3] ?? '/'}${url.search}` : '';
+    if (!m || ![...remoteBases].some((b) => abs.startsWith(b))) return send(res, 403, 'not a file of a GUI the preview loaded');
+    try {
+      const r = await fetch(abs, { signal: AbortSignal.timeout(15000) });
+      const type = r.headers.get('content-type') ?? MIME[path.extname(new URL(abs).pathname).toLowerCase()] ?? 'application/octet-stream';
+      send(res, r.status, Buffer.from(await r.arrayBuffer()), type);
+    } catch (e: any) {
+      send(res, 502, `${abs}: ${e?.message ?? e}`);
+    }
+  }
   const httpServer = http.createServer();
   const vite = await createVite({
     configFile: false,
@@ -142,9 +184,23 @@ export async function startDev(opts: DevOptions) {
       }
       if (url.pathname === '/__iva/manifest') {
         const gui = url.searchParams.get('gui') ?? '';
-        const manifest = source.manifest(gui);
-        if (manifest.missingScripts.length) log(`${gui}: missing scripts ${manifest.missingScripts.join(', ')}`);
-        return send(res, 200, JSON.stringify(manifest), 'application/json');
+        const done = (manifest: ProjectManifest) => {
+          if (manifest.missingScripts.length) log(`${gui}: missing scripts ${manifest.missingScripts.join(', ')}`);
+          send(res, 200, JSON.stringify(manifest), 'application/json');
+        };
+        if (isUrl(gui)) {
+          remoteManifest(gui).then(done, (e) => send(res, 502, `can't load ${gui}: ${e?.cause?.message ?? e?.message ?? e}`));
+          return;
+        }
+        return done(source.manifest(gui));
+      }
+      if (url.pathname === '/__iva/resolve') {
+        const link = resolveGuiLink(source.guis(), url.searchParams.get('from') ?? '', url.searchParams.get('url') ?? '');
+        return send(res, 200, JSON.stringify(link), 'application/json');
+      }
+      if (url.pathname.startsWith('/__iva/remote/')) {
+        remote(res, url);
+        return;
       }
       if (url.pathname.startsWith('/__iva/loop/')) return loop(req, res, url);
       if (url.pathname.startsWith('/__iva/files/')) {
@@ -243,7 +299,7 @@ export async function startDev(opts: DevOptions) {
       inputs.set(now);
       folder?.close();
       folder = null;
-    } else if (!folder) {
+    } else if (!folder && source.dir) {
       // nothing built yet (or a .gui): the whole folder
       folder = watchTree(source.dir, true, changed, log);
     }
@@ -256,7 +312,7 @@ export async function startDev(opts: DevOptions) {
     httpServer.listen(opts.port, opts.host, resolve);
   });
   const shown = opts.host === '0.0.0.0' || opts.host === '::' ? 'localhost' : opts.host;
-  log(`project: ${target}${isEntry(target) ? '' : ` (${source.guis().length} .gui)`}`);
+  log(`project: ${target}${remoteTarget || isEntry(target) ? '' : ` (${source.guis().length} .gui)`}`);
   log(`preview: http://${shown}:${opts.port}/`);
 
   return {

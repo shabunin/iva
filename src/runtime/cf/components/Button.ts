@@ -472,6 +472,9 @@ export function renderButton(
         if (node.flip && node.flip !== "None") {
             renderer.navigate(node.flip);
         }
+        // a link: href="cf://host/other.gui" loads that GUI (GUI linking), another URL opens outside
+        const href = node.attributes?.href;
+        if (href && renderer.cfApi?.openURL) renderer.cfApi.openURL(href);
     };
 
     btn.onUp.connect(handleUp);
