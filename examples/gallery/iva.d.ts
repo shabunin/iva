@@ -210,13 +210,15 @@ declare module 'iva' {
       /** raw attributes for the element (null removes one) */
       xml?: Record<string, string | number | null>;
   }
-  /** What a button does: a command name (string), or cmd()/macro()/js(). */
+  /** What a button does: a command name (string), or cmd()/macro()/js()/setProps(). */
   export interface Action {
       $$action: 1;
       kind: 'command' | 'macro' | 'js';
       value: string;
       delay?: number;
       repeat?: number;
+      /** the named joins its script uses (setProps()): the build checks some element has each */
+      joins?: JoinRef[];
   }
   export interface ActionOptions {
       /** ms after the press (release) before it runs */
@@ -232,6 +234,51 @@ declare module 'iva' {
   /** run JavaScript */
   export declare const js: ActionHelper;
   export type ActionList = (string | Action)[] | string | Action;
+  /** by how much, from what CF.getProperties says then: '+100', '-0.5' */
+  export type Relative = `+${number}` | `-${number}`;
+  /** What CF.setProperties changes on an element (setProps()). */
+  export interface Properties {
+      x?: number | Relative;
+      y?: number | Relative;
+      w?: number | Relative;
+      h?: number | Relative;
+      /** 0 (gone: not tapped either) .. 1 */
+      opacity?: number | Relative;
+      /** 1: as drawn */
+      scale?: number | Relative;
+      xscale?: number | Relative;
+      yscale?: number | Relative;
+      /** degrees, clockwise (more than 180 at once may turn either way: split it, then: ...) */
+      zrotation?: number | Relative;
+      /** degrees about the X / Y axis: 3D (yrotation 0 -> 90 shows its edge - a card flip) */
+      xrotation?: number | Relative;
+      yrotation?: number | Relative;
+      /** a <Theme> by name: at the end of the delay, not animated */
+      theme?: string;
+  }
+  export interface SetPropsOptions {
+      /** seconds before it starts (default 0) */
+      delay?: number;
+      /** seconds it takes (default 0: at once) */
+      duration?: number;
+      /** how it speeds up and slows down (default 'linear') */
+      curve?: 'linear' | 'easeIn' | 'easeOut' | 'easeInOut';
+      /** once it's done: another setProps(), a cmd() / macro() / js(), or a list of them (in turn) */
+      then?: Action | Action[];
+  }
+  /** An element (or more): its join - d('cube'), s(12) - a tag of elements, or a list of them. */
+  export type PropsTarget = JoinRef | string | (JoinRef | string)[];
+  /**
+   * Change elements' properties - move, scale, turn, fade - with CF.setProperties,
+   * animated over `duration` with a `curve`, then (`then`) the next thing: a
+   * button's action (onPress={setProps(...)}), a script's code (`${setProps(...)}`).
+   *
+   *   setProps(d('cube'), { scale: 1.5 }, { duration: 0.3, curve: 'easeOut',
+   *     then: setProps(d('cube'), { scale: 1 }, { duration: 0.3 }) })
+   *   setProps(d('cube'), { x: '+200' })        // from where it is (CF.getProperties)
+   *   setProps([d('a'), d('b'), 'menuItems'], { opacity: 0 }, { duration: 0.4 })
+   */
+  export declare function setProps(target: PropsTarget, props: Properties, opts?: SetPropsOptions): Action;
   /** Turned into a theme (.gui CSS), shared by every element with the same style. */
   export interface StyleProps extends XmlProp {
       /** background colour: '#203040', 'rgba(0,0,0,0.5)', '#20304080' */
@@ -1864,6 +1911,7 @@ declare const l: typeof import('iva').l;
 declare const cmd: typeof import('iva').cmd;
 declare const macro: typeof import('iva').macro;
 declare const js: typeof import('iva').js;
+declare const setProps: typeof import('iva').setProps;
 declare const fa: typeof import('iva').fa;
 declare const draw: typeof import('iva').draw;
 declare const variant: typeof import('iva').variant;

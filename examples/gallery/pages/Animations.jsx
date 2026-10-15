@@ -1,35 +1,57 @@
 import { ui, t, narrow } from '../ui.js';
 import Shell from '../components/Shell.jsx';
 
-// The functions the buttons run: CF.setProperties / CF.getProperties (scripts/animations.js)
+// Animations two ways: setProps() actions in the JSX - one CF.setProperties call, then the next in its
+// callback - and, for what keeps state (a toggle, where an element started), a script's functions
+// (scripts/animations.js: CF.setProperties / CF.getProperties by hand).
 const script = <Script src="../scripts/animations.js" />;
 
 const note = (x, y, w, h, text, size = 16) => <Text x={x} y={y} w={w} h={h} wrap valign="top" text={text} color={t.muted} font={t.font} fontSize={size} />;
 const label = (x, y, w, text) => <Text x={x} y={y} w={w} h={32} text={text} font={t.font} fontSize={17} />;
 
-/** a row of buttons across w, each running js */
+/** a row of buttons across w: each a script's call (a string) or actions (setProps() ...) */
 const buttons = (x, y, w, h, items) => {
   const bw = Math.floor((w - (items.length - 1) * 8) / items.length);
-  return items.map(([text, js], i) => <ui.IconButton x={x + i * (bw + 8)} y={y} w={bw} h={h} text={text} js={js} />);
+  return items.map(([text, act], i) => (
+    <ui.IconButton x={x + i * (bw + 8)} y={y} w={bw} h={h} text={text} {...(typeof act === 'string' ? { js: act } : { onPress: act })} />
+  ));
 };
 
+const cube = d('animCube');
+/** what CF.getProperties says of the cube, under the stage (the script's) */
+const readout = js('GalleryAnim.readout(Joins.d.animCube, Joins.s.animProps)');
+
+/** bigger, then back: the second in the first one's callback */
+const scale = setProps(cube, { scale: 1.6 }, { duration: 0.35, curve: 'easeOut',
+  then: setProps(cube, { scale: 1 }, { delay: 0.15, duration: 0.35, curve: 'easeIn', then: readout }) });
+/** a full turn in two halves (more than 180° at once may go either way), then 0 at once */
+const spin = setProps(cube, { zrotation: 179 }, { duration: 0.45,
+  then: setProps(cube, { zrotation: 358 }, { duration: 0.45, then: [setProps(cube, { zrotation: 0 }), readout] }) });
+/** nearly gone, then back */
+const fade = setProps(cube, { opacity: 0.1 }, { duration: 0.4, curve: 'easeIn',
+  then: setProps(cube, { opacity: 1 }, { delay: 0.2, duration: 0.4, curve: 'easeOut', then: readout }) });
+/** a card turning over: about Y to its edge, at once to the other edge, back */
+const flip = setProps(cube, { yrotation: 90 }, { duration: 0.22, curve: 'easeIn',
+  then: [setProps(cube, { yrotation: -90 }), setProps(cube, { yrotation: 0 }, { duration: 0.22, curve: 'easeOut', then: readout })] });
+/** a tap on the cube */
+const bounce = setProps(cube, { scale: 1.2 }, { duration: 0.12, curve: 'easeOut',
+  then: setProps(cube, { scale: 1 }, { duration: 0.25, curve: 'easeIn' }) });
+
 /**
- * CF.setProperties: the cube moved, scaled, turned, faded, flipped by its join (d animCube) - each
- * button one call (and its callback); a tap on the cube bounces it. What CF.getProperties then says
- * is under the stage.
+ * The cube (d animCube) moved, scaled, turned, faded, flipped: setProps() actions, and the script's
+ * for what keeps state - Move (there and back), All at once and Reset (where it started). What
+ * CF.getProperties then says is under the stage.
  */
-const setProps = (c, compact) => {
+const propsCard = (c, compact) => {
   const m = compact ? 20 : 28;
   const top = compact ? 12 : 48;
-  const stage = { x: m, y: top + (compact ? 52 : 52), w: c.w - 2 * m, h: compact ? 112 : 150 };
-  const cube = compact ? 72 : 96;
-  const pad = (stage.h - cube) / 2;
-  const dx = stage.w - cube - 2 * pad;
-  const cubeJ = 'Joins.d.animCube';
-  const out = 'Joins.s.animProps';
-  const run = (fn, ...args) => `GalleryAnim.${fn}(${[cubeJ, ...args, out].join(', ')})`;
-  const row1 = [['Move', run('move', dx)], ['Scale', run('scale')], ['Spin', run('spin')], ['Fade', run('fade')]];
-  const row2 = [['Flip', run('flip')], ['All at once', run('all', dx)], ['Reset', run('reset')]];
+  const stage = { x: m, y: top + 52, w: c.w - 2 * m, h: compact ? 112 : 150 };
+  const size = compact ? 72 : 96;
+  const pad = (stage.h - size) / 2;
+  const dx = stage.w - size - 2 * pad;
+  const call = (fn, ...args) => `GalleryAnim.${fn}(${['Joins.d.animCube', ...args, 'Joins.s.animProps'].join(', ')})`;
+  const row1 = [['Move', call('move', dx)], ['Scale', scale], ['Spin', spin], ['Fade', fade]];
+  const row2 = [['Flip', flip], ['All at once', call('all', dx)], ['Reset', call('reset')]];
   const below = stage.y + stage.h + 6;
   return (
     <ui.Card title={compact ? undefined : 'CF.setProperties'} {...c}>
@@ -37,8 +59,8 @@ const setProps = (c, compact) => {
         ? 'An element animated by its join: x, scale, zrotation, opacity - a duration, a curve, a callback.'
         : 'An element animated by its join: x / y, scale, zrotation, opacity (and xrotation / yrotation: 3D) over a duration, with a curve; the callback runs when it is done. Tap the cube too.', compact ? 14 : 16)}
       <Box x={stage.x} y={stage.y} w={stage.w} h={stage.h} radius={t.radius} bg={t.page} />
-      <ui.IconButton x={stage.x + pad} y={stage.y + pad} w={cube} h={cube} icon="cube" size={Math.round(cube * 0.5)} tone="accent"
-                     join="animCube" feedback="none" js={`GalleryAnim.bounce(${cubeJ})`} />
+      <ui.IconButton x={stage.x + pad} y={stage.y + pad} w={size} h={size} icon="cube" size={Math.round(size * 0.5)} tone="accent"
+                     join="animCube" feedback="none" onPress={bounce} />
       <Text x={m} y={below} w={c.w - 2 * m} h={24} join={s('animProps')} text="CF.getProperties: -" color={t.muted} font={t.font} fontSize={compact ? 12 : 14} />
       {compact ? (
         <>
@@ -50,28 +72,34 @@ const setProps = (c, compact) => {
   );
 };
 
-/** The same move with each of CF's curves: a dot a lane (s animCurveLinear ...), 1.2 s. */
-const curves = (c, compact) => {
+/** The same move with each of CF's curves: a dot a lane (s animCurveLinear ...), over and back. */
+const curvesCard = (c, compact) => {
   const m = compact ? 20 : 28;
   const top = compact ? 12 : 48;
   const names = ['Linear', 'EaseIn', 'EaseOut', 'EaseInOut'];
   const lw = compact ? 96 : 112;
   const lane = compact ? 50 : 56;
   const y0 = top + (compact ? 40 : 60);
-  const dot = 32;
+  const size = 32;
   const track = c.w - 2 * m - lw;
-  const dx = track - dot;
+  // where the dots are on the page (the card's place and theirs in it): over to the end and back
+  const x0 = c.x + m + lw;
+  const run = names.map((n) => {
+    const dot = s(`animCurve${n}`);
+    const curve = /** @type {'linear' | 'easeIn' | 'easeOut' | 'easeInOut'} */ (n[0].toLowerCase() + n.slice(1));
+    return setProps(dot, { x: x0 + track - size }, { duration: 1.2, curve, then: setProps(dot, { x: x0 }, { delay: 0.4, duration: 1.2, curve }) });
+  });
   return (
     <ui.Card title={compact ? undefined : 'Curves'} {...c}>
-      {note(m, top, c.w - 2 * m, 40, 'The same move, each lane with its curve: CF.AnimationCurveLinear, …EaseIn, …EaseOut, …EaseInOut.', compact ? 14 : 16)}
+      {note(m, top, c.w - 2 * m, 40, 'The same move, each lane with its curve: linear, easeIn, easeOut, easeInOut - over and back.', compact ? 14 : 16)}
       {names.map((n, i) => (
         <>
           {label(m, y0 + i * lane, lw, n)}
-          <Box x={m + lw} y={y0 + i * lane + dot / 2 - 2} w={track} h={4} radius={2} bg={t.raised} />
-          <Image x={m + lw} y={y0 + i * lane} w={dot} h={dot} join={s(`animCurve${n}`)} src={fa('circle', { color: t.accent, size: dot })} />
+          <Box x={m + lw} y={y0 + i * lane + size / 2 - 2} w={track} h={4} radius={2} bg={t.raised} />
+          <Image x={m + lw} y={y0 + i * lane} w={size} h={size} join={s(`animCurve${n}`)} src={fa('circle', { color: t.accent, size })} />
         </>
       ))}
-      <ui.IconButton x={m} y={y0 + 4 * lane + (compact ? 4 : 12)} w={160} h={compact ? 44 : 56} icon="play" text="Run" tone="accent" js={`GalleryAnim.curves(${dx})`} />
+      <ui.IconButton x={m} y={y0 + 4 * lane + (compact ? 4 : 12)} w={160} h={compact ? 44 : 56} icon="play" text="Run" tone="accent" onPress={run} />
     </ui.Card>
   );
 };
@@ -99,7 +127,7 @@ const sheetDef = (
 );
 
 /** Subpage transitions: in / out on its placement - fade, moveIn and push from a side, a time, an ease. */
-const transitions = (c, compact) => {
+const transitionsCard = (c, compact) => {
   const m = compact ? 20 : 28;
   const top = compact ? 12 : 48;
   const cols = compact ? 2 : 3;
@@ -122,44 +150,49 @@ const transitions = (c, compact) => {
   );
 };
 
-/** Callbacks chaining animations: the bars (d animBar0 ...) in a wave, toppling like dominoes. */
-const chains = (c, compact) => {
+/** Delays and callbacks: the bars (d animBar0 ...) in a wave, toppling like dominoes - setProps() each. */
+const chainsCard = (c, compact) => {
   const m = compact ? 20 : 28;
   const top = compact ? 12 : 48;
   const n = compact ? 7 : 8;
   const bw = 36;
   const gap = Math.floor((c.w - 2 * m - n * bw) / (n - 1));
   const y0 = top + (compact ? 70 : 64);
+  const bars = Array.from({ length: n }, (_, i) => d(`animBar${i}`));
+  // up and down, each a little later
+  const wave = bars.map((bar, i) => setProps(bar, { yscale: 1.6 }, { delay: i * 0.07, duration: 0.22, curve: 'easeOut',
+    then: setProps(bar, { yscale: 1 }, { duration: 0.3, curve: 'easeIn' }) }));
+  // over one after another; once the last is down, all up again, last first
+  const up = bars.map((bar, i) => setProps(bar, { zrotation: 0 }, { delay: 0.3 + (n - 1 - i) * 0.06, duration: 0.25, curve: 'easeOut' }));
+  const dominoes = bars.map((bar, i) => setProps(bar, { zrotation: 90 }, { delay: i * 0.1, duration: 0.25, curve: 'easeIn', then: i === n - 1 ? up : undefined }));
   return (
-    <ui.Card title={compact ? undefined : 'Callbacks & delays'} {...c}>
-      {note(m, top, c.w - 2 * m, 48, 'One animation starts in the last one\'s callback, or after a delay: a wave along the bars, dominoes.', compact ? 14 : 16)}
-      {Array.from({ length: n }, (_, i) => (
-        <ui.IconButton x={m + i * (bw + gap)} y={y0} w={bw} h={64} tone="accent" join={`animBar${i}`} feedback="none" />
-      ))}
-      {buttons(m, y0 + (compact ? 100 : 84), c.w - 2 * m, compact ? 44 : 56, [['Wave', 'GalleryAnim.wave()'], ['Dominoes', 'GalleryAnim.domino()']])}
+    <ui.Card title={compact ? undefined : 'Delays & callbacks'} {...c}>
+      {note(m, top, c.w - 2 * m, 48, 'Each bar a little later (a delay), the next move in the last one\'s callback: a wave, dominoes.', compact ? 14 : 16)}
+      {bars.map((_, i) => <ui.IconButton x={m + i * (bw + gap)} y={y0} w={bw} h={64} tone="accent" join={`animBar${i}`} feedback="none" />)}
+      {buttons(m, y0 + (compact ? 100 : 84), c.w - 2 * m, compact ? 44 : 56, [['Wave', wave], ['Dominoes', dominoes]])}
     </ui.Card>
   );
 };
 
 const L = ui.grid({
-  setProps: [800, 400], curves: [432, 400],
+  props: [800, 400], curves: [432, 400],
   transitions: [800, 280], chains: [432, 280],
-}, [['setProps', 'curves'], ['transitions', 'chains']]);
+}, [['props', 'curves'], ['transitions', 'chains']]);
 const A = ui.screenArea;
 
 export default narrow ? (
   <ui.Screens name="Animations" shell={<Shell section="Animations" />} screens={[
-    { title: 'Properties', content: <>{setProps(A, true)}{script}</> },
-    { title: 'Curves', content: curves(A, true) },
-    { title: 'Subpages', content: <>{transitions(A, true)}{sheetDef}</> },
-    { title: 'Chains', content: chains(A, true) },
+    { title: 'Properties', content: <>{propsCard(A, true)}{script}</> },
+    { title: 'Curves', content: curvesCard(A, true) },
+    { title: 'Subpages', content: <>{transitionsCard(A, true)}{sheetDef}</> },
+    { title: 'Chains', content: chainsCard(A, true) },
   ]} />
 ) : (
   <Page name="Animations" bg={t.page}>
-    {setProps(L.setProps)}
-    {curves(L.curves)}
-    {transitions(L.transitions)}
-    {chains(L.chains)}
+    {propsCard(L.props)}
+    {curvesCard(L.curves)}
+    {transitionsCard(L.transitions)}
+    {chainsCard(L.chains)}
     {sheetDef}
     {script}
     <Shell section="Animations" />
