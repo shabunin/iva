@@ -68,7 +68,10 @@ export async function loadManifest(url: string): Promise<Manifest> {
   const at = guiUrl(url);
   const bytes = await get(at);
   if (bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 3 && bytes[3] === 4) return zipManifest(await unzip(bytes), at);
-  return remoteManifest(at, decodeXml(bytes));
+  const xml = decodeXml(bytes);
+  // a web page, a wrong address: say so, not an empty screen
+  if (!/<gui[\s>]/.test(xml)) throw new Error(`${at}: not a GUI (a .gui, a zipped GUI or iva serve's address)`);
+  return remoteManifest(at, xml);
 }
 
 async function remoteManifest(at: string, guiXml: string): Promise<Manifest> {
