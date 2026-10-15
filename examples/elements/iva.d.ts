@@ -95,6 +95,12 @@ declare module 'iva' {
   }
   /** A Font Awesome (free) icon: fa('lightbulb'), fa('bell', { style: 'regular' }), fa('brands:spotify'). Names: fontawesome.com/search?m=free */
   export declare const fa: (name: string, opts?: IconOptions) => IconRef;
+  /**
+   * The look being built, with <Project themes={['dark', 'light']}>: the project
+   * is built once per look, and colours can depend on it:
+   * `bg={variant() === 'light' ? '#FFFFFF' : '#14171A'}`. '' without themes.
+   */
+  export declare const variant: () => string;
   /** Something iva draws into an image (draw.arc(), ...); angles: degrees clockwise from 12 o'clock. */
   export type DrawRef = {
       $$draw: 1;
@@ -129,6 +135,14 @@ declare module 'iva' {
       width: number;
       color: string;
   } | {
+      kind: 'box';
+      w: number;
+      h: number;
+      radius?: number;
+      fill?: string;
+      borderWidth?: number;
+      borderColor?: string;
+  } | {
       kind: 'wheel';
       size: number;
   } | {
@@ -148,7 +162,7 @@ declare module 'iva' {
       kind: K;
   }>, '$$draw' | 'kind'>;
   /** Images iva draws, for <Image src>: draw.arc({ size, thickness, from, to, color }), draw.dot(...),
-   * draw.knob(...), draw.ticks(...), draw.wheel({ size }) (hue round, white in the middle),
+   * draw.knob(...), draw.ticks(...), draw.box({ w, h, radius, fill, borderWidth, borderColor }), draw.wheel({ size }) (hue round, white in the middle),
    * draw.ring({ size, thickness, color, outline }), draw.cutout({ w, h, radius, color }) (a frame
    * with a rounded hole, to round a web view's corners). `name` fixes the file name (else: from the content). */
   export declare const draw: {
@@ -156,6 +170,7 @@ declare module 'iva' {
       dot: (o: Drawing<'dot'>) => DrawRef;
       knob: (o: Drawing<'knob'>) => DrawRef;
       ticks: (o: Drawing<'ticks'>) => DrawRef;
+      box: (o: Drawing<'box'>) => DrawRef;
       wheel: (o: Drawing<'wheel'>) => DrawRef;
       ring: (o: Drawing<'ring'>) => DrawRef;
       cutout: (o: Drawing<'cutout'>) => DrawRef;
@@ -292,6 +307,26 @@ declare module 'iva' {
       assets?: string;
       /** raw XML for <properties> after <size> (default: iva's) */
       properties?: string;
+      /**
+       * looks the panel switches between at runtime: the project is built once per
+       * name (variant() tells which), and IvaTheme.set(name) switches (CF.setProperties
+       * with a theme, by tag). The first is the one it starts in, unless `theme` says.
+       */
+      themes?: string[];
+      /** the look it starts in (default: the first of `themes`) */
+      theme?: string;
+      /**
+       * the build's folders (default true): the .gui with images/ (iViewer's
+       * asset folder: <imagefolder>) and scripts/ next to it, iva's drawings in
+       * images/backgrounds, icons, controls. false: everything next to the .gui
+       * (as GUI Designer saves a project without an image folder)
+       */
+      folders?: boolean;
+      /**
+       * the port of the panel's own web server: every <WebApp> and the
+       * ColorPicker's swatch (default: the first free from 8900)
+       */
+      httpPort?: number;
       children?: Child;
   }
   export interface PageProps extends Pick<StyleProps, 'bg' | 'image' | 'theme'>, XmlProp {
@@ -337,6 +372,8 @@ declare module 'iva' {
       active?: StyleProps;
       /** go to this page on release ('Return' = previous page) */
       page?: string;
+      /** open this on release: "cf://host:port/other.gui" loads that GUI (GUI linking), another URL opens outside */
+      href?: string;
       /** run this command on press */
       cmd?: string;
       /** JavaScript run on press (gets join, value, tokens, list, listIndex) */
@@ -442,7 +479,7 @@ declare module 'iva' {
       changeMacro?: string;
   }
   export interface WebProps extends Geom, XmlProp {
-      /** what it loads first: a URL, or a file of the project (`page.html`) */
+      /** what it loads first: a URL, a file of the project (`page.html`), or `panel:/path` (a page of the panel's own web server) */
       url: string;
       /** serial join: the URL (setting it loads it) */
       join?: Join;
@@ -453,6 +490,45 @@ declare module 'iva' {
       forwardJoin?: Join;
       refreshJoin?: Join;
       stopJoin?: Join;
+  }
+  /**
+   * A web page the panel serves itself: iva bundles `entry` (a JavaScript /
+   * TypeScript module, with the npm packages it imports - uplot, chart.js and
+   * three come with iva - and `iva/web` to talk to the panel) into one script
+   * shipped with the .gui; the panel's own web server (one TCP system for all
+   * of them, <Project httpPort>) sends it to the web view, at /<name>/.
+   */
+  export interface WebAppProps extends Geom, XmlProp {
+      /** the app's module ('./web/house.js'), or one iva brings ('iva:trend', 'iva:chart') */
+      entry: string;
+      /** names it: its path on the panel's web server (/<name>/) and its file in the build (default: from the entry's file name) */
+      name?: string;
+      /** joins the app sees and sets, by the names it uses: { kitchen: d('kitchenLight'), temp: a('temp') } */
+      joins?: Record<string, Join>;
+      /** settings for the app, as JSON (panel.options) */
+      options?: Record<string, unknown>;
+      /** panel functions it may call (panel.call(name, ...args)), by name: { history: 'plantHistory' } */
+      handlers?: Record<string, string>;
+      /** the panel keeps the joins' numbers every `every` seconds, the last `keep` (panel.history) */
+      record?: {
+          every?: number;
+          keep?: number;
+          names?: string[];
+      };
+      /** the page's colour until it draws (default black) */
+      bg?: string;
+      title?: string;
+      tags?: string | string[];
+  }
+  /**
+   * An HTTP server on the panel: a TCP system accepting connections on `port`
+   * and `handler(req, res)` (a panel function: its name, or a function as
+   * text) answering each request - see IvaHttp.serve.
+   */
+  export interface HttpServerProps {
+      name: string;
+      port: number;
+      handler: string;
   }
   export interface VideoProps extends Geom, XmlProp {
       url: string;
@@ -662,6 +738,8 @@ declare module 'iva' {
   export declare const Input: Component<InputProps>;
   export declare const Web: Component<WebProps>;
   export declare const Video: Component<VideoProps>;
+  export declare const WebApp: Component<WebAppProps>;
+  export declare const HttpServer: Component<HttpServerProps>;
   export declare const Gesture: Component<GestureProps>;
   export declare const System: Component<SystemProps>;
   export declare const Command: Component<CommandProps>;
@@ -720,6 +798,8 @@ declare module 'iva/ui' {
       };
   }
   export declare const defaultTheme: UiTheme;
+  /** The light look, the same keys: <Project themes={['dark', 'light']}> builds the panel in both. */
+  export declare const lightTheme: UiTheme;
   type Tone = 'accent' | 'danger' | 'warning' | 'muted';
   /** Button props a component passes through: what it does when pressed. */
   type Actions = Pick<ButtonProps, 'cmd' | 'js' | 'page' | 'onPress' | 'onRelease' | 'onHold' | 'holdTime' | 'repeat'>;
@@ -1033,7 +1113,11 @@ declare module 'iva/ui' {
   export interface ScrollBoxProps {
       /** list join */
       join: Join;
-      lines: string[];
+      /** lines of text, a row each; or children: anything, scrolled as one */
+      lines?: string[];
+      children?: Child;
+      /** the children's height (default: as far down as they go) */
+      contentH?: number;
       x?: number;
       y?: number;
       w?: number;
@@ -1085,8 +1169,6 @@ declare module 'iva/ui' {
       swatches?: string[] | false;
       /** JavaScript run on each pick, with r, g, b (numbers) and hex */
       onChange?: string;
-      /** the port of the panel's own HTTP server that shows the swatch (a web view loads the colour from it) */
-      port?: number;
       /** what's behind it (the swatch's corners are drawn in it): default the card colour */
       bg?: string;
       x?: number;
@@ -1201,6 +1283,233 @@ declare module 'iva/ui' {
           range?: string;
       };
   }
+  export interface TrendCurve {
+      /** an analog join (0..65535 stands for `scale`), or a serial one with the number as text: s('supply') */
+      join: Join;
+      label: string;
+      color?: string;
+      scale?: [number, number];
+      decimals?: number;
+      unit?: string;
+      /** an axis of its own, on the right */
+      side?: 'left' | 'right';
+      width?: number;
+  }
+  export interface TrendProps {
+      curves: TrendCurve[];
+      title?: string;
+      /** the range buttons, in seconds (default 5 min, 15 min, 1 h) */
+      ranges?: number[];
+      /** the range shown first */
+      range?: number;
+      /** the left axis (default: to fit) and the right one */
+      min?: number;
+      max?: number;
+      rightMin?: number;
+      rightMax?: number;
+      /** the panel samples the joins every so many seconds (default 1) */
+      every?: number;
+      /** a panel function answering history(from, to) (ms) with { names, rows } - a database, say; default: what the panel recorded */
+      history?: string;
+      /** names its web app (default: from the curves) */
+      name?: string;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  export interface ChartDataset {
+      label?: string;
+      data?: number[];
+      /** a join per label, live: analog (0..65535 stands for `scale`) or serial with a number */
+      joins?: Join[];
+      scale?: [number, number];
+      color?: string;
+      /** a colour per value (pie, doughnut) */
+      colors?: string[];
+      fill?: boolean;
+  }
+  export interface ChartProps {
+      type?: 'bar' | 'line' | 'doughnut' | 'pie' | 'radar' | 'polarArea';
+      labels?: string[];
+      datasets?: ChartDataset[];
+      /** serial join: the data as JSON - { labels, datasets: [{ data }] } or [numbers] - redrawn when it changes */
+      source?: Join;
+      /** bars across */
+      horizontal?: boolean;
+      stacked?: boolean;
+      min?: number;
+      max?: number;
+      unit?: string;
+      legend?: boolean;
+      title?: string;
+      /** names its web app (default: from what it shows) */
+      name?: string;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  /** A row tone (DataTable, AlarmTable): a tint behind the row, and its badge. */
+  export type RowTone = 'alarm' | 'warning' | 'ok' | 'muted' | 'running' | 'heating' | 'cooling' | 'offline' | 'alarmAck' | 'warningAck';
+  export interface TableColumn {
+      /** the row field it shows */
+      key: string;
+      title: string;
+      /** width (default: an equal share of what's left) */
+      w?: number;
+      align?: 'left' | 'center' | 'right';
+      /** digits after the point, for numbers */
+      decimals?: number;
+      /** shown as a badge in the row's tone */
+      badge?: boolean;
+  }
+  export interface DataTableProps {
+      columns: TableColumn[];
+      /** the rows; or `source` */
+      data?: Record<string, unknown>[];
+      /** serial join with the rows as a JSON array (a script or a feedback fills it) */
+      source?: Join;
+      /** the field that names a row: a tap selects it, `selected` gets it */
+      keyField?: string;
+      /** serial join: the selected row's key (both ways) */
+      selected?: Join;
+      /** the field naming the row's tone (alarm, warning, ok, muted, running, heating, cooling, offline) */
+      toneKey?: string;
+      /** a search field over the table (default true) */
+      search?: boolean;
+      placeholder?: string;
+      /** JavaScript run on a tap, with `row` (the row's object) */
+      onSelect?: string;
+      words?: {
+          rows?: string;
+          of?: string;
+          empty?: string;
+      };
+      rowH?: number;
+      fontSize?: number;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  export interface AlarmCondition {
+      /** the alarm's id */
+      id: string;
+      text: string;
+      source?: string;
+      severity?: 'alarm' | 'warning';
+      /** the join watched ('d12', d('door'), a('temp')) */
+      join: Join;
+      /** active while the join's value is above / below / equal to */
+      above?: number;
+      below?: number;
+      equals?: number | string;
+  }
+  export interface AlarmTableProps {
+      /** names it for AlarmBanner and IvaAlarms (IvaAlarms.raise('plant', {...})) */
+      name: string;
+      /** alarms raised and cleared on the panel, from joins */
+      conditions?: AlarmCondition[];
+      /** serial join with alarms as a JSON array ({ id, text, source, severity, active, acked }) */
+      source?: Join;
+      /** serial join: the counts as text ("2 alarms · 1 warning · 3 unacked") */
+      summary?: Join;
+      rowH?: number;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  export interface AlarmBannerProps {
+      /** the AlarmTable's name */
+      alarms: string;
+      /** a tap: a page, or JavaScript */
+      page?: string;
+      js?: string;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  export interface BreadcrumbsProps {
+      /** where you are: strings or { label, page, js }; all but the last are links */
+      items: (string | {
+          label: string;
+          page?: string;
+          js?: string;
+      })[];
+      /** a back arrow first (to the previous page) */
+      back?: boolean;
+      separator?: string;
+      fontSize?: number;
+      x?: number;
+      y?: number;
+      h?: number;
+  }
+  export interface LoaderProps {
+      /** digital join: shown while on */
+      join: Join;
+      /** the text under the spinner, or a serial join's */
+      text?: string;
+      textJoin?: Join;
+      icon?: string;
+  }
+  export interface DragItem {
+      id: string;
+      label: string;
+      /** a Font Awesome icon's name */
+      icon?: string;
+      /** where it is (default: in a row, in order) */
+      x?: number;
+      y?: number;
+  }
+  export interface DropTarget {
+      id: string;
+      label: string;
+      icon?: string;
+      /** serial join: the label of the item dropped on it (shown on it) */
+      value?: Join;
+      /** the items it takes (default: all) */
+      accept?: string[];
+      x?: number;
+      y?: number;
+  }
+  export interface DragDropProps {
+      /** names its joins */
+      name: string;
+      /** what can be dragged: tiles of an icon and a label (they stay where they are: a palette) */
+      items: DragItem[];
+      /** where they go: cards that light up under a dragged item, showing the last one dropped */
+      targets: DropTarget[];
+      /** JavaScript run on a drop, with `item` and `target` (ids) */
+      onDrop?: string;
+      /** shown on a target with nothing on it */
+      placeholder?: string;
+      itemW?: number;
+      itemH?: number;
+      targetW?: number;
+      targetH?: number;
+      gap?: number;
+      x?: number;
+      y?: number;
+      w: number;
+      h: number;
+  }
+  export interface PagerProps {
+      /** analog join: the page shown (0, 1, ...), both ways */
+      join: Join;
+      /** the first page shown */
+      value?: number;
+      /** the dots under the pages (default true) */
+      dots?: boolean;
+      x?: number;
+      y?: number;
+      w: number;
+      h: number;
+      /** one page per child */
+      children?: Child;
+  }
   export interface AlarmCardProps {
       title: string;
       /** digital join: the alarm on */
@@ -1243,6 +1552,8 @@ declare module 'iva/ui' {
       /** digital join opening the SideMenu (default 'menu'); false: no menu button */
       menu?: Join | false;
       clock?: boolean;
+      /** a button switching the look (with <Project themes>: IvaTheme.toggle()) */
+      themeToggle?: boolean;
       w?: number;
       h?: number;
   }
@@ -1303,6 +1614,15 @@ declare module 'iva/ui' {
       TimePicker: (p: TimePickerProps) => VNode;
       DatePicker: (p: DatePickerProps) => VNode;
       NumberField: (p: NumberFieldProps) => VNode;
+      DataTable: (p: DataTableProps) => VNode;
+      Trend: (p: TrendProps) => VNode;
+      Chart: (p: ChartProps) => VNode;
+      AlarmTable: (p: AlarmTableProps) => VNode;
+      AlarmBanner: (p: AlarmBannerProps) => VNode;
+      Breadcrumbs: (p: BreadcrumbsProps) => VNode;
+      Loader: (p: LoaderProps) => VNode;
+      Pager: (p: PagerProps) => VNode;
+      DragDrop: (p: DragDropProps) => VNode;
       AlarmCard: (p: AlarmCardProps) => VNode;
       Knob: (p: KnobProps) => VNode;
       Thermostat: (p: ThermostatProps) => VNode;
@@ -1314,8 +1634,13 @@ declare module 'iva/ui' {
   }
   /** A join as a JavaScript expression ("d12", or Joins.d.name for a named one). */
   export declare function jsJoin(type: 'd' | 'a' | 's' | 'l', j: Join): string;
-  /** Components in a theme: createUi({ accent: '#0A84FF' }); what isn't given comes from defaultTheme. */
-  export declare function createUi(theme?: Partial<UiTheme>): Ui;
+  /**
+   * Components in a theme: createUi({ accent: '#0A84FF' }); what isn't given
+   * comes from defaultTheme - or, with <Project themes={['dark', 'light']}>,
+   * from the look being built (lightTheme for 'light'), and `looks` changes a
+   * look's own colours: createUi({ accent: '#0A84FF' }, { light: { accent: '#0060DF' } }).
+   */
+  export declare function createUi(theme?: Partial<UiTheme>, looks?: Record<string, Partial<UiTheme>>): Ui;
   /** The components in the default theme. */
   export declare const ui: Ui;
   export declare const Card: Ui['Card'];
@@ -1350,6 +1675,15 @@ declare module 'iva/ui' {
   export declare const TimePicker: Ui['TimePicker'];
   export declare const DatePicker: Ui['DatePicker'];
   export declare const NumberField: Ui['NumberField'];
+  export declare const DataTable: Ui['DataTable'];
+  export declare const Trend: Ui['Trend'];
+  export declare const Chart: Ui['Chart'];
+  export declare const AlarmTable: Ui['AlarmTable'];
+  export declare const AlarmBanner: Ui['AlarmBanner'];
+  export declare const Breadcrumbs: Ui['Breadcrumbs'];
+  export declare const Loader: Ui['Loader'];
+  export declare const Pager: Ui['Pager'];
+  export declare const DragDrop: Ui['DragDrop'];
   export declare const NavCard: Ui['NavCard'];
   export declare const Header: Ui['Header'];
   export declare const SideMenu: Ui['SideMenu'];
@@ -1371,6 +1705,8 @@ declare const Gauge: typeof import('iva').Gauge;
 declare const List: typeof import('iva').List;
 declare const Input: typeof import('iva').Input;
 declare const Web: typeof import('iva').Web;
+declare const WebApp: typeof import('iva').WebApp;
+declare const HttpServer: typeof import('iva').HttpServer;
 declare const Video: typeof import('iva').Video;
 declare const Gesture: typeof import('iva').Gesture;
 declare const System: typeof import('iva').System;
@@ -1397,3 +1733,4 @@ declare const macro: typeof import('iva').macro;
 declare const js: typeof import('iva').js;
 declare const fa: typeof import('iva').fa;
 declare const draw: typeof import('iva').draw;
+declare const variant: typeof import('iva').variant;
