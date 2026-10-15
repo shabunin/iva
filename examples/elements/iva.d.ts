@@ -101,6 +101,28 @@ declare module 'iva' {
    * `bg={variant() === 'light' ? '#FFFFFF' : '#14171A'}`. '' without themes.
    */
   export declare const variant: () => string;
+  /** A panel size in pixels. */
+  export interface ScreenSize {
+      width: number;
+      height: number;
+      /**
+       * device pixels per pixel (a size given as '1400x1400@3x'): the GUI is laid
+       * out at the size divided by it (467x467), iViewer scales it up to fill the
+       * screen and iva draws its images that sharp
+       */
+      scale?: number;
+      /** the screen in device pixels, when there's a scale */
+      device?: {
+          width: number;
+          height: number;
+      };
+  }
+  /**
+   * The panel size being built: the <Project>'s own, or the one asked for
+   * (`iva build --size 1400x1400`, one of <Project sizes>). Lay out from it and
+   * one project fits every screen: `<ui.Card w={screen().width - 32} ...>`.
+   */
+  export declare const screen: () => ScreenSize;
   /** Something iva draws into an image (draw.arc(), ...); angles: degrees clockwise from 12 o'clock. */
   export type DrawRef = {
       $$draw: 1;
@@ -300,6 +322,15 @@ declare module 'iva' {
       /** the other orientation's size (default: width and height swapped) */
       otherSize?: [number, number];
       autoposition?: 'scale' | 'none' | null;
+      /**
+       * other screens to build it for: sizes={['1920x1080', '1400x1400@3x']}. iva
+       * build writes a GUI per size (dist/1920w1080h/, a folder named the way
+       * iViewer matches a device's screen) and --zip puts them all in one archive:
+       * each device loads its own. screen() says which size is being built. @3x:
+       * a phone's dense screen - laid out at a third of it (467x467) and scaled up
+       * by iViewer, so everything is as big as on a tablet.
+       */
+      sizes?: (`${number}x${number}` | `${number}x${number}@${number}x`)[];
       /** first number given to named joins (default 1000) */
       joinBase?: number;
       /** a folder whose files all ship with the project; images are also found
@@ -307,6 +338,12 @@ declare module 'iva' {
       assets?: string;
       /** raw XML for <properties> after <size> (default: iva's) */
       properties?: string;
+      /**
+       * the devices licensed to run it: iViewer's registration data, a name and
+       * the code iViewer shows in its unlicensed-mode message for that device:
+       * licenses={{ 'Living room iPad': '8437F51DCCD3F92EA6898A980ACA0259' }}
+       */
+      licenses?: Record<string, string>;
       /**
        * looks the panel switches between at runtime: the project is built once per
        * name (variant() tells which), and IvaTheme.set(name) switches (CF.setProperties
@@ -316,10 +353,11 @@ declare module 'iva' {
       /** the look it starts in (default: the first of `themes`) */
       theme?: string;
       /**
-       * the build's folders (default true): the .gui with images/ (iViewer's
-       * asset folder: <imagefolder>) and scripts/ next to it, iva's drawings in
-       * images/backgrounds, icons, controls. false: everything next to the .gui
-       * (as GUI Designer saves a project without an image folder)
+       * the build's folders (default true): the .gui with images/ next to it
+       * (iViewer's asset folder: <imagefolder>), iva's drawings in
+       * images/backgrounds, icons, controls, the scripts in images/scripts (iViewer
+       * looks for a .gui's scripts in its image folder). false: everything next to
+       * the .gui (as GUI Designer saves a project without an image folder)
        */
       folders?: boolean;
       /**
@@ -791,7 +829,7 @@ declare module 'iva/ui' {
       font: string;
       /** corner radius of rounded shapes */
       radius: number;
-      /** the panel size: Header, SideMenu, dialogs use it */
+      /** the panel size: Header, SideMenu, dialogs use it (default: screen(), the size being built) */
       panel: {
           width: number;
           height: number;
@@ -809,6 +847,8 @@ declare module 'iva/ui' {
       y?: number;
       w?: number;
       h?: number;
+      /** how far down the content sits (grid(): centred in a card taller than it's laid out for) */
+      dy?: number;
       /** placed relative to the card */
       children?: Child;
   }
@@ -1111,18 +1151,42 @@ declare module 'iva/ui' {
       h?: number;
   }
   export interface ScrollBoxProps {
-      /** list join */
-      join: Join;
+      /** list join: lines need one (a script fills them); children don't */
+      join?: Join;
       /** lines of text, a row each; or children: anything, scrolled as one */
       lines?: string[];
       children?: Child;
-      /** the children's height (default: as far down as they go) */
+      /** the children's height (default: as far down as they go); horizontal: their width */
       contentH?: number;
+      /** children scrolled sideways */
+      horizontal?: boolean;
       x?: number;
       y?: number;
       w?: number;
       h?: number;
       rowH?: number;
+  }
+  export interface ScrollAreaProps {
+      /** the area: default the panel below the header (y 72) */
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+      /** placed as on the page; they scroll when they go further down than the area */
+      children?: Child;
+  }
+  export interface ScreensProps {
+      /** the section's page: its first screen (a menu, a NavCard flips to it); the others are pages named `name / title` */
+      name: string;
+      /** a tab each: its title, and what's on it - placed as on a page, in ui.screenArea (under the tabs); it scrolls when it goes further down */
+      screens: {
+          title: string;
+          content: Child;
+      }[];
+      /** on every screen, over its content: the header, the side menu */
+      shell?: Child;
+      /** the pages' background (default: the theme's page colour) */
+      bg?: string;
   }
   export interface WeekDaysProps {
       /** analog join: the bitmask (Mon 1, Tue 2, Wed 4 ... Sun 64) */
@@ -1532,6 +1596,8 @@ declare module 'iva/ui' {
       x?: number;
       y?: number;
       w?: number;
+      /** default 210; taller: the time and the days in the middle of it */
+      h?: number;
   }
   export interface NavCardProps {
       icon: string;
@@ -1586,6 +1652,12 @@ declare module 'iva/ui' {
   }
   export interface Ui {
       theme: UiTheme;
+      /**
+       * Cards on the panel, whatever its size: items by name (the size each is
+       * laid out at), rows of names stretched across, taller when there's room
+       * (lists, tables, charts take it: grow). A Cell per name: <Card {...cells.x}>.
+       */
+      grid: <K extends string>(items: Record<K, GridItem>, rows: GridRow<K>[], o?: GridOptions) => Record<K, Cell>;
       Card: (p: CardProps) => VNode;
       Icon: (p: IconProps) => VNode;
       IconButton: (p: IconButtonProps) => VNode;
@@ -1606,6 +1678,20 @@ declare module 'iva/ui' {
       ListRow: (p: ListRowProps) => VNode;
       DataList: (p: DataListProps) => VNode;
       ScrollBox: (p: ScrollBoxProps) => VNode;
+      ScrollArea: (p: ScrollAreaProps) => VNode;
+      /**
+       * A section as screens a tab apart, a page each: what a ScrollArea can't
+       * scroll (lists, subpages, gestures - in iViewer a list's rows hold none)
+       * gets a screen of its own on a phone.
+       */
+      Screens: (p: ScreensProps) => VNode;
+      /** Where a screen's content goes (ui.Screens: under its tabs): grid(items, rows, ui.screenArea), <Card {...ui.screenArea}>. */
+      screenArea: {
+          x: number;
+          y: number;
+          w: number;
+          h: number;
+      };
       WeekDays: (p: WeekDaysProps) => VNode;
       PinPad: (p: PinPadProps) => VNode;
       ColorPicker: (p: ColorPickerProps) => VNode;
@@ -1641,6 +1727,50 @@ declare module 'iva/ui' {
    * look's own colours: createUi({ accent: '#0A84FF' }, { light: { accent: '#0060DF' } }).
    */
   export declare function createUi(theme?: Partial<UiTheme>, looks?: Record<string, Partial<UiTheme>>): Ui;
+  /** Where grid() puts an item: its box, and how far down content laid out at its own size sits in it (centred; 0 for one that grows). */
+  export interface Cell {
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+      dy: number;
+  }
+  /**
+   * A grid() item: [w, h], the size its content is laid out at (the least it
+   * gets), or { w, h, grow: true } for content that takes the room it gets (a
+   * list, a table, a chart). h can be a function of the width it gets: a card
+   * that lays its content out another way when narrow, taller.
+   */
+  export type GridItem = [number, number | ((w: number) => number)] | {
+      w: number;
+      h: number | ((w: number) => number);
+      grow?: boolean;
+  };
+  /** A grid() row: items by name, left to right; [names]: those one above another. */
+  export type GridRow<K extends string = string> = (K | K[])[];
+  export interface GridOptions {
+      /** the area (default: the panel below the header: x 16, y 88, 16 from the edges) */
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+      /** between items (default 16) */
+      gap?: number;
+  }
+  /**
+   * Items laid out in an area, row by row: each row stretched to the width
+   * (each item by its share), a row that doesn't fit going on in the next; the
+   * rows as high as their tallest item, the height left going to the rows with
+   * an item that grows - else to all of them, by their size - so the area is
+   * filled. Taller than the area: as tall as they are (a ScrollArea scrolls
+   * them). A stack's items share its height the same way.
+   */
+  export declare function layoutGrid<K extends string>(items: Record<K, GridItem>, rows: GridRow<K>[], area: {
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+  }, gap?: number): Record<K, Cell>;
   /** The components in the default theme. */
   export declare const ui: Ui;
   export declare const Card: Ui['Card'];
@@ -1666,6 +1796,9 @@ declare module 'iva/ui' {
   export declare const ListRow: Ui['ListRow'];
   export declare const DataList: Ui['DataList'];
   export declare const ScrollBox: Ui['ScrollBox'];
+  export declare const ScrollArea: Ui['ScrollArea'];
+  export declare const Screens: Ui['Screens'];
+  export declare const grid: Ui['grid'];
   export declare const WeekDays: Ui['WeekDays'];
   export declare const PinPad: Ui['PinPad'];
   export declare const AlarmCard: Ui['AlarmCard'];
@@ -1734,3 +1867,4 @@ declare const js: typeof import('iva').js;
 declare const fa: typeof import('iva').fa;
 declare const draw: typeof import('iva').draw;
 declare const variant: typeof import('iva').variant;
+declare const screen: typeof import('iva').screen;

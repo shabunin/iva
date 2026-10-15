@@ -9,16 +9,18 @@ const o = panel.options;
 const look = o.theme ?? {};
 const font = `"${look.font ?? 'Helvetica Neue'}", -apple-system, Helvetica, Arial, sans-serif`;
 
+// a phone's GPU: no shadows, no antialiasing, fewer pixels (a WebGL crash there takes every web view's canvas with it)
+const phone = /Android|iPhone|iPad/i.test(navigator.userAgent);
 let renderer;
 try {
-  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer = new THREE.WebGLRenderer({ antialias: !phone, powerPreference: phone ? 'low-power' : 'default' });
 } catch (e) {
   // no WebGL here (an old WebView, a browser without a GPU): say so, not a blank box
   document.body.innerHTML = `<div style="display:flex;height:100%;align-items:center;justify-content:center;color:${look.muted ?? '#8A949C'};font:15px ${font}">3D needs WebGL: ${e.message}</div>`;
   throw e;
 }
-renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
-renderer.shadowMap.enabled = true;
+renderer.setPixelRatio(Math.min(phone ? 1.5 : 2, window.devicePixelRatio));
+renderer.shadowMap.enabled = !phone;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 document.body.append(renderer.domElement);
 

@@ -1,7 +1,5 @@
-import { ui, t } from '../ui.js';
+import { ui, t, narrow } from '../ui.js';
 import Shell from '../components/Shell.jsx';
-
-const note = (x, y, w, text) => <Text x={x} y={y} w={w} h={24} text={text} color={t.muted} font={t.font} fontSize={16} />;
 
 // rows written here; on a panel they often come from a serial join (source=..., JSON) a script or a feedback fills
 const plant = [
@@ -16,11 +14,18 @@ const plant = [
   { id: 'FC2', name: 'Fan coil 2.14', area: 'Floor 2', state: 'OK', temp: 21.6, tone: 'ok' },
 ];
 
-export default (
-  <Page name="Tables" bg={t.page}>
-    <ui.Card title="DataTable" x={16} y={88} w={1248} h={330}>
-      <ui.DataTable x={28} y={56} w={1192} h={260} rowH={38} data={plant} keyField="id" selected="equipment" toneKey="tone"
-                    placeholder="Search equipment…" columns={[
+// the cards, each laid out in its cell; on a phone's screen the tab names the one there (no title: the content goes up)
+const table = (c, title) => {
+  const top = title ? 56 : 14;
+  return (
+    <ui.Card title={title} {...c}>
+      <ui.DataTable x={narrow ? 14 : 28} y={top} w={c.w - (narrow ? 28 : 56)} h={c.h - top - 14} rowH={38} data={plant} keyField="id" selected="equipment" toneKey="tone"
+                    placeholder="Search equipment…" columns={narrow ? [
+                      { key: 'id', title: 'ID', w: 64 },
+                      { key: 'name', title: 'Name' },
+                      { key: 'state', title: 'State', w: 128, badge: true },
+                      { key: 'temp', title: '°C', w: 60, align: 'right', decimals: 1 },
+                    ] : [
                       { key: 'id', title: 'ID', w: 110 },
                       { key: 'name', title: 'Name' },
                       { key: 'area', title: 'Area', w: 220 },
@@ -28,16 +33,48 @@ export default (
                       { key: 'temp', title: 'Temp °C', w: 150, align: 'right', decimals: 1 },
                     ]} />
     </ui.Card>
+  );
+};
+// these alarms come from conditions on joins: the switches
+const alarmTable = (x, y, w, h) => (
+  <ui.AlarmTable x={x} y={y} w={w} h={h} rowH={36} name="plant" conditions={[
+    { id: 'hot', text: 'Boiler supply above 90 °C', source: 'Boiler B1', join: d('overheat'), above: 0.5, severity: 'alarm' },
+    { id: 'door', text: 'Plant room door open', source: 'Access', join: d('doorOpen'), above: 0.5, severity: 'warning' },
+  ]} />
+);
 
-    <ui.Card title="AlarmTable · AlarmBanner" x={16} y={434} w={1248} h={350}>
-      <ui.AlarmBanner x={28} y={52} w={860} h={48} alarms="plant" />
-      {/* these alarms come from conditions on joins: flip the switches */}
-      <ui.Toggle x={904} y={40} w={316} h={36} label="Overheat" join="overheat" />
-      <ui.Toggle x={904} y={80} w={316} h={36} label="Door open" join="doorOpen" />
-      <ui.AlarmTable x={28} y={128} w={1192} h={210} rowH={36} name="plant" conditions={[
-        { id: 'hot', text: 'Boiler supply above 90 °C', source: 'Boiler B1', join: d('overheat'), above: 0.5, severity: 'alarm' },
-        { id: 'door', text: 'Plant room door open', source: 'Access', join: d('doorOpen'), above: 0.5, severity: 'warning' },
-      ]} />
+// the tables take the height there is
+const L = ui.grid({
+  table: { w: 1248, h: 330, grow: true },
+  alarms: { w: 1248, h: 350, grow: true },
+}, [['table'], ['alarms']]);
+const A = ui.screenArea;
+
+// a phone: a screen each - a list in a list (a ScrollArea) shows nothing on the device
+export default narrow ? (
+  <ui.Screens name="Tables" shell={<Shell section="Tables" />} screens={[
+    { title: 'DataTable', content: table(A) },
+    { title: 'Alarms', content: <ui.Card {...A}>{alarmTable(14, 14, A.w - 28, A.h - 28)}</ui.Card> },
+    {
+      title: 'Banner',
+      content: (
+        <ui.Card {...A}>
+          <ui.AlarmBanner x={20} y={20} w={A.w - 40} h={48} alarms="plant" />
+          <Text x={24} y={84} w={A.w - 48} h={48} wrap text="The alarms come from conditions on joins: flip these, see them in Alarms." color={t.muted} font={t.font} fontSize={16} />
+          <ui.Toggle x={20} y={148} w={A.w - 40} h={36} label="Overheat" join="overheat" />
+          <ui.Toggle x={20} y={196} w={A.w - 40} h={36} label="Door open" join="doorOpen" />
+        </ui.Card>
+      ),
+    },
+  ]} />
+) : (
+  <Page name="Tables" bg={t.page}>
+    {table(L.table, 'DataTable')}
+    <ui.Card title="AlarmTable · AlarmBanner" {...L.alarms}>
+      <ui.AlarmBanner x={28} y={52} w={L.alarms.w - 388} h={48} alarms="plant" />
+      <ui.Toggle x={L.alarms.w - 344} y={40} w={316} h={36} label="Overheat" join="overheat" />
+      <ui.Toggle x={L.alarms.w - 344} y={80} w={316} h={36} label="Door open" join="doorOpen" />
+      {alarmTable(28, 128, L.alarms.w - 56, L.alarms.h - 140)}
     </ui.Card>
     <Shell section="Tables" />
   </Page>

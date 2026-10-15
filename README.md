@@ -98,6 +98,11 @@ on the panel at runtime (`<Project themes={['dark', 'light']}>`)
 iva dev examples/gallery/app.jsx
 ```
 
+The gallery is also built for a phone with a 1400x1400 screen (`1400x1400@3x`,
+in the GUI picker): its cards one under another, laid out for the width, each
+page scrolling (`ui.grid`, `ui.ScrollArea`); lists, pagers, dials and drag &
+drop on screens a tab apart (`ui.Screens`: iViewer scrolls none of them).
+
 Charts and 3D are web apps the panel serves itself: `<WebApp entry="./web/house.js">`
 bundles your module (three.js, Chart.js, uPlot come with iva; `iva/web` talks
 to the panel's joins) and the panel's own web server - one port for every
