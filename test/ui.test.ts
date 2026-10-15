@@ -185,3 +185,27 @@ export default (
   assert.match(start, /\{ id: "bed", hover: Joins\.d\["ui_dd_audio_t_bed"\], accept: \["radio"\] \}/);
   assert.match(start, /function \(item, target\) \{ go\(item, target\) \}\);/);
 });
+
+test('ScrollBox with children: a list whose one row is a subpage of them, as tall as they go; the side menu scrolls its items', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-scroll-'));
+  fs.writeFileSync(path.join(dir, 'app.jsx'), `import { ScrollBox, NavCard, SideMenu } from 'iva/ui';
+export default (
+  <Project name="T" width={1280} height={800}>
+    <Page name="P">
+      <ScrollBox join="cards" x={20} y={100} w={600} h={300}>
+        <NavCard y={0} w={295} h={180} icon="tv" title="One" page="P" />
+        <NavCard y={200} w={295} h={180} icon="tv" title="Two" page="P" />
+      </ScrollBox>
+      <SideMenu title="Menu" items={[{ icon: 'house', text: 'Home', page: 'P' }]} />
+    </Page>
+  </Project>
+);
+`);
+  const r = await compile(path.join(dir, 'app.jsx'));
+  assert.match(r.xml, /<subpage name="ui_scroll_cards" w="600" h="380"/);
+  assert.match(r.xml, /<list j="\d+" x="20" y="100" w="600" h="300" [^>]*contentSub="ui_scroll_cards"/);
+  const start = r.scripts.find((x) => x.name === 'iva-start.js')!.code!;
+  assert.match(start, /IvaUI\.fill\(Joins\.l\["cards"\], \[\{ subpage: "ui_scroll_cards" \}\]\);/);
+  // the menu's items in a ScrollBox: lit through the row
+  assert.match(start, /IvaUI\.menu\(\{ "P": Joins\.d\["ui_menu_P"\] \}, Joins\.l\["ui_menu_items"\], "ui_scroll_lui_menu_items"\);/);
+});

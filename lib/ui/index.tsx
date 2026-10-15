@@ -373,7 +373,11 @@ export interface DataListProps {
 export interface ScrollBoxProps {
   /** list join */
   join: Join;
-  lines: string[];
+  /** lines of text, a row each; or children: anything, scrolled as one */
+  lines?: string[];
+  children?: Child;
+  /** the children's height (default: as far down as they go) */
+  contentH?: number;
   x?: number;
   y?: number;
   w?: number;
@@ -886,6 +890,16 @@ export function jsJoin(type: 'd' | 'a' | 's' | 'l', j: Join): string {
 /** A name for joins a component makes for itself, from the join it was given. */
 const keyOf = (j: Join): string => (typeof j === 'object' ? `${j.type}${j.id}` : String(j)).replace(/[^\w]/g, '_');
 
+/** How far down elements go (y + h), groups' offsets added: a ScrollBox's content height. */
+function bottomOf(c: Child, dy = 0): number {
+  if (Array.isArray(c)) return c.reduce<number>((m, k) => Math.max(m, bottomOf(k, dy)), 0);
+  if (!c || typeof c !== 'object') return 0;
+  const n = c as VNode;
+  const y = dy + (Number(n.props?.y) || 0);
+  if (n.type === 'Group') return bottomOf(n.children, y);
+  return n.props?.h !== undefined ? y + Number(n.props.h) : 0;
+}
+
 /** A short stable hash (file names for drawings that look the same). */
 function hash(text: string): string {
   let h = 0x811c9dc5;
@@ -1382,7 +1396,25 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     );
   }
 
-  function ScrollBox({ join, lines, x = 0, y = 0, w = 232, h = 232, rowH = 50 }: ScrollBoxProps): VNode {
+  /**
+   * Lines of text to drag through; or `children` scrolled as one: a list
+   * whose one row is a subpage of them (iViewer scrolls lists only). Inside it
+   * joins are the row's (CF.listUpdate / IvaUI.fill reach them, CF.setJoin
+   * doesn't) - pages, commands and JS on buttons work as anywhere.
+   */
+  function ScrollBox({ join, lines = [], children, contentH, x = 0, y = 0, w = 232, h = 232, rowH = 50 }: ScrollBoxProps): VNode {
+    if (children !== undefined) {
+      const sub = `ui_scroll_${keyOf(join)}`;
+      const height = contentH ?? Math.max(h, bottomOf(children));
+      return (
+        <Group x={x} y={y}>
+          <Subpage name={sub} define w={w} h={height}>{children}</Subpage>
+          <List w={w} h={h} join={typeof join === 'object' ? join : l(join)} item={sub} />
+          {runtime}
+          <OnStart js={`IvaUI.fill(${jsJoin('l', join)}, [{ subpage: ${JSON.stringify(sub)} }]);`} />
+        </Group>
+      );
+    }
     const sub = `ui_scroll_${w}_${rowH}`;
     return (
       <Group x={x} y={y}>
@@ -1465,8 +1497,9 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
       <Group x={x} y={y}>
         <Button w={w} h={h} page={page} radius={t.radius + 4} bg={t.surface} active={{ bg: t.raised }}
                 icon={{ src: fa(icon, { size: 36, color: t.accent }), x: 22, y: 22 }} />
-        <Text x={22} y={h - 74} w={w - 44} h={32} text={title} font={font} fontSize={22} />
-        {text && <Text x={22} y={h - 44} w={w - 44} h={24} text={text} color={t.muted} font={font} fontSize={16} />}
+        <Text x={22} y={h - 92} w={w - 44} h={32} text={title} font={font} fontSize={22} />
+        {/* two lines, from the top, when it's long */}
+        {text && <Text x={22} y={h - 58} w={w - 44} h={44} text={text} wrap valign="top" color={t.muted} font={font} fontSize={16} />}
       </Group>
     );
   }
@@ -1505,6 +1538,7 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     const { width: W, height: H } = t.panel;
     const close = `IvaUI.off(${jsJoin('d', menu)})`;
     const itemJoin = (page: string): JoinRef => d(`ui_menu_${page.replace(/[^\w]/g, '_')}`);
+    const list: JoinRef = l('ui_menu_items');
     const top = title ? 100 : 16;
     return (
       <Group>
@@ -1516,14 +1550,17 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
           {title && <Text x={26} y={18} w={w - 52} h={40} text={title} font={font} fontSize={28} />}
           {subtitle && <Text x={26} y={56} w={w - 52} h={24} text={subtitle} color={t.muted} font={font} fontSize={16} />}
           {title && <Box x={20} y={88} w={w - 40} h={1} bg={t.raised} />}
-          {items.map((it, i) => (
-            <Button x={8} y={top + i * 60} w={w - 16} h={52} page={it.page} js={close} join={itemJoin(it.page)} feedback="none"
-                    icon={fa(it.icon, { size: 24, color: t.accent })} iconAlign="left" text={it.text}
-                    radius={t.radius} bg={t.bar} active={{ bg: t.raised }} font={font} fontSize={20} />
-          ))}
+          {/* the items scroll when there are more than fit (a tap acts on release: a drag scrolls) */}
+          <ScrollBox join={list} y={top} w={w} h={H - top - 8} contentH={items.length * 60}>
+            {items.map((it, i) => (
+              <Button x={8} y={i * 60} w={w - 16} h={52} page={it.page} onRelease={[jsAction(close)]} join={itemJoin(it.page)} feedback="none"
+                      icon={fa(it.icon, { size: 24, color: t.accent })} iconAlign="left" text={it.text}
+                      radius={t.radius} bg={t.bar} active={{ bg: t.raised }} font={font} fontSize={20} />
+            ))}
+          </ScrollBox>
         </Subpage>
         {runtime}
-        <OnStart js={`IvaUI.menu({ ${items.map((it) => `${JSON.stringify(it.page)}: ${jsJoin('d', itemJoin(it.page))}`).join(', ')} });`} />
+        <OnStart js={`IvaUI.menu({ ${items.map((it) => `${JSON.stringify(it.page)}: ${jsJoin('d', itemJoin(it.page))}`).join(', ')} }, ${jsJoin('l', list)}, ${JSON.stringify(`ui_scroll_${keyOf(list)}`)});`} />
       </Group>
     );
   }

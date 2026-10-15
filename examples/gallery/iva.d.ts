@@ -1113,7 +1113,11 @@ declare module 'iva/ui' {
   export interface ScrollBoxProps {
       /** list join */
       join: Join;
-      lines: string[];
+      /** lines of text, a row each; or children: anything, scrolled as one */
+      lines?: string[];
+      children?: Child;
+      /** the children's height (default: as far down as they go) */
+      contentH?: number;
       x?: number;
       y?: number;
       w?: number;

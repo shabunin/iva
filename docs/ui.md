@@ -64,7 +64,7 @@ it as a value in min..max.
 | `SelectBox` | a field opening the options: a sheet over the page, or a dropdown under the field | `options`, `join` (the index), `value`, `title`, `mode` (`sheet`·`dropdown`) |
 | `ListRow` | a row: icon, title, subtitle; a value, a toggle or a chevron on the right | `icon`, `title`, `subtitle`, `value` / `valueJoin`, `toggle`, `chevron` + `page` / `js` / `cmd`, `divider` |
 | `DataList` | a CF list of headers, rows, alerts, spacers, filled at start | `join` (list), `items: [{ header } \| { icon, title, subtitle, value, alert } \| { spacer }]` |
-| `ScrollBox` | a list of lines to drag through | `join` (list), `lines` |
+| `ScrollBox` | lines of text to drag through; or anything (children) scrolled as one: a list whose one row is a subpage of them (iViewer scrolls lists only; inside, joins are the row's - `IvaUI.fill` / `CF.listUpdate` reach them; pages, commands and JS on buttons work as anywhere) | `join` (list), `lines`, or children + `contentH` (default: as far down as they go), `w`, `h` |
 | `WeekDays` | seven day toggles; the bitmask (Mon 1 … Sun 64) and a summary ("Weekdays", "Sun, Mon") | `join` (bitmask), `value`, `first` (`mon`·`sun`), `labels`, `textJoin`, `size` |
 | `AlarmCard` | a titled card: on / off, the time (a TimePicker: a tap opens the drums), the days | `title`, `on`, `hour` / `minute` (analog joins, as numbers), `value` ("06:45"), `minuteStep`, `ampm`, `timeTitle`, `days`, `daysValue` |
 | `TextField` | a label, a field (an icon, a placeholder while empty), the text in a serial join | `join`, `label`, `value`, `placeholder`, `password`, `icon`, `cmd` (sent on Return) |
@@ -76,7 +76,7 @@ it as a value in min..max.
 | `PinPad` | a keypad: digits, ← (hold: clear), OK; the code shown as dots | `code` (serial join OK writes), `onEnter` (JS with `code`), `length`, `mask`, `placeholder` |
 | `NavCard` | a card that goes to a page | `icon`, `title`, `text`, `page` |
 | `Header` | the top bar: menu button, title, breadcrumbs, clock | `title`, `section`, `home`, `menu`, `clock`, `themeToggle` (a ◐ button: `IvaTheme.toggle()`) |
-| `SideMenu` | a menu over the page, marking the page shown | `title`, `subtitle`, `items: [{ icon, text, page }]`, `menu`, `slide` |
+| `SideMenu` | a menu over the page, marking the page shown; its items scroll when there are more than fit (a tap acts on release, a drag scrolls) | `title`, `subtitle`, `items: [{ icon, text, page }]`, `menu`, `slide` |
 | `ConfirmDialog` | a dialog over a dimmed page | `join`, `title`, `message`, `confirmText`, `cancelText`, `danger`, `onConfirm` |
 | `DataTable` | a table: a search field, header taps sort (up, down, off), striped rows in tones, badge columns, a tap selects a row; "9 rows" / "2 of 9 rows" | `columns: [{ key, title, w, align, decimals, badge }]`, `data` or `source` (serial join: a JSON array), `keyField` + `selected` (serial join, both ways), `toneKey` (the field naming the tone: `alarm`·`warning`·`ok`·`running`·`muted`·`heating`·`cooling`·`offline`), `onSelect` (JS with `row`), `search`, `placeholder`, `words` |
 | `Trend` | curves of joins over time (uPlot, in a web view the panel serves): range buttons, ‹ › through the past, Live; a touch reads the values; the panel records the joins | `curves: [{ join, label, color, scale, unit, decimals, side, width }]` (analog: 0..65535 as `scale`; serial: a number as text), `ranges` (seconds), `range`, `min` / `max`, `rightMin` / `rightMax`, `every` (seconds per sample), `history` (a panel function for older data: a database) |

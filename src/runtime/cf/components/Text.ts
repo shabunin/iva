@@ -17,6 +17,9 @@ export function renderText(
     // wrap="True": lines break at the box; else one line
     const layout = textLayout(cssState0, node.w || 100, node.attributes?.wrap === 'True', 'left', node.attributes?.overrideFontAlignmentH);
     const txtObj = new Text({ text: "", style: layout.style });
+    // text never takes a touch in iViewer: it goes to what's under it (a button the text is on)
+    txtObj.eventMode = 'none';
+    container.hitArea = null;
 
     const reflectState = () => {
         let rawText = (textJoin && joinStore.has(textJoin, "s")) ? String(joinStore.get(textJoin, "s")) : (node.content || "");

@@ -271,3 +271,13 @@ test('DragDrop: the item under the finger follows it, a target that takes it lig
   // it went back to where it was
   assert.ok(moves.some((m) => m.join === 'd1' && m.x === 100 && m.y === 50));
 });
+
+test('SideMenu in a ScrollBox: the page shown lit through the list row (CF.setJoin wouldn\'t reach it)', () => {
+  const { CF, IvaUI, joins, lists, fire } = panel();
+  CF.currentPage = 'A';
+  IvaUI.menu({ A: 'd1', B: 'd2' }, 'l9', 'row');
+  assert.deepEqual(lists.l9, [{ subpage: 'row', d1: 1, d2: 0 }]);
+  fire('page', 'A', 'B');
+  assert.deepEqual(lists.l9, [{ subpage: 'row', d1: 0, d2: 1 }]);
+  assert.equal(joins.d2, undefined);
+});

@@ -11,6 +11,12 @@ export function renderImage(
 ) {
     let bgSprite: Sprite | null = null;
     const imgJoin = (node.j && node.j !== "0") ? node.j : null;
+    // clickthrough: touches go to what's under it (unless it has gestures of its own)
+    const through = node.attributes?.clickthrough === '1' && !node.children?.some((c) => c.type === 'gesture');
+    if (through) container.hitArea = null;
+    const passOn = (sprite: Sprite) => {
+        if (through) sprite.eventMode = 'none';
+    };
 
     const setSpriteDims = (sprite: Sprite) => {
         if (node.w) sprite.width = node.w;
@@ -27,6 +33,7 @@ export function renderImage(
             if (bgSprite) bgSprite.texture = assetLoaded;
             else {
                 bgSprite = new Sprite(assetLoaded);
+                passOn(bgSprite);
                 setSpriteDims(bgSprite);
                 container.addChildAt(bgSprite, 0); // Put behind debug
             }
@@ -101,6 +108,7 @@ export function renderImage(
                             bgSprite.texture = t;
                         } else {
                             bgSprite = new Sprite(t);
+                            passOn(bgSprite);
                             setSpriteDims(bgSprite);
                             container.addChildAt(bgSprite, 0);
                         }
