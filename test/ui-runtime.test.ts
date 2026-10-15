@@ -2,12 +2,18 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { UI_RUNTIME } from '../lib/ui/runtime.ts';
 
-/** Just enough of iViewer's CF for iva-ui.js: joins, watchers, lists. */
-function panel() {
+/**
+ * Just enough of iViewer's CF for iva-ui.js: joins, watchers, lists. A list's
+ * scroll: its top row (fractional where a finger left it); listInfo gives the
+ * position in rows of `rowH` GUI pixels times `scale` (a phone's iViewer
+ * scales the GUI up), and counts a row above as shown by a sliver at the end.
+ */
+function panel({ rowH = 48, scale = 1 } = {}) {
   const joins: Record<string, any> = {};
   const watchers: { event: string; joins?: string | string[]; cb: (...a: any[]) => void }[] = [];
   const lists: Record<string, any[]> = {};
   const scrolls: [string, number][] = [];
+  const tops: Record<string, number> = {};
   const fire = (event: string, join: string, ...rest: any[]) => {
     for (const w of watchers) {
       if (w.event !== event) continue;
@@ -32,13 +38,22 @@ function panel() {
     },
     listRemove(l: string) { lists[l] = []; },
     listAdd(l: string, items: any[]) { (lists[l] ??= []).push(...items); },
-    listScroll(l: string, i: number) { scrolls.push([l, i]); },
+    listScroll(l: string, i: number) {
+      scrolls.push([l, i]);
+      tops[l] = i;
+    },
+    listInfo(l: string, cb: any) {
+      const count = lists[l]?.length ?? 0;
+      const top = Math.min(tops[l] ?? 0, Math.max(0, count - 5));
+      const end = top === count - 5 && top > 0;
+      cb(l, count, end ? top - 1 : Math.floor(top), end ? 6 : 5, top * rowH * scale);
+    },
     setProperties() {},
     log() {},
   };
   const IvaUI = new Function('CF', 'setTimeout', 'setInterval', 'clearInterval', `${UI_RUNTIME}\nreturn IvaUI;`)(
     CF, (f: () => void) => f(), () => 0, () => {});
-  return { CF, IvaUI, joins, lists, scrolls, fire };
+  return { CF, IvaUI, joins, lists, scrolls, tops, fire };
 }
 
 /** Tones of a table: each one's row images (normal, every other, selected) and badge. */
@@ -58,7 +73,7 @@ test('TimePicker: the field, the drums, OK writes the hour and minute', () => {
   const drums = [{ list: 'l1', values: Array.from({ length: 24 }, (_, i) => pad(i)) }, { list: 'l2', values: Array.from({ length: 12 }, (_, i) => pad(i * 5)) }];
   IvaUI.picker('t', { kind: 'time', open: 'd1', label: 's1', rowH: 48, watch: ['a1', 'a2'], step: 5, ampm: false, value: '07:30', drums });
   assert.deepEqual([joins.a1, joins.a2, joins.s1], [7, 30, '07:30']);
-  assert.equal(lists.l1.length, 24 + 4); // two blank rows either side
+  assert.equal(lists.l1.length, 24 + 5); // two blank rows before, three after
   IvaUI.pickerOpen('t');
   assert.equal(joins.d1, 1);
   IvaUI.drumTo('t', [8, 3]);
@@ -76,6 +91,41 @@ test('TimePicker: 12 hours and AM / PM', () => {
   IvaUI.drumTo('t', [10, 45, 1]); // 11, 45, PM
   IvaUI.pickerOk('t');
   assert.deepEqual([joins.a1, joins.a2, joins.s1], [23, 45, '11:45 PM']);
+});
+
+test('TimePicker: a drum let go at its very end gives the last value, whatever listInfo counts in', () => {
+  for (const [scale, value] of [[1, '07:30'], [3, '07:30'], [2.998, '07:30'], [3, '00:00']] as const) {
+    const { IvaUI, joins, fire, tops } = panel({ scale });
+    const drums = [{ list: 'l1', values: Array.from({ length: 24 }, (_, i) => pad(i)) }, { list: 'l2', values: Array.from({ length: 60 }, (_, i) => pad(i)) }];
+    IvaUI.picker('t', { kind: 'time', open: 'd1', label: 's1', rowH: 48, watch: ['a1', 'a2'], step: 1, ampm: false, value, drums });
+    IvaUI.pickerOpen('t');
+    // the minutes drum flung to its end: 65 rows, 5 shown - the top one 60 (a sliver of 59 counted as shown)
+    tops.l2 = 60;
+    fire('end', 'l2');
+    assert.equal(tops.l2, 59, `scale ${scale}, from ${value}: turned back to the last minute`);
+    fire('end', 'l2'); // the turn's own end: it stays
+    assert.equal(tops.l2, 59);
+    // let go between two rows: the nearer one (where the unit is known)
+    tops.l1 = 13.4;
+    fire('end', 'l1');
+    if (value !== '00:00') assert.equal(tops.l1, 13, `scale ${scale}: the nearer hour`);
+    IvaUI.pickerOk('t');
+    assert.equal(joins.a2, 59, `scale ${scale}, from ${value}`);
+  }
+});
+
+test('TimePicker: AM / PM - the last one can be picked', () => {
+  const { IvaUI, joins, fire, tops } = panel({ scale: 3 });
+  const drums = [{ list: 'l1', values: [] }, { list: 'l2', values: [] }, { list: 'l3', values: ['AM', 'PM'] }].map((d, k) => ({
+    ...d, values: k === 0 ? Array.from({ length: 12 }, (_, i) => String(i + 1)) : k === 1 ? Array.from({ length: 60 }, (_, i) => pad(i)) : d.values,
+  }));
+  IvaUI.picker('t', { kind: 'time', open: 'd1', label: 's1', rowH: 48, watch: ['a1', 'a2'], step: 1, ampm: true, value: '10:45', drums });
+  IvaUI.pickerOpen('t');
+  tops.l3 = 2; // AM PM and three blanks under them: dragged as far as it goes
+  fire('end', 'l3');
+  assert.equal(tops.l3, 1);
+  IvaUI.pickerOk('t');
+  assert.equal(joins.s1, '10:45 PM');
 });
 
 test('SideMenu: a section\'s other screens (ui.Screens) light its item', () => {

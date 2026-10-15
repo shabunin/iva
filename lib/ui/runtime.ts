@@ -23,6 +23,17 @@ var IvaUI = (function () {
   var alarmSets = {};
   var pagers = {};
   var drags = {};
+  // listInfo's scroll position over the GUI's pixels: 1, or the screen's scale where iViewer scales the
+  // GUI up (a phone), or whatever it counts in - learnt from a list a script turned (unanimated) to a row
+  var listScale = 0;
+  function learnScale(list, row, rowH) {
+    if (!(row > 0)) return;
+    CF.listInfo(list, function (l, count, first, visible, pos) {
+      pos = Number(pos);
+      // there (the row above counted as shown too, by a sliver): its position over the row's
+      if (Math.abs(Number(first) - row) <= 1 && isFinite(pos) && pos > 0) listScale = pos / (row * rowH);
+    });
+  }
   function rowsOf(list) {
     CF.watch(CF.ListWillStartScrollingEvent, list, function () { if (pressed[list]) pressed[list].moved = true; });
   }
@@ -395,19 +406,23 @@ var IvaUI = (function () {
     /**
      * a time or date picker (o.kind): drums (o.drums[k] = { list, values }, o.rowH
      * rows), the values in o.watch (analog joins, as numbers), the field's text
-     * in o.label, the popup on o.open. A list holds two blank rows either side
-     * of the values, so value i is in the middle while row i is at the top.
+     * in o.label, the popup on o.open. A list holds two blank rows before the
+     * values and three after, so value i is in the middle while row i is at the
+     * top - the last one too: a drum let go at its very end (where iViewer can
+     * count a sliver of the row above as the first shown) turns back to it.
      */
     picker: function (id, o) {
-      var p = pickers[id] = { o: o, kind: KINDS[o.kind], rows: [] };
+      var p = pickers[id] = { o: o, kind: KINDS[o.kind], rows: [], to: [] };
       for (var k = 0; k < o.drums.length; k++) {
         var dr = o.drums[k], items = [{ subpage: dr.row, s1: '' }, { subpage: dr.row, s1: '' }];
         for (var i = 0; i < dr.values.length; i++) items.push({ subpage: dr.row, s1: dr.values[i] });
-        items.push({ subpage: dr.row, s1: '' }, { subpage: dr.row, s1: '' });
+        items.push({ subpage: dr.row, s1: '' }, { subpage: dr.row, s1: '' }, { subpage: dr.row, s1: '' });
         IvaUI.fill(dr.list, items);
         drumOf[dr.list] = { id: id, k: k };
         rowsOf(dr.list);
         p.rows[k] = 0;
+        // the row a script last turned the drum to
+        p.to[k] = -1;
         CF.watch(CF.ListDidEndScrollingEvent, dr.list, function (list) { IvaUI.drumSnap(list); });
       }
       CF.watch(CF.JoinChangeEvent, o.watch, function () {
@@ -428,7 +443,13 @@ var IvaUI = (function () {
         for (var k = 0; k < o.watch.length; k++) v.push(valueIn(j, o.watch[k]));
         CF.setJoin(o.open, 1);
         var rows = p.kind.rows(o, v);
-        setTimeout(function () { IvaUI.drumTo(id, rows, false); }, 30);
+        setTimeout(function () {
+          IvaUI.drumTo(id, rows, false);
+          // where the drums stopped: listInfo's unit
+          setTimeout(function () {
+            for (var k = 0; k < o.drums.length; k++) learnScale(o.drums[k].list, p.rows[k], o.rowH);
+          }, 250);
+        }, 30);
       });
     },
     /** the drums to the panel's time / today */
@@ -445,11 +466,15 @@ var IvaUI = (function () {
     drumTo: function (id, rows, animated) {
       var p = pickers[id];
       for (var k = 0; k < p.o.drums.length; k++) {
-        p.rows[k] = clamp(Math.round(rows[k] || 0), 0, p.o.drums[k].values.length - 1);
+        p.rows[k] = p.to[k] = clamp(Math.round(rows[k] || 0), 0, p.o.drums[k].values.length - 1);
         CF.listScroll(p.o.drums[k].list, p.rows[k], CF.TopPosition, !!animated);
       }
     },
-    /** a drum let go: the row nearest the middle is the one, turned right to it */
+    /**
+     * a drum let go: the row nearest the middle is the one, turned right to it.
+     * Where it is: listInfo's position in rows (its unit learnt), else the
+     * first row shown.
+     */
     drumSnap: function (list) {
       var at = drumOf[list];
       if (!at) return;
@@ -457,11 +482,14 @@ var IvaUI = (function () {
       CF.listInfo(list, function (l, count, first, visible, pos) {
         pos = Number(pos);
         first = Number(first) || 0;
-        // the position in pixels (where it's not: the first row shown)
-        var i = isFinite(pos) && pos >= first * h - 1 && pos <= (first + 1) * h + 1 ? Math.round(pos / h) : first;
-        i = clamp(i, 0, n - 1);
+        var unit = listScale * h, known = unit > 0 && isFinite(pos);
+        var i = clamp(known ? Math.round(pos / unit) : first, 0, n - 1);
         p.rows[at.k] = i;
-        if (!isFinite(pos) || Math.abs(pos - i * h) > 0.5) CF.listScroll(list, i, CF.TopPosition, true);
+        // not right on it: turned to it (the unit not known: once - this ends a turn too)
+        if (known ? Math.abs(pos - i * unit) > unit * 0.02 : p.to[at.k] !== i) {
+          p.to[at.k] = i;
+          CF.listScroll(list, i, CF.TopPosition, true);
+        }
       });
     },
     /** a row's button pressed (its release: drumTap / selectPick) */
@@ -472,7 +500,7 @@ var IvaUI = (function () {
       if (!at || !tapped(list)) return;
       var p = pickers[at.id], i = Number(index) - 2;
       if (i < 0 || i >= p.o.drums[at.k].values.length) return;
-      p.rows[at.k] = i;
+      p.rows[at.k] = p.to[at.k] = i;
       CF.listScroll(list, i, CF.TopPosition, true);
     },
     /** a number field: the value in o.join (min..max as 0..65535), typed on a keypad (shown in o.display) */
