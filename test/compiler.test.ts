@@ -78,7 +78,7 @@ test('same style, one theme', async () => {
 });
 
 test('#rrggbbaa colours become rgba()', async () => {
-  const r = await build(wrap(`<Text w={10} h={10} bg="#00000080" />`));
+  const r = await build(wrap(`<Button w={10} h={10} bg="#00000080" />`));
   assert.match(r.xml, /background-color: rgba\(0,0,0,0\.5\)/);
 });
 
@@ -275,3 +275,10 @@ test('<Input> actions, <Web> named joins, a <System> from a component: once', as
   assert.equal((r.xml.match(/<system name="Srv"/g) ?? []).length, 1);
   await fails(wrap(`${sys}<Group><System name="Srv" protocol="udp" host="0.0.0.0" port={1} /></Group>`), /two different systems named "Srv"/);
 });
+
+test('<Text bg>: a drawn box behind the text (iViewer draws no text backgrounds)', async () => {
+  const r = await build(wrap(`<Group x={10}><Text x={20} y={30} w={200} h={40} text="Hi" bg="#336699" radius={8} /></Group>`));
+  assert.match(r.xml, /<img x="30" y="30" w="200" h="40" j="0" clickthrough="1"[^>]*>iva_box_\w+\.png<\/img>\s*<txt j="0" x="30" y="30" w="200" h="40"/);
+  assert.doesNotMatch(r.xml, /type="text"[^\]]*background-color/);
+});
+

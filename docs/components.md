@@ -19,7 +19,7 @@ injected); `import { Button } from 'iva'` works too.
 | JSX | `.gui` | Join | Key props |
 |---|---|---|---|
 | `<Button>` | `<btn>` + `<inactive>`/`<active>` (+ `<actions>`) | `join` digital; `textJoin` / `activeTextJoin` serial | `text`, `activeText`, `icon` / `activeIcon` (a file, `fa('name')`, or `{ src, x, y, w, h }`), `iconAlign` (`center`·`left`·`top`), `feedback` (`momentary`·`toggle`·`none`), `page` (flip; `'Return'`), `cmd`, `js`, `repeat`, `onPress` / `onRelease` / `onHold` + `holdTime`, style props incl. `radius` / `borderWidth` / `borderColor`, `active={{…}}` |
-| `<Text>` | `<txt>` | `join` serial | `text` or children, `wrap`, style props |
+| `<Text>` | `<txt>` | `join` serial | `text` or children, `wrap`, style props; `bg` / `radius` / a border become a drawn box behind it (iViewer draws no text backgrounds) |
 | `<Image>` | `<img>` | `join` serial (file / URL) | `src` (a file, a URL, or `fa('name', { color, size })`), `clickthrough`, `refresh`, `noCache`, `downloadIndicator`, `clearOnURLChange`; children: `<Gesture>` |
 | `<Slider>` | `<slider>` + `<indicator>`×2 | `join` analog; `pressJoin` digital | `min`, `max`, `decimals`, `invert`, `feedback`, `dragCmd` / `pressCmd` / `releaseCmd`; looks: `bg`/`image` (track), `fill`/`fillImage`, `radius`, `thumb`/`activeThumb` or `thumbColor` + `thumbSize` |
 | `<Gauge>` | `<gauge>` | `join` analog | `bg`/`image`, `fill`/`fillImage`, `radius`, `theme` |

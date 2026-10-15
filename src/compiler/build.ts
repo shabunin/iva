@@ -522,9 +522,22 @@ export class Builder {
   }
 
   /** Items of a page / subpage: <Group>s opened (their x / y added), <Script> / <OnStart> lifted to the project. */
+  /**
+   * <Text bg> / a border: iViewer draws no background for text (GUI Designer
+   * shows none either), so a drawn box goes behind the text instead.
+   */
+  private textBox(n: VNode): VNode[] {
+    const p = n.props;
+    const border = !!(p.borderWidth && p.borderColor);
+    if (n.type !== 'Text' || p.theme !== undefined || (p.bg === undefined && !border)) return [n];
+    const { bg, radius, borderWidth, borderColor, ...text } = p;
+    const box: VNode = { $$iva: 1, type: 'Box', props: { x: p.x, y: p.y, w: p.w, h: p.h, bg, radius, borderWidth, borderColor }, children: [], source: n.source };
+    return [box, { ...n, props: text }];
+  }
+
   private items(nodes: VNode[], dx = 0, dy = 0, top = true): XNode[] {
     const out: XNode[] = [];
-    for (const n of nodes) {
+    for (const n of nodes.flatMap((x) => this.textBox(x))) {
       if (n.type === 'Script') this.script(n);
       else if (n.type === 'System') this.system(n);
       else if (n.type === 'OnStart') this.onStart(n);
