@@ -26,7 +26,10 @@ const form = $<HTMLFormElement>('settings');
 const input = $<HTMLInputElement>('url');
 
 let current: LoadProjectResult | null = null;
-let orientation: Orientation = innerWidth >= innerHeight ? 'landscape' : 'portrait';
+/** the orientation the window asks for: clearly taller or wider - a nearly square one keeps what there is (landscape at first) */
+const wanted = (now: Orientation): Orientation =>
+  innerHeight > innerWidth * 1.15 ? 'portrait' : innerWidth > innerHeight * 1.15 ? 'landscape' : now;
+let orientation: Orientation = wanted('landscape');
 const say = (text: string) => {
   status.textContent = text;
 };
@@ -68,18 +71,29 @@ function fit() {
   current.app.renderer.resize(w, h, s * (devicePixelRatio || 1));
 }
 
-/** the device turned: the page in that orientation, if the GUI has it */
+/** a text field has the keyboard: the window got shorter for it, not turned */
+const typing = () => document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement;
+
+/**
+ * The window changed: the device turned - the page in that orientation, if
+ * the page has it (GUI Designer writes the other one empty; turning to it
+ * would only rebuild the page) - and the GUI as large as fits again. Not
+ * while a field has the keyboard: rebuilding the page would take the field
+ * from under it.
+ */
 function turned() {
-  if (!current) return;
-  const want: Orientation = innerWidth >= innerHeight ? 'landscape' : 'portrait';
+  if (!current || typing()) return;
+  const want = wanted(orientation);
   const page = current.renderer.currentPageName;
-  if (want !== orientation && page && guiSize(want).w) {
+  if (want !== orientation && page && (current.project.pages[page]?.[want]?.length ?? 0) > 0) {
     current.renderer.navigate(page, want);
     orientation = (current.renderer.targetOrientation as Orientation | undefined) ?? want;
   }
   fit();
 }
 addEventListener('resize', turned);
+// a field let go (the keyboard going): what the window is now
+document.addEventListener('focusout', () => setTimeout(turned, 300));
 
 /** CF.loadGUI / a cf:// link: that GUI ('' this one again), in a fresh page - the runtime keeps its globals per page */
 function loadGui(from: string, url: string, settings: Record<string, unknown>) {

@@ -94,7 +94,8 @@ async function remoteManifest(at: string, guiXml: string): Promise<Manifest> {
   }));
   const path = new URL(at).pathname;
   const title = titleOf(guiXml, decodeURIComponent(path.split('/').pop() || new URL(at).host));
-  return { url: at, title, guiXml, imageMap, scriptMap, missingScripts, fileUrl: (name) => new URL(name.replace(/\\/g, '/'), base).href };
+  // a project file (CF.loadAsset, a web view's page): in the image folder, where iViewer keeps them
+  return { url: at, title, guiXml, imageMap, scriptMap, missingScripts, fileUrl: (name) => new URL(name.replace(/\\/g, '/'), files).href };
 }
 
 /**
@@ -145,9 +146,11 @@ function zipManifest(files: Map<string, Uint8Array<ArrayBuffer>>, id: string): M
   const title = titleOf(guiXml, entry.split('/').pop()!.replace(/\.gui$/i, ''));
   return {
     url: id, title, guiXml, imageMap, scriptMap, missingScripts,
+    // a project file (CF.loadAsset, a web view's page): in the image folder, else beside the .gui
     fileUrl: (name) => {
-      const n = dir + name.replace(/\\/g, '/');
-      return files.has(n) ? blobUrl(n) : undefined;
+      const n = name.replace(/\\/g, '/');
+      const found = [imageRoot + n, dir + n].find((f) => files.has(f));
+      return found ? blobUrl(found) : undefined;
     },
   };
 }
