@@ -318,13 +318,23 @@ var IvaUI = (function () {
      * ('#RRGGBB'), and to a swatch: a web view (o.url) loading a page of that
      * colour from the panel's own web server (IvaHttp, /iva-color/RRGGBB). It
      * follows o.r / o.g / o.b when they change elsewhere.
+     *
+     * iViewer tells a script of its own CF.setJoin too, a moment later (the
+     * script has moved on by then), so what the picker writes mustn't come
+     * back as a change from elsewhere - else the colour goes round (rgb, hsv,
+     * rgb ...) for good, a rounding off each time: jumping between two, the
+     * swatch reloading on and on. r / g / b as the picker left them are its
+     * own; the slider it sets without an event (a finger moving it makes one).
      */
     color: function (id, o, onChange) {
-      var c = colors[id] = { o: o, h: 0, s: 0, v: 1, busy: false, onChange: onChange, sent: '', timer: null, last: 0 };
+      // rgb: the r / g / b joins as the picker last left them (written, or followed); vj: the slider's
+      var c = colors[id] = { o: o, h: 0, s: 0, v: 1, rgb: null, vj: -1, onChange: onChange, sent: '', timer: null, last: 0 };
       function follow() {
-        if (c.busy) return;
         CF.getJoins([o.r, o.g, o.b], function (j) {
-          var hsv = rgbHsv(valueIn(j, o.r), valueIn(j, o.g), valueIn(j, o.b));
+          var r = valueIn(j, o.r), g = valueIn(j, o.g), b = valueIn(j, o.b);
+          if (c.rgb && r === c.rgb[0] && g === c.rgb[1] && b === c.rgb[2]) return;
+          c.rgb = [r, g, b];
+          var hsv = rgbHsv(r, g, b);
           // black and greys have no hue of their own: keep the one there was
           if (hsv[1] > 0) c.h = hsv[0];
           if (hsv[2] > 0) c.s = hsv[1];
@@ -333,10 +343,12 @@ var IvaUI = (function () {
         });
       }
       CF.watch(CF.JoinChangeEvent, [o.r, o.g, o.b], follow);
+      // the slider, moved by a finger (the picker's own setting, should iViewer tell of it anyway: as it was)
       CF.watch(CF.JoinChangeEvent, o.v, function (j, v) {
-        if (c.busy) return;
+        if (Number(v) === c.vj) return;
+        c.vj = Number(v);
         c.v = clamp((Number(v) || 0) / 65535, 0, 1);
-        IvaUI.colorShow(id, true);
+        IvaUI.colorShow(id, true, true);
       });
       if (o.value) IvaUI.colorSet(id, o.value); else follow();
     },
@@ -363,32 +375,47 @@ var IvaUI = (function () {
       c.v = hsv[2];
       IvaUI.colorShow(id, true);
     },
-    /** show the colour (marker, slider, hex, swatch); write: to the r / g / b joins too */
-    colorShow: function (id, write) {
+    /**
+     * show the colour (marker, slider, hex, swatch), what changed of it; write:
+     * to the r / g / b joins too (and onChange), if it's another; slider: the
+     * slider moved, left as it is
+     */
+    colorShow: function (id, write, slider) {
       var c = colors[id], o = c.o;
       var rgb = hsvRgb(c.h, c.s, c.v);
       var hex = '#' + hex2(rgb[0]) + hex2(rgb[1]) + hex2(rgb[2]);
       var r = o.size / 2, a = c.h * Math.PI / 180, d = c.s * (r - o.markSize / 4);
-      c.busy = true;
-      if (write) {
+      if (write && !(c.rgb && rgb[0] === c.rgb[0] && rgb[1] === c.rgb[1] && rgb[2] === c.rgb[2])) {
+        c.rgb = rgb;
         CF.setJoin(o.r, rgb[0]);
         CF.setJoin(o.g, rgb[1]);
         CF.setJoin(o.b, rgb[2]);
+        if (c.onChange) c.onChange(rgb[0], rgb[1], rgb[2], hex.toUpperCase());
       }
-      CF.setJoin(o.v, Math.round(c.v * 65535));
-      c.busy = false;
-      if (o.hex) CF.setJoin(o.hex, hex.toUpperCase());
-      CF.setProperties({ join: o.mark, x: Math.round(r + d * Math.sin(a) - o.markSize / 2), y: Math.round(r - d * Math.cos(a) - o.markSize / 2) });
+      var vj = Math.round(c.v * 65535);
+      if (!slider && vj !== c.vj) {
+        c.vj = vj;
+        CF.setJoin(o.v, vj, false);
+      }
+      if (o.hex && hex !== c.hex) {
+        c.hex = hex;
+        CF.setJoin(o.hex, hex.toUpperCase());
+      }
+      var mx = Math.round(r + d * Math.sin(a) - o.markSize / 2), my = Math.round(r - d * Math.cos(a) - o.markSize / 2);
+      if (mx !== c.mx || my !== c.my) {
+        c.mx = mx;
+        c.my = my;
+        CF.setProperties({ join: o.mark, x: mx, y: my });
+      }
       IvaUI.colorSwatch(id, hex);
-      if (write && c.onChange) c.onChange(rgb[0], rgb[1], rgb[2], hex.toUpperCase());
     },
-    /** the swatch page: at most every 120 ms while dragging, the last colour always */
+    /** the swatch page: at most every 200 ms while dragging (a page load each), the last colour always */
     colorSwatch: function (id, hex) {
       var c = colors[id], o = c.o;
       if (!o.url) return;
       c.pending = hex;
       if (c.timer) return;
-      var wait = Math.max(0, 120 - (Date.now() - c.last));
+      var wait = Math.max(0, 200 - (Date.now() - c.last));
       c.timer = setTimeout(function () {
         c.timer = null;
         c.last = Date.now();

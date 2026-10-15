@@ -56,6 +56,99 @@ function panel({ rowH = 48, scale = 1 } = {}) {
   return { CF, IvaUI, joins, lists, scrolls, tops, fire };
 }
 
+/**
+ * iViewer as a device runs a script: what the script asks comes back later,
+ * on a clock of its own - a join's change event (for the script's own
+ * CF.setJoin too, unless its third argument is false), CF.getJoins' answer,
+ * a timer, an animation's end. echo: an event when the value changed, or on
+ * every set. run() runs what's due; a script going round never settles.
+ */
+function device({ echo = 'change', lag = 5 }: { echo?: 'change' | 'always'; lag?: number } = {}) {
+  let now = 1_000_000;
+  let seq = 0;
+  const tasks: { at: number; n: number; fn: () => void }[] = [];
+  const later = (ms: number, fn: () => void) => {
+    tasks.push({ at: now + ms, n: ++seq, fn });
+    return seq;
+  };
+  const joins: Record<string, any> = {};
+  const sets: { join: string; value: any; quiet: boolean }[] = [];
+  const props: { props: any; duration: number }[] = [];
+  const watchers: { event: string; joins?: string | string[]; cb: (...a: any[]) => void }[] = [];
+  const fire = (event: string, join: string, ...rest: any[]) => later(lag, () => {
+    for (const w of watchers) {
+      if (w.event !== event) continue;
+      if (w.joins && !(Array.isArray(w.joins) ? w.joins.includes(join) : w.joins === join)) continue;
+      w.cb(join, ...rest);
+    }
+  });
+  const CF: any = {
+    JoinChangeEvent: 'join', PageFlipEvent: 'page', ListDidEndScrollingEvent: 'end', TopPosition: 'top', AnimationCurveLinear: 'linear', AnimationCurveEaseOut: 'out',
+    setJoin(j: string, v: any, send = true) {
+      const changed = String(joins[j]) !== String(v);
+      joins[j] = v;
+      sets.push({ join: j, value: v, quiet: send === false });
+      if (send !== false && (echo === 'always' || changed)) fire('join', j, v);
+    },
+    // answered as they are when asked (iViewer takes a script's calls in order), the answer later
+    getJoin(j: string, cb: any) {
+      const v = joins[j] ?? 0;
+      later(lag, () => cb(j, v));
+    },
+    getJoins(js: string[], cb: any) {
+      const m = Object.fromEntries(js.map((j) => [j, { value: joins[j] ?? 0 }]));
+      later(lag, () => cb(m));
+    },
+    watch(event: string, a: any, b?: any, fireNow?: boolean) {
+      const cb = typeof a === 'function' ? a : b;
+      const js = typeof a === 'function' ? undefined : a;
+      watchers.push({ event, joins: js, cb });
+      if (fireNow && js) {
+        for (const j of [js].flat()) {
+          const v = joins[j] ?? 0;
+          later(lag, () => cb(j, v));
+        }
+      }
+    },
+    setProperties(p: any, delay = 0, duration = 0, curve?: unknown, done?: () => void) {
+      props.push({ props: p, duration });
+      if (done) later((delay + duration) * 1000, done);
+    },
+    listRemove() {},
+    listAdd() {},
+    listScroll() {},
+    log() {},
+  };
+  class Clock extends Date {
+    static now() { return now; }
+  }
+  const IvaHttp = { ready: (f: () => void) => f(), url: (path: string) => `http://127.0.0.1:8900/${path}` };
+  const IvaUI = new Function('CF', 'setTimeout', 'setInterval', 'clearInterval', 'Date', 'IvaHttp', `${UI_RUNTIME}\nreturn IvaUI;`)(
+    CF, (f: () => void, ms = 0) => later(ms, f), () => 0, () => {}, Clock, IvaHttp);
+  /** what's due in the next ms (everything: Infinity), at most limit tasks; how many ran */
+  const run = (ms = Infinity, limit = 5000) => {
+    const until = now + ms;
+    let ran = 0;
+    for (;;) {
+      tasks.sort((x, y) => x.at - y.at || x.n - y.n);
+      const t = tasks[0];
+      if (!t || t.at > until || ran >= limit) break;
+      tasks.shift();
+      now = Math.max(now, t.at);
+      t.fn();
+      ran++;
+    }
+    if (ms !== Infinity) now = Math.max(now, until);
+    return ran;
+  };
+  /** a finger moving an element (a slider): its join set, the event later */
+  const user = (j: string, v: any) => {
+    joins[j] = v;
+    fire('join', j, v);
+  };
+  return { CF, IvaUI, joins, sets, props, run, user, pending: () => tasks.length };
+}
+
 /** Tones of a table: each one's row images (normal, every other, selected) and badge. */
 const TONES = Object.fromEntries(['', 'alarm', 'alarmAck', 'warning', 'warningAck', 'running', 'offline'].map((t) => [t, { rows: [`${t}0`, `${t}1`, `${t}sel`], badge: `${t}b` }]));
 
@@ -338,4 +431,61 @@ test('SideMenu: the page shown lit (its items in a ScrollBox\'s header subpage: 
   assert.deepEqual([joins.d1, joins.d2], [1, 0]);
   fire('page', 'A', 'B');
   assert.deepEqual([joins.d1, joins.d2], [0, 1]);
+});
+
+test('ColorPicker on the device (its own joins told back, later): a touch, the slider, a change elsewhere settle - no colour going round', () => {
+  const toJoin = (v: number) => Math.round(v * 65535);
+  for (const echo of ['change', 'always'] as const) {
+    const d = device({ echo });
+    const changes: string[] = [];
+    d.IvaUI.color('lamp', { size: 210, markSize: 28, mark: 's1', v: 'a4', r: 'a1', g: 'a2', b: 'a3', hex: 's2', url: 's3', value: '#FFB000' },
+      (r: number, g: number, b: number, hex: string) => changes.push(hex));
+    d.run();
+    assert.equal(d.pending(), 0, `${echo}: settled at start`);
+    assert.deepEqual([d.joins.a1, d.joins.a2, d.joins.a3, d.joins.s2, d.joins.a4], [255, 176, 0, '#FFB000', 65535]);
+    assert.equal(d.joins.s3, 'http://127.0.0.1:8900/iva-color/ffb000');
+
+    // a touch on the wheel: green (the phone's went round, #79EE56 - #79EE57 ...); r, g, b, the hex once each
+    let from = d.sets.length;
+    d.IvaUI.colorTouch('lamp', 169.5, 123.7);
+    d.run();
+    assert.equal(d.pending(), 0, `${echo}: a touch settles`);
+    const touched = [d.joins.a1, d.joins.a2, d.joins.a3];
+    assert.deepEqual(touched, [130, 255, 92]);
+    assert.deepEqual(d.sets.slice(from).map((x) => x.join).sort(), ['a1', 'a2', 'a3', 's2', 's3']);
+    assert.deepEqual(changes.slice(1), ['#82FF5C']);
+
+    // the slider dragged darker, its events late: never set back under the finger, the colour the last place's
+    from = d.sets.length;
+    for (const v of [62000, 59000, 61166 - 3000, 61166 - 1000, 61166]) {
+      d.user('a4', v);
+      d.run(16);
+    }
+    d.run();
+    assert.equal(d.pending(), 0, `${echo}: the slider settles`);
+    assert.ok(!d.sets.slice(from).some((x) => x.join === 'a4'), `${echo}: the slider isn't set under the finger`);
+    assert.deepEqual([d.joins.a1, d.joins.a2, d.joins.a3, d.joins.s2], [121, 238, 86, '#79EE56']);
+    assert.equal(d.joins.s3, 'http://127.0.0.1:8900/iva-color/79ee56');
+
+    // r, g, b set elsewhere (a device's feedback): followed - the hex, the slider (no event) - not written back
+    d.CF.setJoin('a1', 10);
+    d.CF.setJoin('a2', 20);
+    d.CF.setJoin('a3', 200);
+    from = d.sets.length;
+    d.run();
+    assert.equal(d.pending(), 0, `${echo}: a change elsewhere settles`);
+    assert.ok(!d.sets.slice(from).some((x) => /^a[123]$/.test(x.join)), `${echo}: not written back`);
+    assert.equal(d.joins.s2, '#0A14C8');
+    assert.deepEqual(d.sets.slice(from).filter((x) => x.join === 'a4').map((x) => [x.value, x.quiet]), [[toJoin(200 / 255), true]]);
+
+    // a swatch tapped twice: the colour once
+    from = d.sets.length;
+    d.IvaUI.colorSet('lamp', '#FF3B30');
+    d.run(50);
+    d.IvaUI.colorSet('lamp', '#FF3B30');
+    d.run();
+    assert.equal(d.pending(), 0);
+    assert.equal(d.sets.slice(from).filter((x) => x.join === 'a1').length, 1);
+    assert.equal(changes.at(-1), '#FF3B30');
+  }
 });
