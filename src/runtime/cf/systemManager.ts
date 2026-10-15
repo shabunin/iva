@@ -747,7 +747,6 @@ export class ControlSystem {
         if (!isConnected) {
             if (this.offlineQueue) {
                 this.sendQueue.push({ data, outputFormat });
-                console.log(`[System ${this.name}] Offline — queued: "${data}"`);
             } else {
                 console.warn(`[System ${this.name}] Cannot send — not connected. data="${data}"`);
             }

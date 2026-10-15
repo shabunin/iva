@@ -33,8 +33,6 @@ export function request(
     callback: CFCallback,
     tlsOptions?: CFRequestTlsOptions | null
 ) {
-    console.log(`CF.request to ${url} with method ${method}`);
-    
     const doRequest = async () => {
         if (getHost()?.http) {
             try {

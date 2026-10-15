@@ -251,37 +251,15 @@ export class CFRenderer {
   }
 
   async loadAssets() {
-    console.log("Starting loadAssets:", Object.keys(this.imageMap).length, "files");
     const promises = Object.entries(this.imageMap).map(async ([filename, url]) => {
       try {
-        console.log("Loading asset:", filename, "with URL:", url);
-
-        // DEBUG: Test raw DOM Image loading for asset://
-        // if (url.startsWith('asset:')) {
-        //     console.log("Testing raw DOM Image for:", url);
-        //     await new Promise((resolve, reject) => {
-        //         const img = new Image();
-        //         img.onload = () => {
-        //             console.log("DOM Image loaded successfully for:", url);
-        //             resolve(true);
-        //         };
-        //         img.onerror = (e) => {
-        //             console.error("DOM Image failed to load for:", url, e);
-        //             reject(new Error("DOM Image failed"));
-        //         };
-        //         img.src = url;
-        //     }).catch(e => console.error("Raw image test error:", e));
-        // }
-
         Assets.add({ alias: filename, src: url, parser: 'loadTextures' });
         await Assets.load(filename);
-        console.log("Successfully loaded asset:", filename);
       } catch (e) {
         console.error("Failed to load asset:", filename, e);
       }
     });
     await Promise.all(promises);
-    console.log("Finished loadAssets");
   }
 
   applyProperties(changesArray: any[], delay: number = 0, duration: number = 0, curve: string = "linear") {

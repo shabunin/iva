@@ -24,7 +24,6 @@ export function renderImage(
     };
 
     const tryLoadImg = (url: string) => {
-        console.log(`tryLoadImg called with: ${url}`);
         if (!url) return;
         // as the .gui names it (a path in its image folder), else by file name
         const assetLoaded = renderer.texture(url);
@@ -40,7 +39,6 @@ export function renderImage(
         } else {
             if (url.startsWith("http://") || url.startsWith("https://")) {
                 let loadUrl = url;
-                console.log(`Attempting to load external image: ${loadUrl}`);
 
                 const doLoad = async () => {
                     let blobUrl = loadUrl;
@@ -94,8 +92,8 @@ export function renderImage(
                     if (container.destroyed) return;
                     try {
                         Assets.add({ alias: loadUrl, src: blobUrl, parser: 'loadTextures' });
-                    } catch (e) {
-                        console.log("External asset already added or failed to add:", e);
+                    } catch {
+                        // added before (the same URL again)
                     }
 
                     try {
@@ -103,7 +101,6 @@ export function renderImage(
                         if (container.destroyed) return;
                         if (!t) throw new Error(`Assets.load resolved with no texture for ${loadUrl}`);
 
-                        console.log(`Successfully loaded external image: ${loadUrl}`);
                         if (bgSprite) {
                             bgSprite.texture = t;
                         } else {
@@ -118,8 +115,6 @@ export function renderImage(
                 };
 
                 doLoad();
-            } else {
-                console.log(`Skipping asset load for non-http URL: ${url}`);
             }
         }
     };
