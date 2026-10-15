@@ -18,7 +18,7 @@ export const sections = [
 export default function Shell({ section }) {
   return (
     <>
-      <ui.Header title="iva/ui gallery" section={section} />
+      <ui.Header title="iva/ui gallery" section={section} themeToggle />
       <ui.SideMenu title="iva/ui gallery" subtitle="every component" items={sections} />
     </>
   );

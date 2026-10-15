@@ -61,6 +61,10 @@ export class CFRenderer {
   /** Scope token used to register joinStore listeners; cleared on navigation. */
   currentScope: string | null = null;
   nodesMap: Record<string, Container[]> = {};
+  /** objects by tag (the .gui's tags="", space / comma separated): every join API takes a tag too */
+  tagsMap: Record<string, Container[]> = {};
+  /** themes set at runtime (CF.setProperties({ join, theme })), by join or tag: objects made later get them too */
+  themeOf: Record<string, string> = {};
   pageHistory: string[] = [];
   cfApi?: any; // Reference to the CF API instance for components to use without accessing window.CF
   /**
@@ -341,15 +345,24 @@ export class CFRenderer {
     changesArray.forEach(change => {
       const join = change.join;
       if (!join) return;
-      const containers = this.nodesMap[join];
-      if (!containers) return;
+      if (typeof change.theme === 'string') {
+        // a theme: at the end of the delay, no animation (as iViewer does)
+        this.themeOf[join] = change.theme;
+        const retheme = () => [...(this.nodesMap[join] ?? []), ...(this.tagsMap[join] ?? [])]
+          .filter((c) => !c.destroyed)
+          .forEach((c) => this.retheme(c, change.theme));
+        if (delay > 0) setTimeout(retheme, delay * 1000);
+        else retheme();
+      }
+      const containers = [...(this.nodesMap[join] ?? []), ...(this.tagsMap[join] ?? [])];
+      if (!containers.length) return;
 
       const activeContainers = containers.filter(c => !c.destroyed);
       if (activeContainers.length === 0) {
         delete this.nodesMap[join];
+        delete this.tagsMap[join];
         return;
       }
-      this.nodesMap[join] = activeContainers;
 
       let ease: 'linear' | 'easeIn' | 'easeOut' | 'easeInOut' = "linear";
       if (curve === "easein") ease = "easeIn";
@@ -391,6 +404,18 @@ export class CFRenderer {
     });
   }
 
+  /** An object in another theme: made again from its node, in the same place. */
+  retheme(c: Container, theme: string) {
+    const made = (c as any).cfMade as { node: CFNode; listPrefix?: string; listIndex?: number } | undefined;
+    const parent = c.parent;
+    if (!made || !parent || (c as any).cfNode?.t === theme) return;
+    const at = parent.getChildIndex(c);
+    const fresh = this.createNode({ ...made.node, t: theme }, made.listPrefix, made.listIndex);
+    parent.addChildAt(fresh, at);
+    parent.removeChild(c);
+    c.destroy({ children: true });
+  }
+
   /** A URL as the GUI gives it, made loadable here: project files by name, anything with a scheme as is. */
   resolveUrl(url: string): string {
     if (!url || /^[a-z][a-z0-9+.-]*:/i.test(url) || url.startsWith('//')) return url;
@@ -419,7 +444,11 @@ export class CFRenderer {
   }
 
   createNode(node: CFNode, listPrefix?: string, listIndex?: number): Container {
+    const madeFrom = node;
     node = { ...node }; // clone to avoid mutating original
+    // tags; a theme set at runtime on one of them (or on the join) wins over the .gui's
+    const tags = (node.attributes?.tags ?? '').split(/[\s,]+/).filter(Boolean);
+    for (const tag of tags) if (this.themeOf[tag]) node.t = this.themeOf[tag];
     let registeredJoin: string | null = null;
 
     const resolveJoin = (j: string | undefined): string | undefined => {
@@ -431,6 +460,8 @@ export class CFRenderer {
 
     const container = new Container();
     (container as any).cfNode = node;
+    (container as any).cfMade = { node: madeFrom, listPrefix, listIndex };
+    for (const tag of tags) (this.tagsMap[tag] ??= []).push(container);
     let effW = node.w || 0;
     let effH = node.h || 0;
     if (node.type === "subpage" && node.name && this.project.subpages[node.name]) {
@@ -550,6 +581,7 @@ export class CFRenderer {
 
     // Don't set w/h on container yet, as it scales children.
 
+    if (registeredJoin && this.themeOf[registeredJoin]) node.t = this.themeOf[registeredJoin];
     const theme = node.t ? this.project.themes[node.t] : null;
     const cssState0 = theme ? theme.states["0"] : null;
     const cssState1 = theme ? theme.states["1"] : null;
@@ -843,6 +875,7 @@ export class CFRenderer {
     this.currentPageName = pageName;
     this.currentScope = pageName;
     this.nodesMap = {};
+    this.tagsMap = {};
 
     if (forceOrientation) {
       this.targetOrientation = forceOrientation;

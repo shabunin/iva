@@ -55,6 +55,13 @@ export interface IconOptions {
 /** A Font Awesome (free) icon: fa('lightbulb'), fa('bell', { style: 'regular' }), fa('brands:spotify'). Names: fontawesome.com/search?m=free */
 export const fa: (name: string, opts?: IconOptions) => IconRef = (name, opts = {}) => ({ $$icon: 1, name, ...opts });
 
+/**
+ * The look being built, with <Project themes={['dark', 'light']}>: the project
+ * is built once per look, and colours can depend on it:
+ * `bg={variant() === 'light' ? '#FFFFFF' : '#14171A'}`. '' without themes.
+ */
+export const variant = (): string => (globalThis as { __ivaVariant?: string }).__ivaVariant ?? '';
+
 /** Something iva draws into an image (draw.arc(), ...); angles: degrees clockwise from 12 o'clock. */
 export type DrawRef = { $$draw: 1; name?: string } & (
   | { kind: 'arc'; size: number; thickness: number; from: number; to: number; color: string }
@@ -243,6 +250,14 @@ export interface ProjectProps extends XmlProp {
   assets?: string;
   /** raw XML for <properties> after <size> (default: iva's) */
   properties?: string;
+  /**
+   * looks the panel switches between at runtime: the project is built once per
+   * name (variant() tells which), and IvaTheme.set(name) switches (CF.setProperties
+   * with a theme, by tag). The first is the one it starts in, unless `theme` says.
+   */
+  themes?: string[];
+  /** the look it starts in (default: the first of `themes`) */
+  theme?: string;
   children?: Child;
 }
 export interface PageProps extends Pick<StyleProps, 'bg' | 'image' | 'theme'>, XmlProp {
@@ -619,7 +634,7 @@ const PLACEMENT = ['x', 'y', 'join', 'visible', 'in', 'out', 'topmost', 'fixed',
 /** The props each element takes (children aside).
  * @internal */
 export const PROPS: Record<string, string[]> = {
-  Project: ['name', 'device', 'orientation', 'width', 'height', 'otherSize', 'autoposition', 'joinBase', 'assets', 'properties'],
+  Project: ['name', 'device', 'orientation', 'width', 'height', 'otherSize', 'autoposition', 'joinBase', 'assets', 'properties', 'themes', 'theme'],
   Page: ['name', 'start', 'bg', 'image', 'theme', 'tags'],
   Landscape: ['bg', 'image', 'theme'],
   Portrait: ['bg', 'image', 'theme'],

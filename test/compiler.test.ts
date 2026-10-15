@@ -282,3 +282,40 @@ test('<Text bg>: a drawn box behind the text (iViewer draws no text backgrounds)
   assert.doesNotMatch(r.xml, /type="text"[^\]]*background-color/);
 });
 
+test('<Project themes>: one build per look, merged; tags, image joins, the theme script, the persisted look', async () => {
+  const r = await build(`export default (
+  <Project name="T" width={1024} height={768} themes={['dark', 'light']}>
+    <Page name="Main" bg={variant() === 'light' ? '#FFFFFF' : '#000000'}>
+      <Text w={100} h={30} text="Hi" color={variant() === 'light' ? '#000000' : '#FFFFFF'} />
+      <Button y={40} w={100} h={40} icon={fa('house')} color={variant() === 'light' ? '#000000' : '#FFFFFF'} bg="#888888" radius={8} />
+      <Text y={90} w={100} h={30} text="same in both" color="#FF0000" />
+    </Page>
+  </Project>
+);`);
+  // the page background: a drawn image on a join; the text and button: tagged
+  assert.match(r.xml, /<landscape>\s*<img x="0" y="0" w="1024" h="768" j="(\d+)"/);
+  const tagged = r.xml.match(/tags="iva_t_\w+"/g) ?? [];
+  assert.equal(tagged.length, 2);
+  // the button's icon is drawn into its background (a theme swaps both): no <img> in its states
+  assert.doesNotMatch(r.xml, /<inactive[^>]*>\s*<img/);
+  assert.match(r.xml, /<token name="\[iva_theme\]" value="dark" persist="1" \/>/);
+  const names = r.scripts.map((s) => s.name);
+  assert.ok(names.indexOf('iva-themes.js') >= 0 && names.indexOf('iva-themes.js') < names.indexOf('iva-start.js') || !names.includes('iva-start.js'));
+  const code = r.scripts.find((s) => s.name === 'iva-themes.js')!.code!;
+  const D = JSON.parse(code.match(/var D = (.*);\n/)![1]);
+  assert.deepEqual(D.names, ['dark', 'light']);
+  assert.equal(Object.keys(D.tags).length, 2);
+  assert.equal(Object.keys(D.images).length, 1);
+  // the light look's images ship too (named in the .gui)
+  for (const [, light] of Object.values(D.images) as string[][]) assert.ok(r.xml.includes(`>${light}<`), light);
+  assert.doesNotThrow(() => new Function(code));
+});
+
+test('<Project themes>: the looks must be the same elements', async () => {
+  await fails(`export default (
+  <Project name="T" width={1024} height={768} themes={['dark', 'light']} theme="light">
+    <Page name="Main">{variant() === 'light' ? <Text w={10} h={10} text="x" /> : null}</Page>
+  </Project>
+);`, /the "dark" look differs from "light".*same elements/s);
+});
+

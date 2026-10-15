@@ -9,7 +9,7 @@ export default (
       {note(28, 52, 'touch or drag the ring')}
       <ui.Dial x={28} y={92} size={240} join="level" value={65} label="Level" />
       <ui.Dial x={316} y={60} size={130} join="amber" value={65} unit="" color={t.warning} />
-      <ui.Dial x={316} y={206} size={130} join="white" value={65} unit="" color="#FFFFFF" thickness={5} />
+      <ui.Dial x={316} y={206} size={130} join="white" value={65} unit="" color={t.text} thickness={5} />
       {note(460, 120, 'size, colour,')}
       {note(460, 146, 'thickness')}
     </ui.Card>

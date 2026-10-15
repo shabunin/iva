@@ -122,3 +122,29 @@ test('SearchSelect: filters as you type, a tap picks (not a drag), options from 
   fire('input', 's2', 'zz');
   assert.equal(joins.s4, 'Nothing found');
 });
+
+test('IvaTheme: switches themes by tag, images by join, lists with the look\'s rows', async () => {
+  const { CF, IvaUI, joins, lists } = panel();
+  const calls: any[] = [];
+  CF.setProperties = (changes: any) => calls.push(changes);
+  CF.setToken = (_j: string, name: string, v: string) => (joins[`token:${name}`] = v);
+  CF.modules = [];
+  const data = { names: ['dark', 'light'], tags: { iva_t_a: ['btn_1', 'btn_2'] }, images: { s9: ['d.png', 'l.png'] }, files: [{}, { 'd.png': 'l.png' }], rows: [{}, { row: 'row__light' }] };
+  const src = (await import('node:fs')).readFileSync(new URL('../src/compiler/themes.ts', import.meta.url), 'utf8');
+  const body = src.slice(src.indexOf('return `// iva: runtime themes') + 'return `'.length, src.lastIndexOf('`;'));
+  const script = body.replace('${JSON.stringify(data)}', JSON.stringify(data));
+  const IvaTheme = new Function('CF', 'IvaUI', `${script}\nreturn IvaTheme;`)(CF, IvaUI);
+  IvaUI.fill('l1', [{ subpage: 'row', s1: 'd.png' }]);
+  (globalThis as any).IvaTheme = IvaTheme;
+  try {
+    IvaTheme.set('light');
+    assert.deepEqual(calls[0], [{ join: 'iva_t_a', theme: 'btn_2' }]);
+    assert.equal(joins.s9, 'l.png');
+    assert.equal(joins['token:[iva_theme]'], 'light');
+    // the list again, in the light look's rows and images
+    assert.deepEqual(lists.l1, [{ subpage: 'row__light', s1: 'l.png' }]);
+    assert.equal(IvaTheme.file('d.png'), 'l.png');
+  } finally {
+    delete (globalThis as any).IvaTheme;
+  }
+});

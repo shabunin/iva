@@ -158,6 +158,15 @@ export class CFAPI implements CFContext {
     watchers: Record<string, Watcher[]> = {};
     renderer: CFRenderer | null = null;
 
+    /** global tokens with persist="1" */
+    persistedTokens = new Set<string>();
+
+    /** where a persisted token is kept: per project */
+    tokenKey(name: string): string {
+        const raw = this.renderer?.project?.properties?.raw as { children?: { type: string; text?: string }[] } | undefined;
+        return `cf-token:${raw?.children?.find((c) => c.type === 'project')?.text ?? ''}:${name}`;
+    }
+
     init(renderer: CFRenderer) {
         this.renderer = renderer;
 
@@ -171,6 +180,16 @@ export class CFAPI implements CFContext {
                 const value = t.attributes['value'];
                 if (name && value !== undefined) {
                     this.tokensStore[this.GlobalTokensJoin][name] = value;
+                }
+                // persist="1": kept between runs, as on a device (here: the browser's storage)
+                if (name && t.attributes['persist'] === '1') {
+                    this.persistedTokens.add(name);
+                    try {
+                        const saved = localStorage.getItem(this.tokenKey(name));
+                        if (saved !== null) this.tokensStore[this.GlobalTokensJoin][name] = saved;
+                    } catch {
+                        // no storage (a private window): the .gui's value
+                    }
                 }
             }
         }

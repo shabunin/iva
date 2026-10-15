@@ -10,7 +10,7 @@ import Schedule from './pages/Schedule.jsx';
 import Navigation from './pages/Navigation.jsx';
 
 export default (
-  <Project name="iva-ui gallery" width={1280} height={800}>
+  <Project name="iva-ui gallery" width={1280} height={800} themes={['dark', 'light']}>
     {Overview}
     {Buttons}
     {Controls}

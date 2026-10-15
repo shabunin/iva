@@ -8,7 +8,7 @@ injected); `import { Button } from 'iva'` works too.
 
 | JSX | `.gui` | Key props |
 |---|---|---|
-| `<Project>` | `<gui>` + `<properties>` | `name`; `device` (`iPad`, `iPad Pro 11`, `iPad Pro 12.9`, `iPad Air 10.5`, `iPhone X`, `iPhone XS Max`, `iPhone 8`, `iPhone 8 Plus`, `iPhone 5`, `iPhone 4`) + `orientation`, or `width` / `height` (wider than tall → landscape is the main orientation); `otherSize`, `autoposition`, `joinBase`, `assets` (a folder shipped whole; images found there by bare name; default `./assets`), `properties` (raw XML after `<size>`) |
+| `<Project>` | `<gui>` + `<properties>` | `name`; `device` (`iPad`, `iPad Pro 11`, `iPad Pro 12.9`, `iPad Air 10.5`, `iPhone X`, `iPhone XS Max`, `iPhone 8`, `iPhone 8 Plus`, `iPhone 5`, `iPhone 4`) + `orientation`, or `width` / `height` (wider than tall → landscape is the main orientation); `otherSize`, `autoposition`, `joinBase`, `assets` (a folder shipped whole; images found there by bare name; default `./assets`), `properties` (raw XML after `<size>`), `themes` + `theme` (looks switched at runtime, below) |
 | `<Page>` | `<page>` + `<portrait>`/`<landscape>` | `name`, `start`, `bg`, `image`, `theme`, `tags`. Items go into the main orientation (the other is written empty, as GUI Designer does) |
 | `<Landscape>` / `<Portrait>` | `<landscape>` / `<portrait>` | `bg`, `image`, `theme`. With these, the page has exactly the orientations given, in that order |
 | `<Subpage>` | `<subpage name w h>` (definition) + placement | `name`, `w`, `h`, `clip`, `bg`/`image`/`theme`, `radius` / `borderWidth` / `borderColor` (drawn). Inside a page it is defined *and* placed (`x`, `y`, `join`, `visible`, `in`, `out`, `topmost` (above everything: placed last), `fixed` (at x / y whatever `<Group>` it is in), `clickthrough`), or only defined with `define`; in `<Project>` it is only defined |
@@ -112,6 +112,35 @@ a logo cut out of an image), and the field you type into sits where the
 A browser keeps other sites' pages to themselves, so for those the title
 join stays empty, and back / forward only go through the URLs the panel
 loaded.
+
+## Runtime themes
+
+```jsx
+<Project name="Home" width={1280} height={800} themes={['dark', 'light']}>   // starts in the first (or theme="light")
+  <Page name="Main" bg={variant() === 'light' ? '#EEF1F4' : '#14171A'}>…</Page>
+</Project>
+```
+
+iva builds the project once per look - `variant()` says which one is being
+built (iva/ui's `createUi` takes its colours from it) - and merges the looks
+into one .gui. On the panel, `IvaTheme.set('light')` / `IvaTheme.toggle()`
+switch with the CommandFusion API:
+
+- an object whose theme differs between the looks is tagged, and one
+  `CF.setProperties([{ join: tag, theme }, …])` swaps them all;
+- an image that differs gets a serial join and `CF.setJoin` swaps its file.
+  So in a themed project a page's / subpage's colour background is a drawn
+  image, and a button's drawn icon is drawn into its state's background;
+- a subpage used only as list rows is copied per look (`name__light`):
+  iva/ui's lists fill with the look's rows, and fill again on a switch;
+- the look shown is a persisted global token, `[iva_theme]`: the panel starts
+  in the last one. `IvaTheme.current()`, `IvaTheme.onChange(fn)`,
+  `IvaTheme.file(name)` (an image's name in the look shown, for scripts).
+
+The looks must be the same elements: only colours (themes, drawn images)
+may differ - iva says where they don't. Not switched: a slider's thumb
+image, a page background from an image file, lists a project's own script
+fills with its default row.
 
 ## Joins
 

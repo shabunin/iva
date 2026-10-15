@@ -11,7 +11,7 @@ import { fixedJoin, JoinAllocator, JoinSlot, typedJoin } from './joins.js';
 import { isVNode, type Child, type Source, type VNode } from './runtime.js';
 import { styleCss, Themes, type ThemeType } from './style.js';
 import { didYouMean } from './suggest.js';
-import { arc, box, circle, cutout, dotOnRing, generatedName, icon, knob, ring, ticks, wheel } from './images.js';
+import { arc, box, boxIcon, circle, cutout, dotOnRing, generatedName, icon, knob, ring, ticks, wheel, type PlacedIcon } from './images.js';
 import type { DrawRef, IconRef } from './components.js';
 
 const isIcon = (v: unknown): v is IconRef => !!v && typeof v === 'object' && (v as IconRef).$$icon === 1;
@@ -75,7 +75,7 @@ const HOISTED = new Set(['Script', 'OnStart']);
 const FEEDBACK: Record<string, string> = { none: '0', momentary: '1', toggle: '2' };
 
 /** Children flattened: arrays and fragments opened, false/null/undefined dropped. */
-function flat(children: Child[], out: (VNode | string)[] = []): (VNode | string)[] {
+export function flat(children: Child[], out: (VNode | string)[] = []): (VNode | string)[] {
   for (const c of children) {
     if (c === null || c === undefined || c === false || c === true) continue;
     if (Array.isArray(c)) flat(c, out);
@@ -113,7 +113,16 @@ export class Builder {
   /** placements marked topmost */
   private topmost = new Set<XNode>();
 
-  constructor(private baseDir: string) {}
+  /** the panel's size per orientation */
+  private sizes: Record<'landscape' | 'portrait', [number, number]> = { landscape: [1024, 768], portrait: [768, 1024] };
+
+  /**
+   * themed: built as one look of several (<Project themes>). What CF.setProperties
+   * can't swap at runtime (an object's theme it can) becomes something it can:
+   * page and subpage colours are drawn images (swapped through a join), a
+   * button's drawn icon is drawn into its state's background (its theme).
+   */
+  constructor(private baseDir: string, private opts: { themed?: boolean; start?: string } = {}) {}
 
   build(tree: Child): BuildResult {
     const top = flat([tree]).filter((c) => typeof c !== 'string' || c.trim());
@@ -139,6 +148,7 @@ export class Builder {
     const other = p.otherSize ?? [h, w];
     const land = this.primary === 'landscape' ? [w, h] : other;
     const port = this.primary === 'portrait' ? [w, h] : other;
+    this.sizes = { landscape: [land[0], land[1]], portrait: [port[0], port[1]] };
 
     const assetDir = path.resolve(this.baseDir, p.assets ?? './assets');
     if (fs.existsSync(assetDir) && fs.statSync(assetDir).isDirectory()) {
@@ -178,6 +188,8 @@ export class Builder {
       }
     }
     if (!this.pages.length) throw new CompileError('the project has no <Page>');
+    // the look the panel showed last (IvaTheme sets it): kept between runs
+    if (this.opts.themed) this.tokens.push(this.E('token', { name: '[iva_theme]', value: this.opts.start ?? '', persist: 1 }));
     const starts = this.pages.filter((pg) => pg.attrs.some(([k, v]) => k === 'start' && v === '1'));
     if (starts.length > 1) throw new CompileError(`more than one start page: ${starts.map((s) => s.attrs[0][1]).join(', ')}`);
     for (const use of this.subpageUses) {
@@ -408,8 +420,15 @@ export class Builder {
    * its own same-height images, wrong for corners; a plain background image
    * leaves the padding free for the text, beside an icon say.)
    */
-  private drawn(node: VNode, type: ThemeType, st: StyleProps, size?: { w: number; h: number }): StyleProps {
+  private drawn(node: VNode, type: ThemeType, st: StyleProps, size?: { w: number; h: number }, withIcon?: PlacedIcon): StyleProps {
     const border = st.borderWidth !== undefined && type !== 'input';
+    if (withIcon && size) {
+      // themed builds: the state's background with its icon (one image: a theme swaps both)
+      if (border && st.borderColor === undefined) throw this.err(node, 'borderWidth needs borderColor');
+      const name = this.generated(node, 'btn', (sc) =>
+        boxIcon({ ...size, radius: st.radius, fill: st.bg, borderWidth: border ? st.borderWidth ?? 0 : 0, borderColor: st.borderColor }, withIcon, sc));
+      return { ...st, bg: undefined, radius: undefined, borderWidth: undefined, borderColor: undefined, image: name };
+    }
     if (st.radius === undefined && !border) return st;
     if (type !== 'button' && type !== 'background') {
       this.warner(node)('radius and borders are drawn on <Button> and <Subpage>; ignored here');
@@ -444,7 +463,7 @@ export class Builder {
   }
 
   /** The element's theme: <Theme> by name, or one generated from its style props. */
-  private styleTheme(node: VNode, type: ThemeType, opts: { always?: boolean; active?: StyleProps; extra?: StyleProps } = {}): string {
+  private styleTheme(node: VNode, type: ThemeType, opts: { always?: boolean; active?: StyleProps; extra?: StyleProps; icons?: (PlacedIcon | undefined)[] } = {}): string {
     const p = node.props;
     if (p.theme !== undefined) {
       if (hasStyle(p) || opts.active) throw this.err(node, `use either theme="${p.theme}" or style props, not both`);
@@ -455,8 +474,8 @@ export class Builder {
     const img = (src: string) => this.image(node, src);
     const warn = this.warner(node);
     const size = typeof p.w === 'number' && typeof p.h === 'number' ? { w: p.w, h: p.h } : undefined;
-    const states = [styleCss(type, this.drawn(node, type, base, size), img, warn)];
-    if (type === 'button') states.push(styleCss(type, this.drawn(node, type, { ...base, ...(opts.active ?? {}) }, size), img, warn));
+    const states = [styleCss(type, this.drawn(node, type, base, size, opts.icons?.[0]), img, warn)];
+    if (type === 'button') states.push(styleCss(type, this.drawn(node, type, { ...base, ...(opts.active ?? {}) }, size, opts.icons?.[1]), img, warn));
     return this.themes.generated(type, states);
   }
 
@@ -564,8 +583,9 @@ export class Builder {
       throw this.err(node, 'put every item inside <Landscape> / <Portrait>, or none of them');
     }
     const orient = (tag: 'landscape' | 'portrait', holder: VNode | undefined, items: VNode[]) => {
-      const t = holder ? this.styleTheme(holder, 'background') : '';
-      const x = this.E(tag, { t: t || undefined }, this.items(items));
+      const drawnBg = holder && this.bgImage(holder, ...this.sizes[tag]);
+      const t = holder && !drawnBg ? this.styleTheme(holder, 'background') : '';
+      const x = this.E(tag, { t: t || undefined }, [...(drawnBg ? [drawnBg] : []), ...this.items(items)]);
       return holder && holder !== node ? this.withXml(x, holder) : x;
     };
     let orients: XNode[];
@@ -596,8 +616,9 @@ export class Builder {
     const previous = this.subpages.get(p.name);
     // reserve the name first: an item inside may refer back to it
     if (!previous) this.subpages.set(p.name, { node: el('subpage'), source: node.source });
-    const t = this.styleTheme(node, 'background');
-    const items = this.items(this.elements(node));
+    const drawnBg = this.bgImage(node, p.w, p.h);
+    const t = drawnBg ? '' : this.styleTheme(node, 'background');
+    const items = [...(drawnBg ? [drawnBg] : []), ...this.items(this.elements(node))];
     if (previous) {
       // the same subpage again (a component placed on several pages): fine; a different one isn't
       const again = this.E('subpage', { name: p.name, w: p.w, h: p.h, t: t || undefined, clip: bool(p.clip, true) }, items);
@@ -614,6 +635,15 @@ export class Builder {
       source: node.source,
     });
     return p.name;
+  }
+
+  /** Themed builds: a page's / subpage's colour background as a drawn image (first in it), not a theme. */
+  private bgImage(node: VNode, w: number, h: number): XNode | null {
+    const p = node.props;
+    if (!this.opts.themed || p.bg === undefined || p.image !== undefined || p.theme !== undefined) return null;
+    const name = this.generated(node, 'bg', (sc) =>
+      box({ w, h, radius: p.radius, fill: p.bg, borderWidth: p.borderColor ? p.borderWidth ?? 0 : 0, borderColor: p.borderColor }, sc));
+    return this.E('img', { x: 0, y: 0, w, h, j: 0, clickthrough: 1, refresh: 0, l: 0, noCache: 0, downloadIndicator: 0, clearOnURLChange: 0 }, [], name);
   }
 
   private system(node: VNode) {
@@ -919,9 +949,18 @@ export class Builder {
       }
       return [this.E('img', { x: ref.x ?? 0, y: ref.y ?? 0, w: ref.w ?? p.w, h: ref.h ?? p.h }, [], this.image(node, ref.src))];
     };
-    const inactive = this.E('inactive', { s: this.join(node, 'textJoin', 's') }, iconImg(p.icon, 0), text, node);
+    // themed builds: a drawn icon goes into its state's background (a theme swap then swaps it too)
+    const placed = (v: unknown, state: 0 | 1): PlacedIcon | undefined => {
+      const ref = typeof v === 'string' || isIcon(v) ? { src: v } : (v as any);
+      if (!this.opts.themed || p.theme !== undefined || p.image !== undefined || p.active?.image !== undefined || !isIcon(ref?.src)) return undefined;
+      const ic = ref.src;
+      const color = ic.color ?? (state === 1 ? p.active?.color ?? p.color : p.color) ?? '#FFFFFF';
+      return { name: ic.name, style: ic.style, color, size: ic.size ?? iconSize, x: ref.x ?? iconPos.x, y: ref.y ?? iconPos.y };
+    };
+    const composed = [placed(p.icon, 0), placed(p.activeIcon ?? p.icon, 1)];
+    const inactive = this.E('inactive', { s: this.join(node, 'textJoin', 's') }, composed[0] ? [] : iconImg(p.icon, 0), text, node);
     const active = this.E('active', { s: p.activeTextJoin !== undefined ? this.join(node, 'activeTextJoin', 's') : this.join(node, 'textJoin', 's') },
-      iconImg(p.activeIcon ?? p.icon, 1), p.activeText === undefined ? text : String(p.activeText), node);
+      composed[1] ? [] : iconImg(p.activeIcon ?? p.icon, 1), p.activeText === undefined ? text : String(p.activeText), node);
 
     const children: XNode[] = [];
     let { cmd, js } = p as { cmd?: string; js?: string };
@@ -951,7 +990,7 @@ export class Builder {
     children.push(inactive, active);
     return this.E('btn', {
       j: this.join(node, 'join', 'd'), ...geom, t: this.styleTheme(node, 'button', {
-        always: true, active: p.active,
+        always: true, active: p.active, icons: composed,
         // the text beside / below the icon: GUI Designer's way, padding (+ left-aligned beside it)
         extra: textRoom ? { padding: textRoom, ...(align === 'left' ? { align: 'left' as const } : { valign: 'bottom' as const }) } : undefined,
       }),

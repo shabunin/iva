@@ -95,6 +95,12 @@ declare module 'iva' {
   }
   /** A Font Awesome (free) icon: fa('lightbulb'), fa('bell', { style: 'regular' }), fa('brands:spotify'). Names: fontawesome.com/search?m=free */
   export declare const fa: (name: string, opts?: IconOptions) => IconRef;
+  /**
+   * The look being built, with <Project themes={['dark', 'light']}>: the project
+   * is built once per look, and colours can depend on it:
+   * `bg={variant() === 'light' ? '#FFFFFF' : '#14171A'}`. '' without themes.
+   */
+  export declare const variant: () => string;
   /** Something iva draws into an image (draw.arc(), ...); angles: degrees clockwise from 12 o'clock. */
   export type DrawRef = {
       $$draw: 1;
@@ -292,6 +298,14 @@ declare module 'iva' {
       assets?: string;
       /** raw XML for <properties> after <size> (default: iva's) */
       properties?: string;
+      /**
+       * looks the panel switches between at runtime: the project is built once per
+       * name (variant() tells which), and IvaTheme.set(name) switches (CF.setProperties
+       * with a theme, by tag). The first is the one it starts in, unless `theme` says.
+       */
+      themes?: string[];
+      /** the look it starts in (default: the first of `themes`) */
+      theme?: string;
       children?: Child;
   }
   export interface PageProps extends Pick<StyleProps, 'bg' | 'image' | 'theme'>, XmlProp {
@@ -720,6 +734,8 @@ declare module 'iva/ui' {
       };
   }
   export declare const defaultTheme: UiTheme;
+  /** The light look, the same keys: <Project themes={['dark', 'light']}> builds the panel in both. */
+  export declare const lightTheme: UiTheme;
   type Tone = 'accent' | 'danger' | 'warning' | 'muted';
   /** Button props a component passes through: what it does when pressed. */
   type Actions = Pick<ButtonProps, 'cmd' | 'js' | 'page' | 'onPress' | 'onRelease' | 'onHold' | 'holdTime' | 'repeat'>;
@@ -1243,6 +1259,8 @@ declare module 'iva/ui' {
       /** digital join opening the SideMenu (default 'menu'); false: no menu button */
       menu?: Join | false;
       clock?: boolean;
+      /** a button switching the look (with <Project themes>: IvaTheme.toggle()) */
+      themeToggle?: boolean;
       w?: number;
       h?: number;
   }
@@ -1314,8 +1332,13 @@ declare module 'iva/ui' {
   }
   /** A join as a JavaScript expression ("d12", or Joins.d.name for a named one). */
   export declare function jsJoin(type: 'd' | 'a' | 's' | 'l', j: Join): string;
-  /** Components in a theme: createUi({ accent: '#0A84FF' }); what isn't given comes from defaultTheme. */
-  export declare function createUi(theme?: Partial<UiTheme>): Ui;
+  /**
+   * Components in a theme: createUi({ accent: '#0A84FF' }); what isn't given
+   * comes from defaultTheme - or, with <Project themes={['dark', 'light']}>,
+   * from the look being built (lightTheme for 'light'), and `looks` changes a
+   * look's own colours: createUi({ accent: '#0A84FF' }, { light: { accent: '#0060DF' } }).
+   */
+  export declare function createUi(theme?: Partial<UiTheme>, looks?: Record<string, Partial<UiTheme>>): Ui;
   /** The components in the default theme. */
   export declare const ui: Ui;
   export declare const Card: Ui['Card'];
@@ -1397,3 +1420,4 @@ declare const macro: typeof import('iva').macro;
 declare const js: typeof import('iva').js;
 declare const fa: typeof import('iva').fa;
 declare const draw: typeof import('iva').draw;
+declare const variant: typeof import('iva').variant;

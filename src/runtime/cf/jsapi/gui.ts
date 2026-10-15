@@ -114,7 +114,15 @@ export function setToken(
         ctx.tokensStore[join] = {};
     }
     ctx.tokensStore[join][token] = value;
-    (ctx as any).dispatchEvent("TokenChangedEvent", join, token, value);
+    const api = ctx as any;
+    if (join === api.GlobalTokensJoin && api.persistedTokens?.has(token)) {
+        try {
+            localStorage.setItem(api.tokenKey(token), String(value));
+        } catch {
+            // no storage: kept for this run only
+        }
+    }
+    api.dispatchEvent("TokenChangedEvent", join, token, value);
 }
 
 export function getProperties(

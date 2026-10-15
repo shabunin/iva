@@ -67,15 +67,32 @@ export interface BoxStyle {
   borderColor?: string;
 }
 
-/** A box: rounded corners, a fill, a border inside its edge. */
-export function box(st: BoxStyle, scale = 1): Buffer {
+function boxBody(st: BoxStyle): string {
   const bw = st.borderWidth && st.borderColor ? st.borderWidth : 0;
   const r = Math.max(0, Math.min(st.radius ?? 0, st.w / 2, st.h / 2));
-  const body = [
+  return [
     st.fill ? `<rect x="0" y="0" width="${st.w}" height="${st.h}" rx="${r}" ${paint('fill', st.fill)} />` : '',
     bw ? `<rect x="${bw / 2}" y="${bw / 2}" width="${st.w - bw}" height="${st.h - bw}" rx="${Math.max(0, r - bw / 2)}" fill="none" stroke-width="${bw}" ${paint('stroke', st.borderColor!)} />` : '',
   ].join('');
-  return render(body, st.w, st.h, scale);
+}
+
+/** A box: rounded corners, a fill, a border inside its edge. */
+export function box(st: BoxStyle, scale = 1): Buffer {
+  return render(boxBody(st), st.w, st.h, scale);
+}
+
+export interface PlacedIcon {
+  name: string;
+  style?: IconStyle;
+  color: string;
+  size: number;
+  x: number;
+  y: number;
+}
+
+/** A box with an icon drawn on it: a button state's whole background (themes swap it in one go). */
+export function boxIcon(st: BoxStyle, ic: PlacedIcon, scale = 1): Buffer {
+  return render(boxBody(st) + iconBody(ic.name, ic.style, ic.color, ic.size, ic.x, ic.y), st.w, st.h, scale);
 }
 
 export function circle(d: number, color: string, scale = 1): Buffer {
@@ -222,14 +239,18 @@ export function iconDef(name: string, style?: IconStyle): { def: IconDef; style:
   throw new Error(`no Font Awesome ${st ? `${st} ` : ''}icon "${bare}"${hint ? ` (did you mean "${hint}"?)` : ''} - names: https://fontawesome.com/search?o=r&m=free`);
 }
 
-/** The icon, `size` px, centred in a boxW x boxH image (default: just the icon's square). */
-export function icon(name: string, style: IconStyle | undefined, color: string, size: number, scale = 1, boxW = size, boxH = size): Buffer {
+/** The icon's SVG, `size` px, its top left at (x, y). */
+function iconBody(name: string, style: IconStyle | undefined, color: string, size: number, x: number, y: number): string {
   const { def } = iconDef(name, style);
   const [w, h, , , path] = def;
   const s = Math.max(w, h);
   const paths = (Array.isArray(path) ? path : [path]).map((d) => `<path d="${d}" ${paint('fill', color)} />`).join('');
-  const body = `<g transform="translate(${(boxW - size) / 2} ${(boxH - size) / 2}) scale(${size / s}) translate(${(s - w) / 2} ${(s - h) / 2})">${paths}</g>`;
-  return render(body, boxW, boxH, scale);
+  return `<g transform="translate(${x} ${y}) scale(${size / s}) translate(${(s - w) / 2} ${(s - h) / 2})">${paths}</g>`;
+}
+
+/** The icon, `size` px, centred in a boxW x boxH image (default: just the icon's square). */
+export function icon(name: string, style: IconStyle | undefined, color: string, size: number, scale = 1, boxW = size, boxH = size): Buffer {
+  return render(iconBody(name, style, color, size, (boxW - size) / 2, (boxH - size) / 2), boxW, boxH, scale);
 }
 
 /** A stable file name for generated image data. */

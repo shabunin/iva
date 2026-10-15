@@ -75,7 +75,7 @@ it as a value in min..max.
 | `ColorPicker` | a colour wheel, a brightness slider, a swatch with the hex, colours one tap away | `r` / `g` / `b` (analog joins, 0..255: written as you pick, followed when they change), `hex`, `value` ('#FFB000'), `swatches`, `onChange` (JS with `r`, `g`, `b`, `hex`), `size`, `port` |
 | `PinPad` | a keypad: digits, ← (hold: clear), OK; the code shown as dots | `code` (serial join OK writes), `onEnter` (JS with `code`), `length`, `mask`, `placeholder` |
 | `NavCard` | a card that goes to a page | `icon`, `title`, `text`, `page` |
-| `Header` | the top bar: menu button, title, breadcrumbs, clock | `title`, `section`, `home`, `menu`, `clock` |
+| `Header` | the top bar: menu button, title, breadcrumbs, clock | `title`, `section`, `home`, `menu`, `clock`, `themeToggle` (a ◐ button: `IvaTheme.toggle()`) |
 | `SideMenu` | a menu over the page, marking the page shown | `title`, `subtitle`, `items: [{ icon, text, page }]`, `menu`, `slide` |
 | `ConfirmDialog` | a dialog over a dimmed page | `join`, `title`, `message`, `confirmText`, `cancelText`, `danger`, `onConfirm` |
 
@@ -108,5 +108,10 @@ outside closes them. A drum is a list: drag it (it settles on a row) or tap
 a row. Two pickers on the same joins share their popup when they look the
 same, else each has its own.
 
-Not yet: Pager, tables, runtime theme
-switching.
+Two looks: `defaultTheme` (dark) and `lightTheme`. With
+`<Project themes={['dark', 'light']}>` (docs/components.md, "Runtime
+themes"), `createUi()` builds each look in its colours and the panel switches
+between them; `createUi({ accent: '#0A84FF' }, { light: { accent: '#0060DF' } })`
+changes a colour in every look, and one look's own.
+
+Not yet: Pager, tables.

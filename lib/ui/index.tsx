@@ -15,8 +15,9 @@
  */
 
 import {
-  Box, Button, Feedback, Gesture, Group, Image, Input, List, OnStart, Script, Slider as IvaSlider, Subpage, System, Text, Web, a, d, draw, fa, js as jsAction, l, s,
-  type ButtonProps, type Child, type IconRef, type Join, type JoinRef, type VNode,
+  Box, Button as IvaButton, Feedback, Gesture, Group, Image, Input, List, OnStart, Script, Slider as IvaSlider, Subpage, System, Text as IvaText, Web,
+  a, d, draw, fa, js as jsAction, l, s, variant,
+  type ButtonProps, type Child, type IconRef, type Join, type JoinRef, type TextProps, type VNode,
 } from 'iva';
 import { UI_RUNTIME } from './runtime.js';
 
@@ -57,6 +58,20 @@ export const defaultTheme: UiTheme = {
   font: 'Helvetica Neue',
   radius: 12,
   panel: { width: 1280, height: 800 },
+};
+
+/** The light look, the same keys: <Project themes={['dark', 'light']}> builds the panel in both. */
+export const lightTheme: UiTheme = {
+  ...defaultTheme,
+  page: '#EEF1F4',
+  bar: '#FFFFFF',
+  surface: '#FFFFFF',
+  raised: '#E3E7EB',
+  accent: '#00A884',
+  text: '#14171A',
+  muted: '#66717B',
+  danger: '#D93A3F',
+  warning: '#E08A00',
 };
 
 type Tone = 'accent' | 'danger' | 'warning' | 'muted';
@@ -565,6 +580,8 @@ export interface HeaderProps {
   /** digital join opening the SideMenu (default 'menu'); false: no menu button */
   menu?: Join | false;
   clock?: boolean;
+  /** a button switching the look (with <Project themes>: IvaTheme.toggle()) */
+  themeToggle?: boolean;
   w?: number;
   h?: number;
 }
@@ -658,10 +675,21 @@ function shade(color: string, amount: number): string {
   return `#${[n >> 16, (n >> 8) & 255, n & 255].map((v) => ch(v).toString(16).padStart(2, '0')).join('')}`;
 }
 
-/** Components in a theme: createUi({ accent: '#0A84FF' }); what isn't given comes from defaultTheme. */
-export function createUi(theme: Partial<UiTheme> = {}): Ui {
-  const t: UiTheme = { ...defaultTheme, ...theme, panel: { ...defaultTheme.panel, ...(theme.panel ?? {}) } };
+/**
+ * Components in a theme: createUi({ accent: '#0A84FF' }); what isn't given
+ * comes from defaultTheme - or, with <Project themes={['dark', 'light']}>,
+ * from the look being built (lightTheme for 'light'), and `looks` changes a
+ * look's own colours: createUi({ accent: '#0A84FF' }, { light: { accent: '#0060DF' } }).
+ */
+export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Partial<UiTheme>> = {}): Ui {
+  const look = variant();
+  const base = look === 'light' ? lightTheme : defaultTheme;
+  const own = looks[look] ?? {};
+  const t: UiTheme = { ...base, ...theme, ...own, panel: { ...base.panel, ...(theme.panel ?? {}), ...(own.panel ?? {}) } };
   const font = t.font;
+  // text in the look's colour unless a component says otherwise (white would vanish on a light look)
+  const Text = (props: TextProps): VNode => <IvaText color={t.text} {...props} />;
+  const Button = (props: ButtonProps): VNode => <IvaButton color={t.text} {...props} />;
   const runtime = <Script name="iva-ui.js" code={UI_RUNTIME} />;
   const tones: Record<Tone, { fg: string; bg: string }> = {
     accent: { fg: t.accent, bg: shade(t.accent, -0.75) },
@@ -1116,7 +1144,7 @@ export function createUi(theme: Partial<UiTheme> = {}): Ui {
         </Subpage>
         <List w={w} h={h} join={typeof join === 'object' ? join : l(join)} item={sub} />
         {runtime}
-        <OnStart js={`IvaUI.fill(${jsJoin('l', join)}, ${JSON.stringify(lines.map((ln) => ({ s1: ln })))});`} />
+        <OnStart js={`IvaUI.fill(${jsJoin('l', join)}, ${JSON.stringify(lines.map((ln) => ({ subpage: sub, s1: ln })))});`} />
       </Group>
     );
   }
@@ -1195,7 +1223,7 @@ export function createUi(theme: Partial<UiTheme> = {}): Ui {
     );
   }
 
-  function Header({ title, section, home = 'Overview', menu = 'menu', clock = true, w = t.panel.width, h = 72 }: HeaderProps): VNode {
+  function Header({ title, section, home = 'Overview', menu = 'menu', clock = true, themeToggle = false, w = t.panel.width, h = 72 }: HeaderProps): VNode {
     const left = menu === false ? 24 : 84;
     const clockJoin: JoinRef = s('ui_clock');
     const titleW = Math.round(title.length * 15 + 30);
@@ -1213,6 +1241,10 @@ export function createUi(theme: Partial<UiTheme> = {}): Ui {
             <Text x={74} w={20} h={h} text={'›'} color={t.muted} font={font} fontSize={20} />
             <Text x={100} w={400} h={h} text={section} font={font} fontSize={20} />
           </Group>
+        )}
+        {themeToggle && (
+          <Button x={w - (clock ? 230 : 80)} y={Math.round((h - 56) / 2)} w={56} h={56} icon={fa('circle-half-stroke', { size: 26 })} feedback="none"
+                  js="if (typeof IvaTheme !== 'undefined') IvaTheme.toggle();" />
         )}
         {clock && <Text x={w - 160} w={136} h={h} join={clockJoin} align="right" color={t.muted} font={font} fontSize={30} />}
         {clock && runtime}
@@ -1475,7 +1507,7 @@ export function createUi(theme: Partial<UiTheme> = {}): Ui {
       { text: ok, js: `IvaUI.pickerOk(${id})`, tone: 'accent' as const },
     ];
     const o = `{ kind: 'time', open: ${jsJoin('d', open)}, label: ${jsJoin('s', label)}, rowH: ${rowH}, watch: [${jsJoin('a', hour)}, ${jsJoin('a', minute)}], ` +
-      `step: ${step}, ampm: ${ampm}, value: ${JSON.stringify(value ?? '')}, drums: [${lists.map((ls, k) => `{ list: ${jsJoin('l', ls.list)}, values: ${JSON.stringify(values[k])} }`).join(', ')}] }`;
+      `step: ${step}, ampm: ${ampm}, value: ${JSON.stringify(value ?? '')}, drums: [${lists.map((ls, k) => `{ list: ${jsJoin('l', ls.list)}, row: ${JSON.stringify(`ui_drum_${ls.w}_${rowH}`)}, values: ${JSON.stringify(values[k])} }`).join(', ')}] }`;
     const ref = (j: Join): JoinRef => (typeof j === 'object' ? j : a(j));
     return (
       <Group x={x} y={y}>
@@ -1524,7 +1556,7 @@ export function createUi(theme: Partial<UiTheme> = {}): Ui {
     ];
     const o = `{ kind: 'date', open: ${jsJoin('d', open)}, label: ${jsJoin('s', label)}, rowH: ${rowH}, watch: [${jsJoin('a', day)}, ${jsJoin('a', month)}, ${jsJoin('a', year)}], ` +
       `order: ${JSON.stringify(order)}, minYear: ${y0}, format: ${JSON.stringify(format)}, months: ${JSON.stringify(months)}, placeholder: ${JSON.stringify(placeholder)}, ` +
-      `value: ${JSON.stringify(value ?? '')}, drums: [${lists.map((ls, i) => `{ list: ${jsJoin('l', ls.list)}, values: ${JSON.stringify(values[kinds[i]])} }`).join(', ')}] }`;
+      `value: ${JSON.stringify(value ?? '')}, drums: [${lists.map((ls, i) => `{ list: ${jsJoin('l', ls.list)}, row: ${JSON.stringify(`ui_drum_${ls.w}_${rowH}`)}, values: ${JSON.stringify(values[kinds[i]])} }`).join(', ')}] }`;
     const ref = (j: Join): JoinRef => (typeof j === 'object' ? j : a(j));
     return (
       <Group x={x} y={y}>

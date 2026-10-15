@@ -6,9 +6,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Builder, CompileError, type Asset, type ScriptOut } from './build.js';
+import { Builder, CompileError, flat, type Asset, type BuildResult, type ScriptOut } from './build.js';
 import { evaluate, LoadError } from './load.js';
-import { JsxError } from './runtime.js';
+import { JsxError, type Child, type VNode } from './runtime.js';
+import { mergeThemes } from './themes.js';
 import { serialize } from './xml.js';
 
 const COMPILER_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -68,12 +69,44 @@ function located(e: unknown, baseDir: string): IvaError {
   return new IvaError(err?.message ?? String(e), s ? path.resolve(baseDir, s.fileName) : undefined, s?.lineNumber, s?.columnNumber);
 }
 
+/** <Project themes>: the looks, the one it starts in first; null without. */
+function themesOf(tree: Child): string[] | null {
+  const project = flat([tree]).find((c): c is VNode => typeof c !== 'string' && c.type === 'Project');
+  const p = project?.props;
+  if (!p || p.themes === undefined) return null;
+  const names: unknown = p.themes;
+  if (!Array.isArray(names) || names.length < 2 || names.some((n) => typeof n !== 'string' || !/^[A-Za-z][\w-]*$/.test(n)) || new Set(names).size !== names.length) {
+    throw new IvaError(`<Project themes>: two or more names, letters / digits / _ / - (themes={['dark', 'light']})`);
+  }
+  const start = p.theme ?? names[0];
+  if (!names.includes(start)) throw new IvaError(`<Project theme="${start}">: one of ${names.join(', ')}`);
+  return [start, ...names.filter((n) => n !== start)];
+}
+
 export async function compile(entry: string): Promise<CompileResult> {
   const file = path.resolve(entry);
   const baseDir = path.dirname(file);
   try {
-    const { tree, files } = await evaluate(file);
-    const result = new Builder(baseDir).build(tree);
+    const first = await evaluate(file);
+    let { files } = first;
+    const looks = themesOf(first.tree);
+    let result: BuildResult;
+    if (!looks) result = new Builder(baseDir).build(first.tree);
+    else {
+      // once per look (the one it starts in first), merged into one .gui
+      const builds: BuildResult[] = [];
+      for (const look of looks) {
+        (globalThis as { __ivaVariant?: string }).__ivaVariant = look;
+        try {
+          const ev = await evaluate(file);
+          files = [...new Set([...files, ...ev.files])];
+          builds.push(new Builder(baseDir, { themed: true, start: looks[0] }).build(ev.tree));
+        } finally {
+          delete (globalThis as { __ivaVariant?: string }).__ivaVariant;
+        }
+      }
+      result = mergeThemes(builds, looks);
+    }
     const name = result.root.children[0].children.find((c) => c.tag === 'project')?.text ?? path.basename(file, path.extname(file));
     const used = [...files, ...result.assets.flatMap((a) => (a.file ? [a.file] : [])), ...result.scripts.flatMap((sc) => (sc.file ? [sc.file] : []))];
     const inputs = { files: [...new Set(used.map((f) => path.resolve(f)))], dirs: result.assetDir ? [result.assetDir] : [] };
