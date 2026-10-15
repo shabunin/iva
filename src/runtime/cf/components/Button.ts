@@ -1,4 +1,4 @@
-import { Container, Sprite, Graphics, Text, NineSliceSprite, Assets } from "pixi.js";
+import { Container, Sprite, Graphics, Text, NineSliceSprite, Assets, type FederatedPointerEvent } from "pixi.js";
 import { placeText, textLayout } from './textStyle';
 import { TokenEngine } from "../tokenEngine";
 import { Button } from '@pixi/ui';
@@ -432,36 +432,54 @@ export function renderButton(
         return false;
     };
 
-    // In a list a touch is a press only once it isn't the start of a drag, as a
-    // device's list holds its rows' touches back: after a moment holding still,
-    // or let go before that (a tap - press, then release). A drag the list takes
-    // first is neither: a swipe that starts on a picker's field doesn't open it.
-    const TAP_WAIT = 120;
+    // In a list a touch is a press only once it's sure not to be the start of a
+    // drag: let go where it landed (a tap - press, then release), or held still
+    // a moment (a hold). A finger moving off where it landed first - slowly too -
+    // is a drag, neither: a swipe that starts on a picker's field doesn't open it.
+    const HOLD = 400;
+    /** how far (CSS px) a finger may wander and still be pressing */
+    const SLOP = 8;
     let pending: ReturnType<typeof setTimeout> | null = null;
     let pressed = false;
-    btn.onDown.connect(() => {
+    let from: { x: number; y: number; id: number } | null = null;
+    const moved = (e: PointerEvent) => {
+        if (from && e.pointerId === from.id && Math.hypot(e.clientX - from.x, e.clientY - from.y) > SLOP) settle();
+    };
+    /** the touch decided: no more waiting, no more watching it move */
+    const settle = () => {
         if (pending) clearTimeout(pending);
         pending = null;
+        from = null;
+        window.removeEventListener('pointermove', moved, true);
+    };
+    btn.onDown.connect((_b: unknown, e?: FederatedPointerEvent) => {
+        settle();
         if (!inList()) {
             pressed = true;
             press();
             return;
         }
         pressed = false;
+        if (e) {
+            from = { x: e.client.x, y: e.client.y, id: e.pointerId };
+            window.addEventListener('pointermove', moved, true);
+        }
         pending = setTimeout(() => {
-            pending = null;
-            if (container.destroyed || inDraggedList()) return;
-            pressed = true;
-            press();
-        }, TAP_WAIT);
+            const held = !container.destroyed && !inDraggedList();
+            settle();
+            if (held) {
+                pressed = true;
+                press();
+            }
+        }, HOLD);
     });
 
     const handleUp = (inside: boolean) => {
         if (pending) {
-            clearTimeout(pending);
-            pending = null;
-            // let go on it before the moment was up: a tap
-            if (inside && !inDraggedList() && !container.destroyed) {
+            // let go where it landed, before the moment was up: a tap
+            const tap = inside && !inDraggedList() && !container.destroyed;
+            settle();
+            if (tap) {
                 pressed = true;
                 press();
             }
@@ -520,8 +538,8 @@ export function renderButton(
         if (href && renderer.cfApi?.openURL) renderer.cfApi.openURL(href);
     };
 
-    btn.onUp.connect(() => handleUp(true));
-    btn.onUpOut.connect(() => handleUp(false));
+    // (a release off the button comes as onUp too, then onUpOut: once, told by its type)
+    btn.onUp.connect((_b: unknown, e?: FederatedPointerEvent) => handleUp(!/outside/i.test(e?.type ?? '')));
 
     const checkSJoin = (jName: string | undefined) => {
         if (jName && jName !== "0") {
