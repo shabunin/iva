@@ -54,6 +54,26 @@ test('in the background the GUI sleeps: GUISuspended, its systems closed; back: 
   assert.deepEqual(events, ['suspended', 'stop AVR', 'resumed', 'start AVR', 'network 192.168.1.7']);
 });
 
+test('the screen unlocking shows and hides the page a few times: one wake, once it stays shown', async () => {
+  const page = { visibilityState: 'visible' };
+  (globalThis as any).document = page;
+  const cf = new CFAPI();
+  const events: string[] = [];
+  cf.watch(cf.GUISuspendedEvent, () => events.push('suspended'));
+  cf.watch(cf.GUIResumedEvent, () => events.push('resumed'));
+  const flip = (to: string) => {
+    page.visibilityState = to;
+    (cf as any).onVisibility();
+  };
+  flip('hidden');
+  flip('visible');
+  flip('hidden');
+  flip('visible');
+  assert.deepEqual(events, ['suspended']);
+  await new Promise((r) => setTimeout(r, 300));
+  assert.deepEqual(events, ['suspended', 'resumed']);
+});
+
 test('"Disconnect on Exit/Sleep" off: the systems stay connected while the GUI sleeps', () => {
   const cf = new CFAPI();
   const events: string[] = [];

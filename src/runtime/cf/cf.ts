@@ -212,9 +212,12 @@ export class CFAPI implements CFContext {
      * again: the GUI asleep and awake, as iViewer's (suspend, resume).
      */
     private onVisibility = () => {
+        clearTimeout(this.waking);
         if (document.visibilityState === 'hidden') this.suspend();
-        else this.resume();
+        // awake once it stays shown: the screen unlocking shows and hides it a few times in a second
+        else this.waking = setTimeout(() => this.resume(), 250);
     };
+    private waking: ReturnType<typeof setTimeout> | undefined;
 
     /** asleep (in the background): its page timers don't run */
     suspended = false;
