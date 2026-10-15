@@ -1,17 +1,20 @@
 import { joinStore } from '../joinStore';
 import { CFContext, CFCallback } from './types';
 
+/** A join's value as iViewer hands it to scripts: always a string ("1" / "0" for a digital one); null when there's none. */
+export function joinText(raw: unknown): string | null {
+    if (raw === undefined || raw === null) return null;
+    return typeof raw === "boolean" ? (raw ? "1" : "0") : String(raw);
+}
+
 export function getJoin(
     ctx: CFContext,
     join: string,
-    callback?: (join: string, value: string | number | null, tokens: any, tags: string[]) => void
+    callback?: (join: string, value: string | null, tokens: any, tags: string[]) => void
 ) {
     const parsed = ctx.parseJoin(join);
-    let val: string | number | null = null;
-    if (parsed) {
-        const raw = joinStore.get(parsed.id, parsed.type);
-        val = raw !== undefined ? (typeof raw === "boolean" ? (raw ? 1 : 0) : raw as string | number) : null;
-    }
+    let val: string | null = null;
+    if (parsed) val = joinText(joinStore.get(parsed.id, parsed.type));
     const tokens = ctx.tokensStore[join] || {};
     const tags: string[] = [];
     if (callback) callback(join, val, tokens, tags);
@@ -21,16 +24,13 @@ export function getJoin(
 export function getJoins(
     ctx: CFContext,
     arrayOfJoins: string[],
-    callback?: (arrayOfJoinValues: Record<string, { value: string | number | null; tokens: Record<string, string>; tags: string[] }>) => void
+    callback?: (arrayOfJoinValues: Record<string, { value: string | null; tokens: Record<string, string>; tags: string[] }>) => void
 ) {
-    const result: Record<string, { value: string | number | null; tokens: Record<string, string>; tags: string[] }> = {};
+    const result: Record<string, { value: string | null; tokens: Record<string, string>; tags: string[] }> = {};
     for (const j of arrayOfJoins) {
         const parsed = ctx.parseJoin(j);
-        let val: string | number | null = null;
-        if (parsed) {
-            const raw = joinStore.get(parsed.id, parsed.type);
-            val = raw !== undefined ? (typeof raw === "boolean" ? (raw ? 1 : 0) : raw as string | number) : null;
-        }
+        let val: string | null = null;
+        if (parsed) val = joinText(joinStore.get(parsed.id, parsed.type));
         result[j] = {
             value: val,
             tokens: ctx.tokensStore[j] || {},

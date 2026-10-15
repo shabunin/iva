@@ -3,6 +3,7 @@ import { CFRenderer } from "./renderer";
 import { CFCallback, CFContext, Watcher } from "./jsapi/types";
 import { EVENTS, CONSTANTS } from "./jsapi/constants";
 import * as guiApi from "./jsapi/gui";
+import { joinText } from "./jsapi/gui";
 import { getHost } from "../stdlib/host";
 import * as listsApi from "./jsapi/lists";
 import * as displayApi from "./jsapi/display";
@@ -296,8 +297,8 @@ export class CFAPI implements CFContext {
         joinStore.onAny((id: string, type: string, val: any) => {
             const j = type + id;
             const tokens = this.tokensStore[j] || {};
-            const finalVal = typeof val === "boolean" ? (val ? 1 : 0) : val;
-            this.dispatchEvent(this.JoinChangeEvent, j, finalVal, tokens, []);
+            // a string, as iViewer hands values to scripts ("1" / "0" for a digital join)
+            this.dispatchEvent(this.JoinChangeEvent, j, joinText(val) ?? "", tokens, []);
         });
     }
 
@@ -710,12 +711,15 @@ export class CFAPI implements CFContext {
                 for (const j of joinList) {
                     const parsed = this.parseJoin(j);
                     if (parsed) {
-                        let val: any = joinStore.get(parsed.id, parsed.type) ?? null;
-                        if (typeof val === "boolean") val = val ? 1 : 0;
                         const tokens = this.tokensStore[j] || {};
-                        callback(j, val, tokens, []);
+                        callback(j, joinText(joinStore.get(parsed.id, parsed.type)) ?? "", tokens, []);
                     }
                 }
+            } else if (event === this.PageFlipEvent && this.currentPage !== 'CURRENT_PAGE') {
+                // the page shown now: no page before it
+                callback(null, this.currentPage, this.currentOrientation);
+            } else if (event === this.OrientationChangeEvent && this.currentPage !== 'CURRENT_PAGE') {
+                callback(this.currentPage, this.currentOrientation);
             }
             // GUISuspendedEvent: docs say fireNow is NOT supported for this event — skip
         } catch (e) {

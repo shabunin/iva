@@ -14,6 +14,55 @@ export function logObject(
     console.dir(object);
 }
 
+/** The CRCs iViewer names (CF.CRC_*): width, polynomial, initial value, reflected (LSB first), final xor */
+const CRCS: Record<string, { width: number; poly: number; init: number; refl: boolean; xorout: number }> = {
+    CRC_8: { width: 8, poly: 0x07, init: 0x00, refl: false, xorout: 0x00 },                  // CRC-8 (SMBus)
+    CRC_16: { width: 16, poly: 0x8005, init: 0x0000, refl: true, xorout: 0x0000 },           // CRC-16 (ARC)
+    CRC_16_CCITT: { width: 16, poly: 0x1021, init: 0xffff, refl: false, xorout: 0x0000 },    // CRC-16/CCITT-FALSE
+    CRC_16_MODBUS: { width: 16, poly: 0x8005, init: 0xffff, refl: true, xorout: 0x0000 },
+    CRC_32: { width: 32, poly: 0x04c11db7, init: 0xffffffff, refl: true, xorout: 0xffffffff },
+    CRC_32C: { width: 32, poly: 0x1edc6f41, init: 0xffffffff, refl: true, xorout: 0xffffffff }, // Castagnoli
+};
+
+function reflectBits(v: number, bits: number): number {
+    let r = 0;
+    for (let i = 0; i < bits; i++) {
+        r = ((r << 1) | (v & 1)) >>> 0;
+        v >>>= 1;
+    }
+    return r;
+}
+
+/** A CRC of a string's bytes - a char a byte, as CF.send's binary strings: its value and width, or null (an unknown type). */
+export function crcOf(crcType: string, str: string): { value: number; width: number } | null {
+    const p = CRCS[String(crcType).toUpperCase()];
+    if (!p) return null;
+    const { width } = p;
+    const mask = width === 32 ? 0xffffffff : (1 << width) - 1;
+    let crc: number;
+    if (p.refl) {
+        const poly = reflectBits(p.poly, width);
+        crc = reflectBits(p.init, width);
+        for (let i = 0; i < str.length; i++) {
+            crc = (crc ^ (str.charCodeAt(i) & 0xff)) >>> 0;
+            for (let k = 0; k < 8; k++) crc = crc & 1 ? ((crc >>> 1) ^ poly) >>> 0 : crc >>> 1;
+        }
+    } else {
+        const top = 2 ** (width - 1);
+        crc = p.init;
+        for (let i = 0; i < str.length; i++) {
+            crc = (crc ^ ((str.charCodeAt(i) & 0xff) * 2 ** (width - 8))) >>> 0;
+            for (let k = 0; k < 8; k++) crc = (crc >= top ? ((crc * 2) ^ p.poly) : crc * 2) & mask;
+        }
+    }
+    return { value: ((crc ^ p.xorout) & mask) >>> 0, width };
+}
+
+/**
+ * CF.crc: the CRC of a string (its bytes) to `callback`, as CF.OUTPUT_NUMBER
+ * (a number), CF.OUTPUT_STRING (hex), CF.OUTPUT_BINARY (bytes, big-endian:
+ * network order) or CF.OUTPUT_BINARY_LE (little-endian).
+ */
 export function crc(
     ctx: CFContext,
     crcType: string,
@@ -21,10 +70,19 @@ export function crc(
     outputFormat: number,
     callback?: CFCallback
 ) {
-    console.log(`CF STUB: crc(${crcType}, ${str}, ${outputFormat})`);
-    if (callback) {
-        callback(0);
+    const r = crcOf(crcType, String(str ?? ''));
+    if (!r) {
+        console.warn(`CF.crc: unknown CRC type "${crcType}"`);
+        callback?.(null);
+        return;
     }
+    const bytes = r.width / 8;
+    const be = Array.from({ length: bytes }, (_, i) => String.fromCharCode((r.value >>> (8 * (bytes - 1 - i))) & 0xff)).join('');
+    const out = Number(outputFormat) === 1 ? r.value.toString(16).toUpperCase().padStart(bytes * 2, '0')
+        : Number(outputFormat) === 2 ? be
+        : Number(outputFormat) === 3 ? be.split('').reverse().join('')
+        : r.value;
+    callback?.(out);
 }
 
 // ── Pure-JS MD5 (MD5 is not available in Web Crypto API) ──────────────────
@@ -113,6 +171,8 @@ export function hash(
     str: string,
     callback?: CFCallback
 ) {
+    // CF.Hash_MD5 ... are "HASH_MD5" ...: md5, sha1, sha256, sha384, sha512
+    hashType = String(hashType).toLowerCase().replace(/^hash_/, '');
     if (hashType === 'md5') {
         // MD5 is not in Web Crypto — use pure-JS implementation
         const result = _md5(str);

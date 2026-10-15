@@ -882,13 +882,16 @@ export class CFRenderer {
 
     // Sync global CF orientation state and currentPage
     if (this.cfApi) {
+      const turned = this.cfApi.currentOrientation;
       this.cfApi.currentOrientation = isLandscape
         ? this.cfApi.LandscapeOrientation
         : this.cfApi.PortraitOrientation;
-      // as iViewer: (the page left - none at first -, the page shown, the orientation)
-      const from = this.cfApi.currentPage === 'CURRENT_PAGE' ? '' : this.cfApi.currentPage;
+      // as iViewer: (the page left - none at first -, the page shown, the orientation); the same page
+      // shown again in the other orientation (the device turned): OrientationChangeEvent (the page, the orientation)
+      const from = this.cfApi.currentPage === 'CURRENT_PAGE' ? null : this.cfApi.currentPage;
       this.cfApi.currentPage = pageName;
-      this.cfApi.dispatchEvent(this.cfApi.PageFlipEvent, from, pageName, this.cfApi.currentOrientation);
+      if (from !== pageName) this.cfApi.dispatchEvent(this.cfApi.PageFlipEvent, from, pageName, this.cfApi.currentOrientation);
+      else if (turned !== this.cfApi.currentOrientation) this.cfApi.dispatchEvent(this.cfApi.OrientationChangeEvent, pageName, this.cfApi.currentOrientation);
     }
 
     const nodes = (isLandscape && pageObj.landscape) ? pageObj.landscape : (pageObj.portrait || pageObj.landscape || []);

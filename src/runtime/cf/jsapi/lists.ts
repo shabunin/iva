@@ -35,12 +35,16 @@ export function listUpdate(
     array: any[]
 ) {
     if (!ctx.listsStore[list]) ctx.listsStore[list] = [];
-    
-    array.forEach(item => {
-        if (item && typeof item.index === 'number' && item.index >= 0 && item.index < ctx.listsStore[list].length) {
-            ctx.listsStore[list][item.index] = { ...ctx.listsStore[list][item.index], ...item };
-        }
-    });
+    const items = ctx.listsStore[list];
+    for (const item of array) {
+        if (!item) continue;
+        const { index, ...joins } = item;
+        // an item's index, CF.LastItem (the last one) or CF.AllItems (every one)
+        const at = index === ctx.AllItems ? items.map((_: unknown, i: number) => i)
+            : index === ctx.LastItem ? (items.length ? [items.length - 1] : [])
+            : Number.isInteger(Number(index)) && Number(index) >= 0 && Number(index) < items.length ? [Number(index)] : [];
+        for (const i of at) items[i] = { ...items[i], ...joins };
+    }
     ctx.dispatchEvent("LIST_UPDATED", list);
 }
 
@@ -52,11 +56,12 @@ export function listRemove(
 ) {
     if (!ctx.listsStore[list]) return;
 
-    if (index === undefined) {
+    if (index === undefined || index === null) {
         ctx.listsStore[list] = [];
     } else {
-        const removeCount = count || 1;
-        ctx.listsStore[list].splice(index, removeCount);
+        // (list, index): from there to the end; (list, index, count): that many
+        const items = ctx.listsStore[list];
+        items.splice(Number(index), count === undefined || count === null ? items.length : Number(count));
     }
     ctx.dispatchEvent("LIST_UPDATED", list);
 }
