@@ -125,6 +125,8 @@ async function start() {
       loadGui: (next, settings) => loadGui(m.url, next, settings),
       startPage,
       orientation,
+      // not the preview's toolbar: its keys (H: the hand, Ctrl+R...) would take a hardware keyboard's
+      menu: false,
       onOrientationChange: (o) => {
         orientation = o;
         fit();
@@ -139,16 +141,26 @@ async function start() {
     const why = e instanceof Error ? e.message : String(e);
     noteError(why);
     say(`${why} - trying again in 5 s (three fingers held: settings)`);
-    setTimeout(() => location.reload(), 5000);
+    failed = true;
+    retryLater();
   }
+}
+
+/** the GUI didn't load: again in 5 s - not while the settings are open (the page would go from under the typing) */
+let failed = false;
+let retry = 0;
+function retryLater() {
+  clearTimeout(retry);
+  if (failed && form.hidden) retry = window.setTimeout(() => location.reload(), 5000);
 }
 
 // ── settings ─────────────────────────────────────────────────────────
 
 function openSettings() {
+  clearTimeout(retry);
   input.value = localStorage.getItem(GUI) ?? '';
   $('errors').textContent = errors.slice().reverse().join('\n');
-  $('cancel').hidden = !current;
+  $('cancel').hidden = !current && !failed;
   form.hidden = false;
   input.focus();
 }
@@ -161,6 +173,7 @@ form.addEventListener('submit', (e) => {
 });
 $('cancel').addEventListener('click', () => {
   form.hidden = true;
+  retryLater();
 });
 getVersion().then((v) => {
   $('about').textContent = `iva panel ${v}`;

@@ -5,6 +5,7 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -12,6 +13,9 @@ import androidx.core.view.WindowInsetsControllerCompat
 
 class MainActivity : TauriActivity() {
   private var multicastLock: WifiManager.MulticastLock? = null
+
+  // Back: not the web view's history (the panel has none)
+  override val handleBackNavigation: Boolean = false
 
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
@@ -22,6 +26,13 @@ class MainActivity : TauriActivity() {
       window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
     }
     immersive()
+    // Back puts the panel away, as Home does: it keeps running (its systems connected). Closing
+    // it would end the process under its Rust threads (an abort on the way out).
+    onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+      override fun handleOnBackPressed() {
+        moveTaskToBack(true)
+      }
+    })
     try {
       // the web inspector: chrome://inspect over adb
       android.webkit.WebView.setWebContentsDebuggingEnabled(true)
