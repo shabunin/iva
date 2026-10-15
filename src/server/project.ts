@@ -119,12 +119,14 @@ export function loadManifest(base: string, guiRel: string, assetUrl: (rel: strin
     if (!imageMap[leaf]) imageMap[leaf] = url;
   });
 
+  // a script: in the image folder, where iViewer looks for it; then by the .gui, then by name
   const scriptMap: Record<string, string> = {};
   const missingScripts: string[] = [];
   for (const name of scriptNames(guiXml)) {
     const want = toPosix(name.replace(/\\/g, '/')).toLowerCase();
     const leaf = want.split('/').pop()!;
-    const exact = files.find((f) => toPosix(path.relative(projectDir, f)).toLowerCase() === want);
+    const exact = files.find((f) => toPosix(path.relative(imageRoot, f)).toLowerCase() === want)
+      ?? files.find((f) => toPosix(path.relative(projectDir, f)).toLowerCase() === want);
     const byLeaf = exact ?? files.find((f) => path.basename(f).toLowerCase() === leaf);
     if (byLeaf) scriptMap[name] = fs.readFileSync(byLeaf, 'utf8');
     else missingScripts.push(name);
@@ -162,13 +164,20 @@ export async function loadRemoteManifest(url: string, proxy: (abs: string) => st
   };
   const guiXml = decodeXml(await get(at));
   const base = new URL('.', at).href;
+  // images and scripts: in its image folder, as iViewer fetches them
+  const folder = (guiXml.match(/<imagefolder>([^<]*)<\/imagefolder>/)?.[1] ?? '').trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+  const files = folder ? new URL(`${folder.split('/').map(encodeURIComponent).join('/')}/`, base).href : base;
   const imageMap: Record<string, string> = {};
-  for (const name of imageNames(guiXml)) imageMap[name.replace(/\\/g, '/').split('/').pop()!] = proxy(new URL(name.replace(/\\/g, '/'), base).href);
+  for (const name of imageNames(guiXml)) {
+    const href = proxy(new URL(name.replace(/\\/g, '/'), files).href);
+    imageMap[name.replace(/\\/g, '/')] ??= href;
+    imageMap[name.replace(/\\/g, '/').split('/').pop()!] ??= href;
+  }
   const scriptMap: Record<string, string> = {};
   const missingScripts: string[] = [];
   await Promise.all(scriptNames(guiXml).map(async (name) => {
     try {
-      scriptMap[name] = (await get(new URL(name.replace(/\\/g, '/'), base).href)).toString('utf8');
+      scriptMap[name] = (await get(new URL(name.replace(/\\/g, '/'), files).href)).toString('utf8');
     } catch {
       missingScripts.push(name);
     }
@@ -233,7 +242,9 @@ export function zipManifest(files: Map<string, Buffer>, id: string, fileUrl: (in
   for (const name of scriptNames(guiXml)) {
     const want = toPosix(name.replace(/\\/g, '/')).toLowerCase();
     const leaf = want.split('/').pop()!;
-    const found = names.find((n) => n.toLowerCase() === dir.toLowerCase() + want) ?? names.find((n) => n.split('/').pop()!.toLowerCase() === leaf);
+    // in the image folder, where iViewer looks for it; then by the .gui, then by name
+    const found = names.find((n) => n.toLowerCase() === imageRoot.toLowerCase() + want) ?? names.find((n) => n.toLowerCase() === dir.toLowerCase() + want)
+      ?? names.find((n) => n.split('/').pop()!.toLowerCase() === leaf);
     if (found) scriptMap[name] = files.get(found)!.toString('utf8');
     else missingScripts.push(name);
   }

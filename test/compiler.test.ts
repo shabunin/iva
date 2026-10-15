@@ -369,7 +369,7 @@ test('<WebApp>: one app per name; the entry must exist and build', async () => {
   await fails(wrap(`<WebApp entry="iva:nope" w={9} h={9} />`), /no built-in web app "iva:nope" \(iva has: iva:trend, iva:chart\)/);
 });
 
-test('the build: the .gui, images/ (its image folder: drawings by kind, sounds, web apps), scripts/; folders={false}: all beside it', async () => {
+test('the build: the .gui, images/ (its image folder: drawings by kind, sounds, web apps, scripts - iViewer looks for scripts there); folders={false}: all beside it', async () => {
   const files = { 'beep.mp3': 'mp3', 'main.js': 'CF.log(1);' };
   const jsx = (folders: string) => `export default (
   <Project name="T" width={1024} height={768}${folders}>
@@ -387,7 +387,7 @@ test('the build: the .gui, images/ (its image folder: drawings by kind, sounds, 
   const out = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-dist-'));
   writeBuild(r, out);
   assert.deepEqual(tree(out), ['T.gui', 'images/backgrounds/iva_box_#.png', 'images/backgrounds/iva_box_#@2x.png', 'images/icons/iva_fa_#.png',
-    'images/icons/iva_fa_#@2x.png', 'images/sounds/beep.mp3', 'joins.json', 'scripts/main.js'].sort());
+    'images/icons/iva_fa_#@2x.png', 'images/scripts/main.js', 'images/sounds/beep.mp3', 'joins.json'].sort());
   // as before: everything beside the .gui (a decompiled project keeps its own layout)
   const flat = await build(jsx(' folders={false}'), files);
   assert.match(flat.xml, /<imagefolder \/>/);

@@ -73,7 +73,12 @@ export interface BuildResult {
   inputs: string[];
   /** each web app's options and colour, by its name (a look's own, with <Project themes>) */
   apps: Record<string, { options: unknown; bg: string }>;
-  /** where the build puts files next to the .gui: assets (iViewer's image folder), scripts; '' = beside it */
+  /**
+   * where the build puts files: images, iViewer's image folder (beside the
+   * .gui; '' = the .gui's own folder); scripts, their folder in it - iViewer
+   * looks for a script in the image folder (<script name="scripts/x.js">:
+   * images/scripts/x.js)
+   */
   layout: { images: string; scripts: string };
   /** the panel size it was built for (the main orientation's) */
   size: ScreenSize;
@@ -156,6 +161,8 @@ export class Builder {
   private sizes: Record<'landscape' | 'portrait', [number, number]> = { landscape: [1024, 768], portrait: [768, 1024] };
   /** the size built (the main orientation's), and the other sizes <Project sizes> asks for */
   private size: ScreenSize = { width: 1024, height: 768 };
+  /** the .gui's image folder, as it names it */
+  private imageFolder = '';
   private sizesAsked: ScreenSize[] = [];
 
   /**
@@ -233,6 +240,9 @@ export class Builder {
       }
     }
 
+    // where iViewer finds images, sounds, files and scripts (folders={false}: the project's own, if it names one)
+    this.imageFolder = (properties.find((x) => x.tag === 'imagefolder')?.text ?? '').trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+
     const children = this.elements(project);
     // themes first: elements refer to them by name
     for (const c of children) if (c.type === 'Theme') this.theme(c);
@@ -307,7 +317,7 @@ export class Builder {
     ]);
     return {
       root, assets: [...this.assets.values()], scripts: this.scripts, joins: this.joins.map(), warnings: this.warnings, assetDir: this.assetDir,
-      inputs: [...this.inputs], apps: this.appOptions, layout: this.folders ? { images: IMAGES_DIR, scripts: SCRIPTS_DIR } : { images: '', scripts: '' },
+      inputs: [...this.inputs], apps: this.appOptions, layout: this.folders ? { images: IMAGES_DIR, scripts: SCRIPTS_DIR } : { images: this.imageFolder, scripts: '' },
       size: this.size, sizes: this.sizesAsked,
     };
   }

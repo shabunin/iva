@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import http from 'node:http';
 import { startDeviceServer } from '../src/server/device.ts';
 
 const ECHO = path.resolve(import.meta.dirname, '../fixtures/local/echo-system/echo.gui');
@@ -47,6 +48,8 @@ test('live: the served .gui reloads itself after a change', async () => {
     const served = (await get(s.port, '/')).body;
     assert.match(served, /<script name="iva-live\.js" \/>/);
     const script = (await get(s.port, '/iva-live.js')).body;
+    // where iViewer asks for it: in the .gui's image folder
+    assert.equal((await get(s.port, '/images/iva-live.js')).body, script);
     assert.match(script, new RegExp(`var base = "http://127\\.0\\.0\\.1:${s.port}"`));
     assert.match(script, /CF\.loadGUI\(base \+ "\/", \{ reloadGUI: true, reloadAssets: true, reloadAllAssets: true \}\)/);
     const version = /var version = "([^"]+)"/.exec(script)![1];
@@ -74,8 +77,30 @@ test('a JSX project is built and served from memory', async () => {
     assert.match(gui, /<script name="scripts\/iva-joins\.js" \/>\s*<script name="scripts\/main\.js" \/>\s*<script name="iva-live\.js" \/>/);
     const png = /controls\/iva_track_[0-9a-f]+\.png/.exec(gui)![0];
     assert.equal((await get(s.port, `/images/${png}`)).headers.get('content-type'), 'image/png');
-    assert.match((await get(s.port, '/scripts/iva-joins.js')).body, /var Joins/);
-    assert.equal((await get(s.port, '/scripts/../iva-joins.js')).status, 404);
+    // scripts in the image folder: iViewer looks for <script name="scripts/x.js"> in images/
+    assert.match((await get(s.port, '/images/scripts/iva-joins.js')).body, /var Joins/);
+    assert.equal((await get(s.port, '/scripts/iva-joins.js')).status, 404);
+    assert.equal((await get(s.port, '/images/scripts/../iva-joins.js')).status, 404);
+  } finally {
+    await s.close();
+  }
+});
+
+test('a request for // or worse is answered, not a crash', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-serve-'));
+  fs.copyFileSync(ECHO, path.join(dir, 'Echo.gui'));
+  const s = await startDeviceServer({ target: path.join(dir, 'Echo.gui'), port: 0, host: '127.0.0.1', live: false, log: quiet });
+  try {
+    for (const p of ['//', '//x/y', '///Echo.gui']) {
+      const status = await new Promise<number>((resolve, reject) => {
+        http.get({ host: '127.0.0.1', port: s.port, path: p }, (res) => {
+          res.resume();
+          resolve(res.statusCode ?? 0);
+        }).on('error', reject);
+      });
+      assert.ok(status === 200 || status === 404, `${p}: ${status}`);
+    }
+    assert.equal((await get(s.port, '/Echo.gui')).status, 200);
   } finally {
     await s.close();
   }

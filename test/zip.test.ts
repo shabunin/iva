@@ -27,7 +27,8 @@ test('a zipped GUI: its .gui (named after the archive, else the shallowest), ima
     ['app/clock.gui', gui('<page name="P"><portrait><img>icons/sub.png</img></portrait></page>', 'images')],
     ['app/images/icons/sub.png', Buffer.from('png')],
     ['app/images/flat.png', Buffer.from('png')],
-    ['app/scripts/main.js', Buffer.from('CF.log(1);')],
+    // scripts in the image folder, where iViewer looks for them
+    ['app/images/scripts/main.js', Buffer.from('CF.log(1);')],
     ['app/lib.js', Buffer.from('var lib;')],
   ]));
   const m = zipManifest(files, 'Clock/clock.gui.zip', (p) => `/z/${p}`);

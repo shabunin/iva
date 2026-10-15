@@ -28,7 +28,10 @@ export interface CompileResult {
   files: string[];
   /** every file the build read (sources, copied assets, scripts) and the assets folder: what to watch */
   inputs: { files: string[]; dirs: string[] };
-  /** the folders beside the .gui: images (iViewer's image folder) and scripts; '' = beside it (<Project folders={false}>) */
+  /**
+   * images: iViewer's image folder beside the .gui ('' = the .gui's folder);
+   * scripts: their folder in the image folder - iViewer looks for scripts there
+   */
   layout: { images: string; scripts: string };
   /** the panel size it was built for (the main orientation's) */
   size: ScreenSize;
@@ -166,11 +169,15 @@ export async function compile(entry: string, opts: CompileOptions = {}): Promise
 /** A file-system-friendly version of the project name. */
 export const slug = (name: string) => name.replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'project';
 
+/** Where a build's scripts go: in the image folder, where iViewer looks for them (images/scripts). */
+export const scriptsDir = (layout: CompileResult['layout']): string => [layout.images, layout.scripts].filter(Boolean).join('/');
+
 /**
  * outDir/<name>.gui; images/ beside it (iViewer's image folder: the
  * project's images, sounds and files, iva's drawings in backgrounds/, icons/,
- * controls/, web apps in apps/), scripts/, joins.json. With
- * <Project folders={false}> everything beside the .gui. Returns the .gui path.
+ * controls/, web apps in apps/, the scripts in scripts/), joins.json. With
+ * <Project folders={false}> everything beside the .gui (in its image folder,
+ * if it names one). Returns the .gui path.
  */
 export function writeBuild(result: CompileResult, outDir: string): string {
   fs.rmSync(outDir, { recursive: true, force: true });
@@ -188,7 +195,7 @@ export function writeBuild(result: CompileResult, outDir: string): string {
     else fs.copyFileSync(a.file!, dest);
   }
   for (const s of result.scripts) {
-    const dest = place(result.layout.scripts, s.name);
+    const dest = place(scriptsDir(result.layout), s.name);
     if (s.file) fs.copyFileSync(s.file, dest);
     else fs.writeFileSync(dest, s.code ?? '');
   }
@@ -213,12 +220,12 @@ export function buildFilesAll(results: CompileResult[]): [string, Buffer][] {
   return results.flatMap((r, i) => buildFiles(r).map(([p, d]): [string, Buffer] => [i ? `${sizeFolder(r.size)}/${p}` : p, d]));
 }
 
-/** The build's files as one archive's: the .gui, images/..., scripts/... (a zipped GUI, as iViewer loads one from a URL). */
+/** The build's files as one archive's: the .gui, images/... (scripts in images/scripts/) - a zipped GUI, as iViewer loads one from a URL. */
 export function buildFiles(result: CompileResult): [string, Buffer][] {
   const at = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
   return [
     [`${slug(result.name)}.gui`, Buffer.from('\ufeff' + result.xml, 'utf8')],
     ...result.assets.map((a): [string, Buffer] => [at(result.layout.images, a.name), a.data ?? fs.readFileSync(a.file!)]),
-    ...result.scripts.map((s): [string, Buffer] => [at(result.layout.scripts, s.name), s.code !== undefined ? Buffer.from(s.code) : fs.readFileSync(s.file!)]),
+    ...result.scripts.map((s): [string, Buffer] => [at(scriptsDir(result.layout), s.name), s.code !== undefined ? Buffer.from(s.code) : fs.readFileSync(s.file!)]),
   ];
 }

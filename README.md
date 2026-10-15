@@ -44,7 +44,8 @@ dist/
     controls/             dial, knob, slider frames
     apps/                 web apps (<WebApp>)
     sounds/
-  scripts/              <script name="scripts/main.js">, iva's scripts
+    scripts/              <script name="scripts/main.js">, iva's scripts (iViewer
+                          looks for a .gui's scripts in its image folder)
   joins.json
 ```
 

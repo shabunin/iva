@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { compile, IvaError, slug, type CompileResult } from '../compiler/index.js';
+import { compile, IvaError, scriptsDir, slug, type CompileResult } from '../compiler/index.js';
 import { watchInputs, watchTree } from './watch.js';
 
 export interface DeviceServerOptions {
@@ -136,12 +136,12 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
       }
       for (const w of r.warnings) log(`warning: ${w}`);
       state.inputs = r.inputs;
-      // where writeBuild puts them: images/..., scripts/... (as the .gui names them)
+      // where writeBuild puts them, iViewer asks for them: images/..., images/scripts/...
       const files = new Map<string, { name: string; data?: Buffer; file?: string }>();
       const at = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
       for (const a of r.assets) files.set(at(r.layout.images, a.name).toLowerCase(), a);
       for (const s of r.scripts) {
-        files.set(at(r.layout.scripts, s.name).toLowerCase(), { name: s.name, file: s.file, data: s.code !== undefined ? Buffer.from(s.code) : undefined });
+        files.set(at(scriptsDir(r.layout), s.name).toLowerCase(), { name: s.name, file: s.file, data: s.code !== undefined ? Buffer.from(s.code) : undefined });
       }
       files.set('joins.json', { name: 'joins.json', data: Buffer.from(JSON.stringify(r.joins, null, 2) + '\n') });
       next = { name: `${slug(r.name)}.gui`, gui: Buffer.from('﻿' + r.xml), files };
@@ -158,7 +158,8 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
   if (!state.served) throw new Error(`can't serve: ${state.error}`);
 
   const server = http.createServer((req, res) => {
-    const url = new URL(req.url ?? '/', 'http://x');
+    // a path only ('//x' would read as a host): one slash in front
+    const url = new URL((req.url ?? '/').replace(/^\/+/, '/'), 'http://x');
     const s = state.served!;
     const send = (status: number, body: Buffer | string, type: string, extra: Record<string, string> = {}) => {
       const data = typeof body === 'string' ? Buffer.from(body) : body;
@@ -201,7 +202,8 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
     if (name === '' || name.toLowerCase() === s.name.toLowerCase() || (name.toLowerCase().endsWith('.gui') && !s.files.has(name.toLowerCase()))) {
       return send(200, s.gui, 'text/xml');
     }
-    if (opts.live && name.toLowerCase() === LIVE_SCRIPT) {
+    // the live script: in the image folder, as iViewer looks for scripts (images/iva-live.js)
+    if (opts.live && name.toLowerCase().split('/').pop() === LIVE_SCRIPT) {
       const host = req.headers.host ?? `${lanAddresses()[0]?.address ?? '127.0.0.1'}:${opts.port}`;
       return send(200, liveScript(`http://${host}`, s.version), TYPES['.js']);
     }

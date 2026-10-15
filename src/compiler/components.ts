@@ -332,10 +332,11 @@ export interface ProjectProps extends XmlProp {
   /** the look it starts in (default: the first of `themes`) */
   theme?: string;
   /**
-   * the build's folders (default true): the .gui with images/ (iViewer's
-   * asset folder: <imagefolder>) and scripts/ next to it, iva's drawings in
-   * images/backgrounds, icons, controls. false: everything next to the .gui
-   * (as GUI Designer saves a project without an image folder)
+   * the build's folders (default true): the .gui with images/ next to it
+   * (iViewer's asset folder: <imagefolder>), iva's drawings in
+   * images/backgrounds, icons, controls, the scripts in images/scripts (iViewer
+   * looks for a .gui's scripts in its image folder). false: everything next to
+   * the .gui (as GUI Designer saves a project without an image folder)
    */
   folders?: boolean;
   /**
