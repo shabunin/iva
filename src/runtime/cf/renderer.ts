@@ -408,6 +408,9 @@ export class CFRenderer {
       return j;
     };
     node.j = resolveJoin(node.j);
+    // a button's text (<inactive s="1">): in a list, the item's s1 too, not the page's
+    node.inactive_s = resolveJoin(node.inactive_s);
+    node.active_s = resolveJoin(node.active_s);
 
     const container = new Container();
     (container as any).cfNode = node;
