@@ -51,6 +51,12 @@ export class HostSession {
     return fn(args);
   }
 
+  /** A TCP server of this session's on that port (a panel's own server: the preview's web views reach it). */
+  listening(port: number): boolean {
+    for (const s of this.servers.values()) if ((s.address() as net.AddressInfo | null)?.port === port) return true;
+    return false;
+  }
+
   /** Close everything this session opened. */
   dispose() {
     for (const s of this.tcp.values()) s.destroy();

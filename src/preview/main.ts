@@ -110,6 +110,11 @@ async function boot(gui: string) {
     canvas,
     // a web view's url="page.html": the project's own file
     fileUrl: (name) => m.fileBase + name.split('/').map(encodeURIComponent).join('/'),
+    // http://127.0.0.1:<port>/ is the panel itself: its server runs in iva dev's backend
+    webUrl: (url) => {
+      const lo = /^http:\/\/(?:127\.0\.0\.1|localhost)(?::(\d+))?(\/[^#]*)?(#.*)?$/i.exec(url);
+      return lo ? `/__iva/loop/${lo[1] ?? '80'}${lo[2] ?? '/'}${lo[3] ?? ''}` : undefined;
+    },
     orientation,
     onOrientationChange: (o) => setOrientation(o),
     menu: {

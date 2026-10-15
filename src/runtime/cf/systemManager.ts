@@ -77,14 +77,12 @@ export class ControlSystem {
     private tcpSocket?: ITcpSocket;
     private udpSocket?: IUdpSocket;
     private tcpServer?: ITcpServer;
-    /** The clients connected to the TCP server, each with what it sent that no feedback matched yet. */
-    private tcpClients: { socket: ITcpSocket; buffer: string }[] = [];
     /**
-     * The client whose data was processed last: what the system sends goes back
-     * to it (a request's reply, as two web views loading from the GUI's own
-     * HTTP server at once need), to every client while none has sent anything.
+     * The clients connected to the TCP server, each with what it sent that no
+     * feedback matched yet. What the system sends goes to every one of them
+     * (CF.send: "the string will be sent to each connected system").
      */
-    private tcpSender?: ITcpSocket;
+    private tcpClients: { socket: ITcpSocket; buffer: string }[] = [];
     private cfApi: CFAPI;
     public feedbackRules: CFNode[];
     private autoReconnect: boolean;
@@ -234,7 +232,6 @@ export class ControlSystem {
             this.tcpServer = undefined;
         }
         this.tcpClients = [];
-        this.tcpSender = undefined;
         this.connections = [];
     }
 
@@ -344,7 +341,6 @@ export class ControlSystem {
             clientSocket.on('data', (data: Uint8Array | string) => {
                 // this client's own buffer: requests from two clients don't mix
                 this.buffer = client.buffer + this._bytesToString(data);
-                this.tcpSender = clientSocket;
                 try {
                     this._processBuffer();
                 } finally {
@@ -356,7 +352,6 @@ export class ControlSystem {
             clientSocket.on('close', () => {
                 this.connections = this.connections.filter(c => c !== remote);
                 this.tcpClients = this.tcpClients.filter(c => c !== client);
-                if (this.tcpSender === clientSocket) this.tcpSender = undefined;
                 this.cfApi.dispatchEvent(this.cfApi.ConnectionStatusChangeEvent, this.name, false, remote);
             });
 
@@ -786,8 +781,7 @@ export class ControlSystem {
         } else if (this.tcpSocket) {
             this.tcpSocket.write(payload as any);
         } else if (this.tcpServer) {
-            const to = this.tcpSender ? [this.tcpSender] : this.tcpClients.map((c) => c.socket);
-            for (const socket of to) {
+            for (const { socket } of this.tcpClients) {
                 try {
                     socket.write(payload as any);
                 } catch (e) {

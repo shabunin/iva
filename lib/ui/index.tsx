@@ -15,7 +15,7 @@
  */
 
 import {
-  Box, Button as IvaButton, Feedback, Gesture, Group, Image, Input, List, OnStart, Script, Slider as IvaSlider, Subpage, System, Text as IvaText, Web,
+  Box, Button as IvaButton, Gesture, Group, Image, Input, List, OnStart, Script, Slider as IvaSlider, Subpage, Text as IvaText, Web, WebApp,
   a, d, draw, fa, js as jsAction, l, s, variant,
   type ButtonProps, type Child, type IconRef, type Join, type JoinRef, type TextProps, type VNode,
 } from 'iva';
@@ -425,8 +425,6 @@ export interface ColorPickerProps {
   swatches?: string[] | false;
   /** JavaScript run on each pick, with r, g, b (numbers) and hex */
   onChange?: string;
-  /** the port of the panel's own HTTP server that shows the swatch (a web view loads the colour from it) */
-  port?: number;
   /** what's behind it (the swatch's corners are drawn in it): default the card colour */
   bg?: string;
   x?: number;
@@ -538,6 +536,74 @@ export interface NumberFieldProps extends FieldProps {
   /** the messages for a bad number: invalid ('Not a number'), range ('From {min} to {max}') */
   words?: { invalid?: string; range?: string };
 }
+export interface TrendCurve {
+  /** an analog join (0..65535 stands for `scale`), or a serial one with the number as text: s('supply') */
+  join: Join;
+  label: string;
+  color?: string;
+  scale?: [number, number];
+  decimals?: number;
+  unit?: string;
+  /** an axis of its own, on the right */
+  side?: 'left' | 'right';
+  width?: number;
+}
+export interface TrendProps {
+  curves: TrendCurve[];
+  title?: string;
+  /** the range buttons, in seconds (default 5 min, 15 min, 1 h) */
+  ranges?: number[];
+  /** the range shown first */
+  range?: number;
+  /** the left axis (default: to fit) and the right one */
+  min?: number;
+  max?: number;
+  rightMin?: number;
+  rightMax?: number;
+  /** the panel samples the joins every so many seconds (default 1) */
+  every?: number;
+  /** a panel function answering history(from, to) (ms) with { names, rows } - a database, say; default: what the panel recorded */
+  history?: string;
+  /** names its web app (default: from the curves) */
+  name?: string;
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+}
+export interface ChartDataset {
+  label?: string;
+  data?: number[];
+  /** a join per label, live: analog (0..65535 stands for `scale`) or serial with a number */
+  joins?: Join[];
+  scale?: [number, number];
+  color?: string;
+  /** a colour per value (pie, doughnut) */
+  colors?: string[];
+  fill?: boolean;
+}
+export interface ChartProps {
+  type?: 'bar' | 'line' | 'doughnut' | 'pie' | 'radar' | 'polarArea';
+  labels?: string[];
+  datasets?: ChartDataset[];
+  /** serial join: the data as JSON - { labels, datasets: [{ data }] } or [numbers] - redrawn when it changes */
+  source?: Join;
+  /** bars across */
+  horizontal?: boolean;
+  stacked?: boolean;
+  min?: number;
+  max?: number;
+  unit?: string;
+  legend?: boolean;
+  title?: string;
+  /** names its web app (default: from what it shows) */
+  name?: string;
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+}
+
 /** A row tone (DataTable, AlarmTable): a tint behind the row, and its badge. */
 export type RowTone = 'alarm' | 'warning' | 'ok' | 'muted' | 'running' | 'heating' | 'cooling' | 'offline' | 'alarmAck' | 'warningAck';
 export interface TableColumn {
@@ -751,6 +817,8 @@ export interface Ui {
   DatePicker: (p: DatePickerProps) => VNode;
   NumberField: (p: NumberFieldProps) => VNode;
   DataTable: (p: DataTableProps) => VNode;
+  Trend: (p: TrendProps) => VNode;
+  Chart: (p: ChartProps) => VNode;
   AlarmTable: (p: AlarmTableProps) => VNode;
   AlarmBanner: (p: AlarmBannerProps) => VNode;
   Breadcrumbs: (p: BreadcrumbsProps) => VNode;
@@ -1442,10 +1510,10 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
    * a swatch of the colour with its hex, and colours one tap away. iViewer
    * can't colour anything from a script, so the swatch is a web view showing
    * a page of that colour, served by the panel itself (as CommandFusion's
-   * ColorPicker2 demo does): a TCP system accepting connections on `port`.
+   * ColorPicker2 demo does): the panel's web server, /iva-color/RRGGBB.
    */
   function ColorPicker({ r, g, b, hex, value, size = 210, swatches = ['#FFFFFF', '#FFE2B8', '#FF3B30', '#FF9500', '#FFCC00', '#34C759', '#0A84FF', '#AF52DE'],
-                         onChange, port = 8890, bg = t.surface, x = 0, y = 0 }: ColorPickerProps): VNode {
+                         onChange, bg = t.surface, x = 0, y = 0 }: ColorPickerProps): VNode {
     const key = keyOf(r);
     const id = JSON.stringify(key);
     const m = Math.max(20, Math.round(size * 0.13));
@@ -1453,14 +1521,13 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     const level: JoinRef = a(`ui_${key}_cp_v`);
     const url: JoinRef = s(`ui_${key}_cp_url`);
     const hexJoin: JoinRef = hex === undefined ? s(`ui_${key}_cp_hex`) : typeof hex === 'object' ? hex : s(hex);
-    const system = `IvaUI HTTP ${port}`;
     const right = size + 24;
     const rw = 160;
     const sw = 32;
     const gap = (rw - 4 * sw) / 3;
     const touch = `IvaUI.colorTouch(${id}, gesture.x, gesture.y)`;
     const o = `{ size: ${size}, markSize: ${m}, mark: ${jsJoin('s', mark)}, v: ${jsJoin('a', level)}, r: ${jsJoin('a', r)}, g: ${jsJoin('a', g)}, b: ${jsJoin('a', b)}, ` +
-      `hex: ${jsJoin('s', hexJoin)}, url: ${jsJoin('s', url)}, system: ${JSON.stringify(system)}, port: ${port}, value: ${JSON.stringify(value ?? '')} }`;
+      `hex: ${jsJoin('s', hexJoin)}, url: ${jsJoin('s', url)}, value: ${JSON.stringify(value ?? '')} }`;
     const ref = (j: Join): JoinRef => (typeof j === 'object' ? j : a(j));
     return (
       <Group x={x} y={y}>
@@ -1476,16 +1543,13 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
         <Image y={size + 22} w={18} h={18} src={fa('sun', { color: t.muted, size: 14, style: 'regular' })} />
         <IvaSlider x={28} y={size + 25} w={size - 56} h={12} join={level} min={0} max={100} bg={t.raised} fill={t.text} radius={3} />
         <Image x={size - 20} y={size + 20} w={22} h={22} src={fa('sun', { color: t.text, size: 20 })} />
-        <Web x={right} w={rw} h={72} join={url} url={`http://127.0.0.1:${port}/iva-color/000000`} />
+        <Web x={right} w={rw} h={72} join={url} url="panel:/iva-color/000000" />
         <Image x={right} w={rw} h={72} src={draw.cutout({ w: rw, h: 72, radius: t.radius, color: bg })} clickthrough />
         <Text x={right} y={84} w={rw} h={30} join={hexJoin} font={font} fontSize={22} />
         {(swatches || []).slice(0, 8).map((c, i) => (
           <Button x={right + Math.round((i % 4) * (sw + gap))} y={128 + Math.floor(i / 4) * (sw + 12)} w={sw} h={sw} radius={sw / 2} bg={c}
                   borderWidth={1} borderColor={shade(bg, 0.25)} js={`IvaUI.colorSet(${id}, ${JSON.stringify(c)})`} />
         ))}
-        <System name={system} protocol="tcp" accept host="0.0.0.0" port={port} localPort={port}>
-          <Feedback name="request" regex={'(?msi)^.*?\\r\\n\\r\\n'} />
-        </System>
         {runtime}
         <OnStart js={`IvaUI.color(${id}, ${o}, function (r, g, b, hex) { ${onChange ?? ''} });`}
                  joins={[ref(r), ref(g), ref(b), hexJoin, mark, level, url]} />
@@ -1905,6 +1969,55 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
   const jsObject = (parts: Record<string, string | undefined>) =>
     `{ ${Object.entries(parts).filter(([, v]) => v !== undefined).map(([k, v]) => `${k}: ${v}`).join(', ')} }`;
 
+  // ── charts: web apps the panel serves (WebApp, iva:trend / iva:chart) ──
+
+  /** the colours a web app draws in (this look's) */
+  const webLook = () => {
+    const m = /^#?([0-9a-f]{6})/i.exec(t.surface);
+    const n = m ? parseInt(m[1], 16) : 0;
+    const dark = ((n >> 16) * 299 + ((n >> 8) & 255) * 587 + (n & 255) * 114) / 1000 < 128;
+    return { bg: t.surface, surface: t.surface, raised: t.raised, text: t.text, muted: t.muted, grid: shade(t.raised, dark ? 0.06 : -0.06), accent: t.accent, font: t.font };
+  };
+  const PALETTE = ['#E5484D', '#2D8CF0', '#00BC97', '#FFB000', '#A855F7', '#F07A22'];
+  const analog = (j: Join): Join => (typeof j === 'object' ? j : a(j));
+
+  /** Curves of joins over time, the panel recording them: ranges, ‹ ›, Live; a touch reads the values. */
+  function Trend({ curves, title, ranges = [300, 900, 3600], range, min, max, rightMin, rightMax, every = 1, history, name,
+                   x = 0, y = 0, w = 800, h = 360 }: TrendProps): VNode {
+    const id = name ?? `trend_${hash(JSON.stringify(curves.map((c) => [keyOf(analog(c.join)), c.label])))}`;
+    const joins = Object.fromEntries(curves.map((c, i) => [`c${i}`, analog(c.join)]));
+    const keep = Math.ceil((Math.max(...ranges) * 1.5) / every);
+    return (
+      <WebApp entry="iva:trend" name={id} x={x} y={y} w={w} h={h} bg={t.surface} title={title ?? 'Trend'}
+              joins={joins} record={{ every, keep }} handlers={history ? { history } : undefined}
+              options={{
+                title, ranges, range, min, max, rightMin, rightMax, theme: webLook(),
+                curves: curves.map((c, i) => ({ name: `c${i}`, label: c.label, color: c.color ?? PALETTE[i % PALETTE.length], scale: c.scale,
+                  decimals: c.decimals, unit: c.unit, side: c.side, width: c.width })),
+              }} />
+    );
+  }
+
+  /** A Chart.js chart: data given, live from joins, or JSON from a serial join. */
+  function Chart({ type = 'bar', labels, datasets = [], source, horizontal, stacked, min, max, unit, legend, title, name,
+                   x = 0, y = 0, w = 500, h = 300 }: ChartProps): VNode {
+    const joins: Record<string, Join> = {};
+    const sets = datasets.map((d, i) => {
+      const { joins: js, ...rest } = d;
+      const names = (js ?? []).map((j, k) => {
+        joins[`d${i}_${k}`] = typeof j === 'object' ? j : a(j);
+        return `d${i}_${k}`;
+      });
+      return { ...rest, joins: names.length ? names : undefined };
+    });
+    if (source !== undefined) joins.data = typeof source === 'object' ? source : s(source);
+    const id = name ?? `chart_${hash(JSON.stringify([type, labels, sets.map((d) => [d.label, d.joins]), Object.values(joins).map(keyOf)]))}`;
+    return (
+      <WebApp entry="iva:chart" name={id} x={x} y={y} w={w} h={h} bg={t.surface} title={title ?? 'Chart'} joins={joins}
+              options={{ type, labels, datasets: sets, horizontal, stacked, min, max, unit, legend, title, theme: webLook() }} />
+    );
+  }
+
   /**
    * A table: a search field, a header (a tap sorts: up, down, off), rows in
    * tones, a badge column, a tap selecting a row, the row count. The rows
@@ -2130,6 +2243,7 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     theme: t, Card, Icon, IconButton, Tile, Badge, Stat, Toggle, Slider, Stepper, Segmented, SceneBar, Dimmer, Dial, Knob, Thermostat, Blinds,
     RadioGroup, CheckBox, CheckBoxGroup, SelectBox, ListRow, DataList, ScrollBox, WeekDays, PinPad, AlarmCard, NavCard, Header, SideMenu, ConfirmDialog,
     ColorPicker, TextField, SearchSelect, TimePicker, DatePicker, NumberField, DataTable, AlarmTable, AlarmBanner, Breadcrumbs, Loader, Pager,
+    Trend, Chart,
   };
 }
 
@@ -2168,6 +2282,8 @@ export const TimePicker: Ui['TimePicker'] = ui.TimePicker;
 export const DatePicker: Ui['DatePicker'] = ui.DatePicker;
 export const NumberField: Ui['NumberField'] = ui.NumberField;
 export const DataTable: Ui['DataTable'] = ui.DataTable;
+export const Trend: Ui['Trend'] = ui.Trend;
+export const Chart: Ui['Chart'] = ui.Chart;
 export const AlarmTable: Ui['AlarmTable'] = ui.AlarmTable;
 export const AlarmBanner: Ui['AlarmBanner'] = ui.AlarmBanner;
 export const Breadcrumbs: Ui['Breadcrumbs'] = ui.Breadcrumbs;

@@ -180,12 +180,19 @@ export function mergeThemes(builds: BuildResult[], names: string[]): BuildResult
   for (const b of builds) for (const a of b.assets) if (!assets.has(a.name.toLowerCase())) assets.set(a.name.toLowerCase(), a);
 
   // ── the panel's script ───────────────────────────────────────────
+  // web apps whose options / colour differ between looks: each look's, for the page the panel serves
+  const apps: Record<string, unknown[]> = {};
+  for (const system of Object.keys(main.apps)) {
+    const per = builds.map((b) => b.apps[system]);
+    if (per.some((o) => JSON.stringify(o) !== JSON.stringify(per[0]))) apps[system] = per;
+  }
   const data = {
     names,
     tags,
     images: imageJoins,
     files: d.files.map((m) => Object.fromEntries(m)),
     rows: d.rows.map((m) => Object.fromEntries(m)),
+    apps,
   };
   const themeScript: ScriptOut = { name: 'iva-themes.js', code: themeRuntime(data) };
   const scripts = [...main.scripts];
@@ -241,6 +248,8 @@ var IvaTheme = (function () {
     file: function (name) { var m = D.files[index(current)]; return (m && m[name]) || name; },
     /** a list row subpage's name in the look shown */
     row: function (name) { var m = D.rows[index(current)]; return (m && m[name]) || name; },
+    /** a web app's { options, bg } in the look shown (IvaHttp), if they differ between looks */
+    app: function (system) { var o = D.apps[system]; return o ? o[index(current)] : null; },
     /** run fn(name) after each switch */
     onChange: function (fn) { hooks.push(fn); },
     set: function (name) {

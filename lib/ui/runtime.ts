@@ -11,7 +11,6 @@ var IvaUI = (function () {
   var dials = {};
   var pins = {};
   var colors = {};
-  var servers = {};
   var pickers = {};
   var drumOf = {};
   var nums = {};
@@ -299,12 +298,11 @@ var IvaUI = (function () {
      * subpage of its own with the marker o.mark, o.markSize square), brightness on a slider
      * (o.v, analog). The colour goes to o.r / o.g / o.b (0..255) and o.hex
      * ('#RRGGBB'), and to a swatch: a web view (o.url) loading a page of that
-     * colour from the panel's own HTTP server (o.system, port o.port). It
+     * colour from the panel's own web server (IvaHttp, /iva-color/RRGGBB). It
      * follows o.r / o.g / o.b when they change elsewhere.
      */
     color: function (id, o, onChange) {
       var c = colors[id] = { o: o, h: 0, s: 0, v: 1, busy: false, onChange: onChange, sent: '', timer: null, last: 0 };
-      if (o.system) IvaUI.colorServer(o.system);
       function follow() {
         if (c.busy) return;
         CF.getJoins([o.r, o.g, o.b], function (j) {
@@ -378,20 +376,8 @@ var IvaUI = (function () {
         c.last = Date.now();
         if (c.pending === c.sent) return;
         c.sent = c.pending;
-        CF.setJoin(o.url, 'http://127.0.0.1:' + o.port + '/iva-color/' + c.sent.slice(1));
+        CF.setJoin(o.url, IvaHttp.url('iva-color/' + c.sent.slice(1)));
       }, wait);
-    },
-    /** the panel's HTTP server (a TCP system accepting connections): a page of one colour per GET /iva-color/RRGGBB */
-    colorServer: function (system) {
-      if (servers[system]) return;
-      servers[system] = true;
-      CF.watch(CF.FeedbackMatchedEvent, system, 'request', function (fb, req) {
-        var m = /^GET \\/iva-color\\/([0-9a-fA-F]{6})/.exec(req);
-        var body = m
-          ? '<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"></head><body style="margin:0;background:#' + m[1] + '"></body></html>'
-          : 'not found';
-        CF.send(system, 'HTTP/1.1 ' + (m ? '200 OK' : '404 Not Found') + '\\r\\nContent-Type: text/html\\r\\nCache-Control: no-store\\r\\nContent-Length: ' + body.length + '\\r\\n\\r\\n' + body);
-      });
     },
     /** a text field's placeholder (a serial join): shown while the field (input) is empty */
     hint: function (input, hint, text) {

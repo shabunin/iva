@@ -8,7 +8,7 @@ injected); `import { Button } from 'iva'` works too.
 
 | JSX | `.gui` | Key props |
 |---|---|---|
-| `<Project>` | `<gui>` + `<properties>` | `name`; `device` (`iPad`, `iPad Pro 11`, `iPad Pro 12.9`, `iPad Air 10.5`, `iPhone X`, `iPhone XS Max`, `iPhone 8`, `iPhone 8 Plus`, `iPhone 5`, `iPhone 4`) + `orientation`, or `width` / `height` (wider than tall → landscape is the main orientation); `otherSize`, `autoposition`, `joinBase`, `assets` (a folder shipped whole; images found there by bare name; default `./assets`), `properties` (raw XML after `<size>`), `themes` + `theme` (looks switched at runtime, below) |
+| `<Project>` | `<gui>` + `<properties>` | `name`; `device` (`iPad`, `iPad Pro 11`, `iPad Pro 12.9`, `iPad Air 10.5`, `iPhone X`, `iPhone XS Max`, `iPhone 8`, `iPhone 8 Plus`, `iPhone 5`, `iPhone 4`) + `orientation`, or `width` / `height` (wider than tall → landscape is the main orientation); `otherSize`, `autoposition`, `joinBase`, `assets` (a folder shipped whole; images found there by bare name; default `./assets`), `properties` (raw XML after `<size>`), `themes` + `theme` (looks switched at runtime, below), `httpPort` (the panel's web server: web apps, swatches; default the first free from 8900) |
 | `<Page>` | `<page>` + `<portrait>`/`<landscape>` | `name`, `start`, `bg`, `image`, `theme`, `tags`. Items go into the main orientation (the other is written empty, as GUI Designer does) |
 | `<Landscape>` / `<Portrait>` | `<landscape>` / `<portrait>` | `bg`, `image`, `theme`. With these, the page has exactly the orientations given, in that order |
 | `<Subpage>` | `<subpage name w h>` (definition) + placement | `name`, `w`, `h`, `clip`, `bg`/`image`/`theme`, `radius` / `borderWidth` / `borderColor` (drawn). Inside a page it is defined *and* placed (`x`, `y`, `join`, `visible`, `in`, `out`, `topmost` (above everything: placed last), `fixed` (at x / y whatever `<Group>` it is in), `clickthrough`), or only defined with `define`; in `<Project>` it is only defined |
@@ -25,8 +25,9 @@ injected); `import { Button } from 'iva'` works too.
 | `<Gauge>` | `<gauge>` | `join` analog | `bg`/`image`, `fill`/`fillImage`, `radius`, `theme` |
 | `<List>` | `<list>` | `join` list | `item` (subpage name or an inline `<Subpage>`), `header`, `title`, `footer`, `orientation`, `swipeDelete`, `scrollCmd`, `scrollInterval`, `listEndCmd`, `listEndOffset`, `bg` |
 | `<Input>` | `<input>` | `join` serial (`s=`): typing writes it, setting it sets the text | `text` (initial), `password`, `autoFocus`, `cmd` / `macro` (sent on Return; `[inputval]` is the text), `changeCmd` / `changeMacro` (on each change), style props |
-| `<Web>` | `<web>` | `join` serial (the URL: setting it loads it), `titleJoin` serial, `backJoin`, `forwardJoin`, `refreshJoin`, `stopJoin` digital | `url`: a URL, or a file of the project (`page.html`, in `assets/`) |
+| `<Web>` | `<web>` | `join` serial (the URL: setting it loads it), `titleJoin` serial, `backJoin`, `forwardJoin`, `refreshJoin`, `stopJoin` digital | `url`: a URL, a file of the project (`page.html`, in `assets/`), or `panel:/path` (a page of the panel's own web server) |
 | `<Video>` | `<video>` | `join`, `playJoin`, `stopJoin` (numbers) | `url`, `format` (`mjpeg`·`mpeg4`), `autoplay`, `controls`, `bg`, `cache`, `auth={{user, password, …}}` |
+| `<WebApp>` | `<web>` + a server `<system>` + `iva_app_<name>.js` | `joins={{ name: d('x'), … }}`: what the page sees and sets, by name | a web page the panel serves itself (charts, 3D - [docs/web.md](web.md)): `entry` (your module, bundled with its npm imports; or `iva:trend` / `iva:chart`), `name` (its path on the panel's web server: `/<name>/`; one port for all, `<Project httpPort>`), `options` (JSON for the page), `handlers` (panel functions it may call), `record={{ every, keep }}`, `bg`, `title` |
 | `<Gesture>` | `<gesture>` + `<action phase>` | in actions: `join: 'd10'` / `d(10)` | `type` (`tap`·`swipe`·`pan`·`press`·`rotate`·`pinch`), `touches`, `taps`, `direction`, `onBegin` / `onChange` / `onEnd` (js string or `{ js, join, value }`) |
 
 All items take `x`, `y` (default 0), `w`, `h` (required) and `tags`.
@@ -36,6 +37,7 @@ All items take `x`, `y` (default 0), `w`, `h` (required) and `tags`.
 | JSX | `.gui` | Key props |
 |---|---|---|
 | `<System>` | `<systems><system>` | `name`, `host`, `port`, `protocol` (`tcp`·`udp`·`http`), `localPort`, `mode` (`alwaysOn`·`transitory`·`dialog`) + `idleTimeout` / `dialogTimeout`, `accept` (TCP: server; UDP: incoming), `acceptBroadcasts`, `eom`, `offlineQueue`, `connectJoin` / `disconnectJoin`, `heartbeat={{ mode: 'reply'\|'initiate', tx, rx }}`, `ssl`, `textEncoding`, `sendHandler`, `startupCmd`, `startupMacro`, `maxConnections`; children `<Command>`, `<Feedback>`. Defaults are GUI Designer's for a new system of the protocol. Anywhere (a component can bring one): lifted to the project, the same system once |
+| `<HttpServer>` | a TCP `<system accept>` + its request feedback | `name`, `port`, `handler`: a panel function (name or `function (req, res) {…}`) answering each request with `res.json` / `html` / `text` / `bytes` / `asset` ([docs/web.md](web.md)) |
 | `<Command>` | `<cmd>` | `name`, `send` (or children; `\xNN`, `[tokens]`), `js` + `jsSendsCommand`, `target` + `value` (set a join), `folder` |
 | `<Feedback>` | `<fb>` | `name`, `regex` (`(?ims)` flags allowed); children `<Capture>`, `<OnMatch>` |
 | `<Capture>` | `<group>` | `join` (`d(5)`, `'s12'`, `'a:level'`), `type` (how it's read, default: the join's type: `type="a" join="s2"` = a number, transformed, into a serial join), `index`, `name`, `onVal` / `offVal`, `transform`, `min` / `max`, `unit`, `setToken` |
@@ -108,7 +110,9 @@ real text field, stacked as on the device: an image drawn over a web view
 still covers it (CommandFusion's ColorPicker2 demo shows its colour through
 a logo cut out of an image), and the field you type into sits where the
 `<Input>` is. A web view loading from the panel's own HTTP server (a TCP
-`<System accept>`) works too: the preview's backend listens on that port.
+`<System accept>`) works too: the preview's backend listens on that port,
+and the page loads through `iva dev` (`/__iva/loop/<port>/`), so it works
+from any machine you open the preview on.
 A browser keeps other sites' pages to themselves, so for those the title
 join stays empty, and back / forward only go through the URLs the panel
 loaded.

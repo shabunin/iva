@@ -48,8 +48,13 @@ iva serve          # to iViewer on a real device (GUI File URL http://<this mach
   Dial, Knob, Thermostat, ColorPicker, RadioGroup, CheckBox, SelectBox,
   TextField, SearchSelect, TimePicker, DatePicker, NumberField, DataList,
   WeekDays, AlarmCard, PinPad, Header, SideMenu, ConfirmDialog, DataTable,
-  AlarmTable, AlarmBanner, Breadcrumbs, Loader, Pager, ...);
+  AlarmTable, AlarmBanner, Breadcrumbs, Loader, Pager, Trend, Chart, ...);
   see iva's docs/ui.md.
+- Charts, 3D, any page a script makes: `<WebApp entry="./web/app.js">` - the
+  module (and the npm packages it imports; three, chart.js, uplot come with
+  iva) runs in a web view the panel serves itself; `import { panel } from
+  'iva/web'` to read and set joins. Keep that code in web/. See iva's
+  docs/web.md.
 - Devices: `<System host port>` with `<Command>` and `<Feedback>`; button
   `cmd="Name"` sends a command.
 - Keep it valid for the real iViewer: prefer iva's props; `xml={{...}}` and

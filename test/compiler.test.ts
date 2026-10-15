@@ -319,3 +319,50 @@ test('<Project themes>: the looks must be the same elements', async () => {
 );`, /the "dark" look differs from "light".*same elements/s);
 });
 
+test('<WebApp>: bundled into the build, a web view on the panel\'s one web server, its setup', async () => {
+  const app = `import { panel } from 'iva/web';\nimport { look } from './look.js';\npanel.on('lamp', (v) => (document.body.style.background = look(v)));\n`;
+  const r = await build(wrap(`
+      <HttpServer name="api" port={8900} handler="myApi" />
+      <WebApp entry="./app.js" w={400} h={300} joins={{ lamp: d('lamp'), temp: a(12) }} options={{ rooms: 2 }} />
+      <Group x={500}><WebApp entry="./app.js" w={400} h={300} joins={{ lamp: d('lamp'), temp: a(12) }} options={{ rooms: 2 }} /></Group>
+      <WebApp entry="iva:chart" name="energy" w={400} h={300} options={{ type: 'bar' }} />
+      <Web y={320} w={160} h={72} url="panel:/iva-color/FFB000" />`),
+  { 'app.js': app, 'look.js': `export const look = (v) => (v ? '#fff' : '#000');\n` });
+  // the code, bundled with what it imports (iva/web too), ships as a project file
+  const bundle = r.assets.find((x) => x.name === 'apps/iva_app_app.js')!;
+  assert.ok(bundle.data && bundle.data.length > 1000);
+  assert.doesNotThrow(() => new Function(bundle.data!.toString('utf8')));
+  assert.ok(r.inputs.files.some((f) => f.endsWith('look.js')), 'its modules are watched');
+  // one server for all of them: the first free port from 8900 (the HttpServer has 8900); an app at /<name>/
+  assert.equal((r.xml.match(/<system name="IvaWeb" ip="0\.0\.0\.0" port="8901" origin="8901" protocol="tcp" alwayson="1" offlinequeue="0" accept="1"/g) ?? []).length, 1);
+  assert.equal((r.xml.match(/<system /g) ?? []).length, 2);
+  assert.equal((r.xml.match(/<web [^>]*url="http:\/\/127\.0\.0\.1:8901\/app\/"/g) ?? []).length, 2);
+  assert.match(r.xml, /<web x="500" [^>]*url="http:\/\/127\.0\.0\.1:8901\/app\/"/);
+  assert.match(r.xml, /<web [^>]*url="http:\/\/127\.0\.0\.1:8901\/energy\/"/);
+  assert.match(r.xml, /<web [^>]*url="http:\/\/127\.0\.0\.1:8901\/iva-color\/FFB000"/);
+  assert.match(r.xml, /<system name="api" [^>]*port="8900"[^>]*offlinequeue="0" accept="1"[\s\S]*?<fb name="request" regex="\(\?msi\)\^\.\*\?\\r\\n\\r\\n" \/>/);
+  assert.deepEqual(r.scripts.map((x) => x.name), ['iva-joins.js', 'iva-http.js', 'iva-start.js']);
+  for (const sc of r.scripts) assert.doesNotThrow(() => new Function(sc.code!), sc.name);
+  const start = r.scripts.find((x) => x.name === 'iva-start.js')!.code!;
+  // the server first, then the apps
+  assert.ok(start.indexOf('IvaHttp.web("IvaWeb", 8901);') < start.indexOf('IvaHttp.app('));
+  assert.equal(start.match(/IvaHttp\.app\("app"/g)!.length, 1);
+  assert.match(start, /joins: \{ "lamp": Joins\.d\["lamp"\], "temp": "a12" \}, options: \{"rooms":2\}/);
+  assert.match(start, /IvaHttp\.serve\("api", myApi\);/);
+  // <Project httpPort>
+  const fixed = await build(`export default (
+  <Project name="T" width={1024} height={768} httpPort={9100}>
+    <Page name="Main"><WebApp entry="iva:chart" name="energy" w={400} h={300} /></Page>
+  </Project>
+);`);
+  assert.match(fixed.xml, /<system name="IvaWeb" [^>]*port="9100"/);
+  assert.match(fixed.xml, /url="http:\/\/127\.0\.0\.1:9100\/energy\/"/);
+});
+
+test('<WebApp>: one app per name; the entry must exist and build', async () => {
+  await fails(wrap(`<WebApp entry="iva:chart" name="c" w={9} h={9} options={{ a: 1 }} /><WebApp entry="iva:chart" name="c" w={9} h={9} options={{ a: 2 }} />`),
+    /two different web apps named "c"/);
+  await fails(wrap(`<WebApp entry="./nope.js" w={9} h={9} />`), /entry not found: \.\/nope\.js/);
+  await fails(wrap(`<WebApp entry="iva:nope" w={9} h={9} />`), /no built-in web app "iva:nope" \(iva has: iva:trend, iva:chart\)/);
+});
+

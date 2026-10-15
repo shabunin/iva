@@ -72,6 +72,8 @@ export class CFRenderer {
    * theme). Default: the image map's URL for that name, else the name as is.
    */
   fileUrl?: (name: string) => string | undefined;
+  /** the host's way to a web view's URL (see LoadProjectOptions.webUrl) */
+  webUrl?: (url: string) => string | undefined;
   fpsContainer?: Container;
   fpsText?: Text;
   fpsBg?: Graphics;
@@ -417,6 +419,11 @@ export class CFRenderer {
   }
 
   /** A URL as the GUI gives it, made loadable here: project files by name, anything with a scheme as is. */
+  /** What a web view loads for a URL: the host's way to it, else the URL (a project file by name). */
+  webSrc(url: string): string {
+    return this.webUrl?.(url) ?? this.resolveUrl(url);
+  }
+
   resolveUrl(url: string): string {
     if (!url || /^[a-z][a-z0-9+.-]*:/i.test(url) || url.startsWith('//')) return url;
     const name = url.replace(/\\/g, '/');

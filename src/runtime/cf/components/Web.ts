@@ -39,7 +39,7 @@ export function renderWeb(
 
     const open = (url: string) => {
         current = url;
-        frame.src = url ? renderer.resolveUrl(url) : 'about:blank';
+        frame.src = url ? renderer.webSrc(url) : 'about:blank';
     };
     const go = (url: string) => {
         if (!url || url === current) return;
@@ -54,7 +54,8 @@ export function renderWeb(
         try {
             const doc = frame.contentDocument;
             const href = frame.contentWindow?.location.href;
-            if (href && href !== 'about:blank' && href !== renderer.resolveUrl(current) && history[at] !== href) {
+            const loaded = new URL(renderer.webSrc(current), location.href).href;
+            if (href && href !== 'about:blank' && href !== loaded && history[at] !== href) {
                 history.splice(at + 1);
                 history.push(href);
                 at = history.length - 1;

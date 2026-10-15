@@ -10,7 +10,7 @@ const GALLERY = path.resolve(import.meta.dirname, '../examples/gallery/app.jsx')
 
 test('the iva/ui gallery builds: one runtime script, the shared subpages once', async () => {
   const r = await compile(GALLERY);
-  assert.deepEqual(r.scripts.map((s) => s.name), ['iva-joins.js', 'iva-ui.js', 'iva-themes.js', 'iva-start.js']);
+  assert.deepEqual(r.scripts.map((s) => s.name), ['iva-joins.js', 'iva-ui.js', 'iva-http.js', 'plant.js', 'iva-themes.js', 'iva-start.js']);
   // every script the panel gets is valid JavaScript
   for (const sc of r.scripts) assert.doesNotThrow(() => new Function(sc.code!), sc.name);
   const start = r.scripts.find((s) => s.name === 'iva-start.js')!.code!;
@@ -79,7 +79,7 @@ test('forms, lists, schedule: popups last, list rows defined, icons drawn at the
   assert.match(start, /IvaUI\.picker\("time_weekendH_\w+", \{ kind: 'time'[^\n]*step: 15, ampm: true/);
 });
 
-test('ColorPicker, TextField, SearchSelect: wheel and marker in a subpage, the swatch server once, inputs', async () => {
+test('ColorPicker, TextField, SearchSelect: wheel and marker in a subpage, swatches on the panel\'s web server, inputs', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-ui-'));
   fs.writeFileSync(path.join(dir, 'app.jsx'), `import { ColorPicker, TextField, SearchSelect } from 'iva/ui';
 export default (
@@ -94,15 +94,15 @@ export default (
 );
 `);
   const r = await compile(path.join(dir, 'app.jsx'));
-  // one HTTP server for both pickers, answering requests that end in a blank line
-  assert.equal((r.xml.match(/<system name="IvaUI HTTP 8890" /g) ?? []).length, 1);
+  // the panel's one web server for both swatches, answering requests that end in a blank line
+  assert.equal((r.xml.match(/<system name="IvaWeb" [^>]*port="8900"/g) ?? []).length, 1);
   assert.match(r.xml, /<fb name="request" regex="\(\?msi\)\^\.\*\?\\r\\n\\r\\n"/);
   assert.match(r.xml, /<subpage name="ui_cp_r1" w="210" h="210"/);
-  assert.match(r.xml, /<web [^>]*url="http:\/\/127\.0\.0\.1:8890\/iva-color\/000000"/);
+  assert.equal((r.xml.match(/<web [^>]*url="http:\/\/127\.0\.0\.1:8900\/iva-color\/000000"/g) ?? []).length, 2);
   assert.ok(r.assets.some((a) => /^iva_wheel_\w+\.png$/.test(a.name)));
   assert.equal((r.xml.match(/<input /g) ?? []).length, 2);
   const start = r.scripts.find((s) => s.name === 'iva-start.js')!.code!;
-  for (const f of ['IvaUI.color(', 'IvaUI.hint(', 'IvaUI.select(']) assert.ok(start.includes(f), f);
+  for (const f of ['IvaHttp.web("IvaWeb", 8900);', 'IvaUI.color(', 'IvaUI.hint(', 'IvaUI.select(']) assert.ok(start.includes(f), f);
   for (const sc of r.scripts) assert.doesNotThrow(() => new Function(sc.code!), sc.name);
   assert.deepEqual(r.warnings, []);
 });

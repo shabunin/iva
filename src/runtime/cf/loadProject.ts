@@ -47,6 +47,12 @@ export interface LoadProjectOptions {
    * than the images in `imageMap`.
    */
   fileUrl?: (name: string) => string | undefined;
+  /**
+   * Where a web view loads a URL from, when the host knows better (the
+   * preview: http://127.0.0.1:<port>/ - the panel's own server - through
+   * its backend). undefined: the URL as it is.
+   */
+  webUrl?: (url: string) => string | undefined;
   /** Previous renderer to tear down (stage children only). */
   previousRenderer?: CFRenderer | null;
   /** Destroy previous web menu when reloading a project. */
@@ -144,6 +150,7 @@ export async function loadProject(options: LoadProjectOptions): Promise<LoadProj
 
   const renderer = new CFRenderer(app, project, imageMap);
   renderer.fileUrl = options.fileUrl;
+  renderer.webUrl = options.webUrl;
   renderer.targetOrientation = orientation;
   renderer.setDebugMode(debugMode);
 

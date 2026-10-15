@@ -31,6 +31,7 @@ function drawImage(d: DrawRef, sc: number): Buffer {
   }
 }
 import { el, parseXml, serialize, type XNode } from './xml.js';
+import { bundleWebApp, HTTP_RUNTIME, resolveEntry } from './web.js';
 
 export class CompileError extends Error {
   constructor(message: string, public source?: Source) {
@@ -64,11 +65,15 @@ export interface BuildResult {
   warnings: string[];
   /** the assets folder, if the project has one */
   assetDir: string | null;
+  /** files read besides the sources (web apps' modules): to watch */
+  inputs: string[];
+  /** each web app's options and colour, by its name (a look's own, with <Project themes>) */
+  apps: Record<string, { options: unknown; bg: string }>;
 }
 
 type Attrs = Record<string, string | number | boolean | null | undefined | JoinSlot>;
 
-const ITEMS = new Set(['Button', 'Text', 'Image', 'Slider', 'Gauge', 'List', 'Input', 'Web', 'Video', 'Gesture', 'Subpage', 'SubpageRef', 'Box']);
+const ITEMS = new Set(['Button', 'Text', 'Image', 'Slider', 'Gauge', 'List', 'Input', 'Web', 'WebApp', 'Video', 'Gesture', 'Subpage', 'SubpageRef', 'Box']);
 /** items a <Group> moves */
 const PLACED = new Set([...ITEMS].filter((t) => t !== 'Gesture'));
 /** go anywhere: lifted to the project */
@@ -113,6 +118,14 @@ export class Builder {
   private start: string[] = [];
   /** placements marked topmost */
   private topmost = new Set<XNode>();
+  /** web apps by name: their code (one app per name), port, and what gets the port once it's known */
+  private apps = new Map<string, string>();
+  /** the panel's web server (web apps, swatches): one system, one port; the web views on it, by path */
+  private web: { system: XNode; views: { x: XNode; path: string }[] } | null = null;
+  /** <Project httpPort> */
+  private httpPort: number | undefined;
+  private appOptions: Record<string, { options: unknown; bg: string }> = {};
+  private inputs = new Set<string>();
 
   /** the panel's size per orientation */
   private sizes: Record<'landscape' | 'portrait', [number, number]> = { landscape: [1024, 768], portrait: [768, 1024] };
@@ -133,6 +146,10 @@ export class Builder {
     const project = top[0];
     this.check(project);
     const p = project.props;
+    if (p.httpPort !== undefined && (!Number.isInteger(p.httpPort) || p.httpPort < 1 || p.httpPort > 65535)) {
+      throw this.err(project, 'httpPort: a number 1-65535');
+    }
+    this.httpPort = p.httpPort;
     this.joins = new JoinAllocator(p.joinBase ?? 1000);
     let [w, h] = [p.width, p.height];
     if (p.device !== undefined) {
@@ -179,16 +196,18 @@ export class Builder {
         case 'Page': this.page(c); break;
         case 'Subpage': this.defineSubpage(c, false); break;
         case 'System': this.system(c); break;
+        case 'HttpServer': this.httpServer(c); break;
         case 'Macro': this.macro(c); break;
         case 'Token': this.token(c); break;
         case 'Script': this.script(c); break;
         case 'Sound': this.sound(c); break;
         case 'Raw': this.trailing.push(this.raw(c)); break;
         case 'OnStart': this.onStart(c); break;
-        default: throw this.err(c, `<${c.type}> can't be directly in <Project> (it takes Page, Subpage, System, Macro, Token, Script, Sound, Theme, Raw)`);
+        default: throw this.err(c, `<${c.type}> can't be directly in <Project> (it takes Page, Subpage, System, HttpServer, Macro, Token, Script, Sound, Theme, Raw)`);
       }
     }
     if (!this.pages.length) throw new CompileError('the project has no <Page>');
+    this.assignPorts();
     // the look the panel showed last (IvaTheme sets it): kept between runs
     if (this.opts.themed) this.tokens.push(this.E('token', { name: '[iva_theme]', value: this.opts.start ?? '', persist: 1 }));
     const starts = this.pages.filter((pg) => pg.attrs.some(([k, v]) => k === 'start' && v === '1'));
@@ -240,7 +259,10 @@ export class Builder {
       ...[...this.subpages.values()].map((s) => s.node),
       ...this.trailing,
     ]);
-    return { root, assets: [...this.assets.values()], scripts: this.scripts, joins: this.joins.map(), warnings: this.warnings, assetDir: this.assetDir };
+    return {
+      root, assets: [...this.assets.values()], scripts: this.scripts, joins: this.joins.map(), warnings: this.warnings, assetDir: this.assetDir,
+      inputs: [...this.inputs], apps: this.appOptions,
+    };
   }
 
   // ── checks & helpers ─────────────────────────────────────────────
@@ -562,6 +584,7 @@ export class Builder {
     for (const n of nodes.flatMap((x) => this.textBox(x))) {
       if (n.type === 'Script') this.script(n);
       else if (n.type === 'System') this.system(n);
+      else if (n.type === 'HttpServer') this.httpServer(n);
       else if (n.type === 'OnStart') this.onStart(n);
       else if (n.type === 'Group') out.push(...this.items(this.elements(n), dx + (n.props.x ?? 0), dy + (n.props.y ?? 0), false));
       else if (n.type === 'Subpage' && n.props.define) this.defineSubpage(n, false);
@@ -678,6 +701,130 @@ export class Builder {
       throw this.err(node, `two different systems named "${p.name}"`);
     }
     this.systems.push(sys);
+  }
+
+  // ── the panel's own HTTP servers ────────────────────────────────
+
+  /** a server system: TCP, accepting connections, a feedback per request's head (what IvaHttp.serve watches) */
+  private serverSystem(node: VNode, name: string, port: number): XNode {
+    const feedback: VNode = { $$iva: 1, type: 'Feedback', props: { name: 'request', regex: '(?msi)^.*?\\r\\n\\r\\n' }, children: [], source: node.source };
+    // no offline queue: an answer for a page gone must not reach the next one
+    this.system({
+      $$iva: 1, type: 'System', source: node.source, children: [feedback],
+      props: { name, host: '0.0.0.0', port, localPort: port, protocol: 'tcp', accept: true, offlineQueue: false },
+    });
+    return this.systems.find((x) => x.attrs.find(([k]) => k === 'name')?.[1] === name)!;
+  }
+
+  private httpRuntime(node: VNode) {
+    this.script({ $$iva: 1, type: 'Script', props: { name: 'iva-http.js', code: HTTP_RUNTIME }, children: [], source: node.source });
+  }
+
+  private httpServer(node: VNode) {
+    const p = node.props;
+    if (!Number.isInteger(p.port) || p.port < 1 || p.port > 65535) throw this.err(node, `port: a number 1-65535`);
+    this.serverSystem(node, p.name, p.port);
+    this.httpRuntime(node);
+    this.onStart({ $$iva: 1, type: 'OnStart', props: { js: `IvaHttp.serve(${JSON.stringify(p.name)}, ${p.handler});` }, children: [], source: node.source });
+  }
+
+  /** A join as JavaScript: "d12", or Joins.d["name"] for a named one (iva-joins.js). */
+  private jsJoin(t: JoinSlot | string): string {
+    if (typeof t === 'string') return JSON.stringify(t);
+    if (typeof t.id === 'number') return JSON.stringify(`${t.type}${t.id}`);
+    this.joins.use(t, () => {});
+    return `Joins.${t.type}[${JSON.stringify(t.id)}]`;
+  }
+
+  /** The panel's web server (one port: web apps, the ColorPicker's swatch): its system and script, once. */
+  private webServer(node: VNode) {
+    if (this.web) return this.web;
+    this.httpRuntime(node);
+    this.web = { system: this.serverSystem(node, 'IvaWeb', 0), views: [] };
+    return this.web;
+  }
+
+  /** A web view on the web server, `path` on it (http://127.0.0.1:<port>/<path>, once the port is known). */
+  private webView(node: VNode, attrs: Attrs, path: string): XNode {
+    const web = this.webServer(node);
+    const view = this.E('web', { ...attrs, url: `http://127.0.0.1:0/${path}` });
+    web.views.push({ x: view, path });
+    return view;
+  }
+
+  /**
+   * <WebApp>: the module bundled into apps/iva_app_<name>.js (a project
+   * file), a web view on the panel's web server at /<name>/, and
+   * IvaHttp.app() at start. The same app placed again (on another page)
+   * shares it all.
+   */
+  private webApp(node: VNode, geom: Record<string, unknown>): XNode {
+    const p = node.props;
+    let file: string;
+    try {
+      file = resolveEntry(String(p.entry), this.dirOf(node));
+    } catch (e: any) {
+      throw this.err(node, e.message);
+    }
+    const name: string = p.name ?? path.basename(file).replace(/\.[^.]+$/, '');
+    if (!/^[A-Za-z][\w-]*$/.test(name) || name === 'iva-color') throw this.err(node, `name: letters, digits, _ and - (got "${name}")`);
+    let code: Buffer;
+    try {
+      const bundle = bundleWebApp(file);
+      code = bundle.code;
+      for (const f of bundle.inputs) this.inputs.add(f);
+    } catch (e: any) {
+      throw this.err(node, `entry ${p.entry}: ${e.message}`);
+    }
+    const asset = `apps/iva_app_${name}.js`;
+    const joins = Object.entries((p.joins ?? {}) as Record<string, unknown>).map(([k, j]) => {
+      const t = this.target(node, `joins.${k}`, j);
+      return `${JSON.stringify(k)}: ${this.jsJoin(t!)}`;
+    });
+    for (const [k, v] of Object.entries((p.handlers ?? {}) as Record<string, unknown>)) {
+      if (typeof v !== 'string') throw this.err(node, `handlers.${k}: a panel function's name`);
+    }
+    const options = p.options ?? {};
+    const setup = `IvaHttp.app(${JSON.stringify(name)}, { asset: ${JSON.stringify(asset)}, joins: { ${joins.join(', ')} }, ` +
+      `options: ${JSON.stringify(options)}, handlers: ${JSON.stringify(p.handlers ?? {})}, record: ${JSON.stringify(p.record ?? null)}, ` +
+      `bg: ${JSON.stringify(p.bg ?? '#000000')}, title: ${JSON.stringify(p.title ?? name)} });`;
+    const key = JSON.stringify([code.length, setup]);
+    const known = this.apps.get(name);
+    if (known !== undefined && known !== key) throw this.err(node, `two different web apps named "${name}" - give each its own name`);
+    if (known === undefined) {
+      const prev = this.assets.get(asset.toLowerCase());
+      if (prev && !(prev.data ?? Buffer.alloc(0)).equals(code)) throw this.err(node, `${asset}: two different files of that name`);
+      this.assets.set(asset.toLowerCase(), { name: asset, data: code });
+      this.apps.set(name, key);
+      this.appOptions[name] = { options, bg: p.bg ?? '#000000' };
+      this.onStart({ $$iva: 1, type: 'OnStart', props: { js: setup }, children: [], source: node.source });
+    }
+    return this.webView(node, { ...geom, j: 0, title: 0, back: 0, forward: 0, refresh: 0, stop: 0, tags: tagsAttr(p.tags) }, `${name}/`);
+  }
+
+  /**
+   * The web server's port: <Project httpPort>, else the first free one from
+   * 8900 (after every port a system names). Its views get their URLs; it
+   * starts first.
+   */
+  private assignPorts() {
+    if (!this.web) return;
+    const taken = new Set<number>();
+    for (const sys of this.systems) {
+      if (sys === this.web.system) continue;
+      for (const k of ['port', 'origin']) {
+        const v = Number(sys.attrs.find(([a]) => a === k)?.[1]);
+        if (v) taken.add(v);
+      }
+    }
+    let port = this.httpPort ?? 8900;
+    if (this.httpPort !== undefined && taken.has(port)) throw new CompileError(`<Project httpPort={${port}}>: a system uses that port already`);
+    while (taken.has(port)) port++;
+    for (const entry of this.web.system.attrs) if (entry[0] === 'port' || entry[0] === 'origin') entry[1] = String(port);
+    for (const { x, path: at } of this.web.views) {
+      for (const entry of x.attrs) if (entry[0] === 'url') entry[1] = `http://127.0.0.1:${port}/${at}`;
+    }
+    this.start.unshift(`IvaHttp.web("IvaWeb", ${port});`);
   }
 
   private command(node: VNode): XNode {
@@ -846,12 +993,17 @@ export class Builder {
           t: this.styleTheme(node, 'input', { always: true }),
           command: p.cmd, macro: p.macro, changeCommand: p.changeCmd, changeMacro: p.changeMacro, l: 0, tags: tagsAttr(p.tags),
         }, [], p.text === undefined ? undefined : String(p.text), node);
-      case 'Web':
-        return this.E('web', {
+      case 'WebApp': return this.webApp(node, geom);
+      case 'Web': {
+        const attrs: Attrs = {
           ...geom, j: this.join(node, 'join', 's'), title: this.join(node, 'titleJoin', 's'), back: this.join(node, 'backJoin', 'd'),
           forward: this.join(node, 'forwardJoin', 'd'), refresh: this.join(node, 'refreshJoin', 'd'), stop: this.join(node, 'stopJoin', 'd'),
-          url: p.url, tags: tagsAttr(p.tags),
-        });
+        };
+        // url="panel:/iva-color/000000": a page of the panel's own web server
+        const own = /^panel:\/*(.*)$/i.exec(String(p.url));
+        if (own) return this.webView(node, { ...attrs, tags: tagsAttr(p.tags) }, own[1]);
+        return this.E('web', { ...attrs, url: p.url, tags: tagsAttr(p.tags) });
+      }
       case 'Video': {
         const auth = p.auth ?? {};
         return this.E('video', {

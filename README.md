@@ -62,13 +62,19 @@ stats, toggles, sliders, steppers, segmented controls, scene bars, dimmers,
 blinds, dials and a thermostat, a colour picker, radio buttons, checkboxes,
 select boxes, text and search fields, time / date / number pickers, lists,
 week days, alarms, a PIN pad, a header with breadcrumbs and a clock, a side
-menu, dialogs, tables - in a theme, dark and light switched
+menu, dialogs, tables, trends and charts - in a theme, dark and light switched
 on the panel at runtime (`<Project themes={['dark', 'light']}>`)
 ([docs/ui.md](docs/ui.md)). Every one of them, with its variations:
 
 ```bash
 iva dev examples/gallery/app.jsx
 ```
+
+Charts and 3D are web apps the panel serves itself: `<WebApp entry="./web/house.js">`
+bundles your module (three.js, Chart.js, uPlot come with iva; `iva/web` talks
+to the panel's joins) and the panel's own web server - one port for every
+app - sends it to a web view ([docs/web.md](docs/web.md)); `<HttpServer>` is
+a server of your own, on its own port.
 
 ## `iva serve`: on a real device
 
@@ -136,6 +142,7 @@ src/runtime/host    ── invoke/listen ──────► /__iva/host (WebS
  (sockets, TLS, DNS, HTTP;                      HostSession: node:net, dgram,
   bridge/: the WebSocket)                       tls, dns, http(s)
                                                /__iva/manifest, /__iva/files/…
+                                               /__iva/loop/<port>/… (the panel's own servers)
 ```
 
 - **Runtime**: `src/runtime`, iva's own: the CF runtime (`cf/`: the .gui
@@ -149,7 +156,7 @@ src/runtime/host    ── invoke/listen ──────► /__iva/host (WebS
   certs OK), over one WebSocket (`src/runtime/host/bridge/`).
 - One backend session per page: a reload closes every socket it opened.
 
-Not in the backend yet: hosting HTTP / WebSocket servers, mDNS, device APIs.
+Not in the backend yet: WebSocket servers, mDNS, device APIs.
 
 ## Layout
 
@@ -169,7 +176,9 @@ test/                  node:test
 examples/hello/        a small JSX project
 docs/components.md     the elements, their props and what they become
 docs/ui.md             iva/ui: the components
+docs/web.md            web apps the panel serves (<WebApp>, <HttpServer>, iva/web)
 lib/ui/                iva/ui: the components and their panel script
+lib/web/               iva/web (a web app's side) and the built-in apps (trend, chart)
 examples/gallery/      every iva/ui component (and examples/elements: shapes, icons)
 fixtures/local/        small hand-written .gui projects
 fixtures/DemoUserInterfaces/   CommandFusion's demos (npm run fixtures; not committed)

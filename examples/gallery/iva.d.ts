@@ -315,6 +315,11 @@ declare module 'iva' {
       themes?: string[];
       /** the look it starts in (default: the first of `themes`) */
       theme?: string;
+      /**
+       * the port of the panel's own web server: every <WebApp> and the
+       * ColorPicker's swatch (default: the first free from 8900)
+       */
+      httpPort?: number;
       children?: Child;
   }
   export interface PageProps extends Pick<StyleProps, 'bg' | 'image' | 'theme'>, XmlProp {
@@ -465,7 +470,7 @@ declare module 'iva' {
       changeMacro?: string;
   }
   export interface WebProps extends Geom, XmlProp {
-      /** what it loads first: a URL, or a file of the project (`page.html`) */
+      /** what it loads first: a URL, a file of the project (`page.html`), or `panel:/path` (a page of the panel's own web server) */
       url: string;
       /** serial join: the URL (setting it loads it) */
       join?: Join;
@@ -476,6 +481,45 @@ declare module 'iva' {
       forwardJoin?: Join;
       refreshJoin?: Join;
       stopJoin?: Join;
+  }
+  /**
+   * A web page the panel serves itself: iva bundles `entry` (a JavaScript /
+   * TypeScript module, with the npm packages it imports - uplot, chart.js and
+   * three come with iva - and `iva/web` to talk to the panel) into one script
+   * shipped with the .gui; the panel's own web server (one TCP system for all
+   * of them, <Project httpPort>) sends it to the web view, at /<name>/.
+   */
+  export interface WebAppProps extends Geom, XmlProp {
+      /** the app's module ('./web/house.js'), or one iva brings ('iva:trend', 'iva:chart') */
+      entry: string;
+      /** names it: its path on the panel's web server (/<name>/) and its file in the build (default: from the entry's file name) */
+      name?: string;
+      /** joins the app sees and sets, by the names it uses: { kitchen: d('kitchenLight'), temp: a('temp') } */
+      joins?: Record<string, Join>;
+      /** settings for the app, as JSON (panel.options) */
+      options?: Record<string, unknown>;
+      /** panel functions it may call (panel.call(name, ...args)), by name: { history: 'plantHistory' } */
+      handlers?: Record<string, string>;
+      /** the panel keeps the joins' numbers every `every` seconds, the last `keep` (panel.history) */
+      record?: {
+          every?: number;
+          keep?: number;
+          names?: string[];
+      };
+      /** the page's colour until it draws (default black) */
+      bg?: string;
+      title?: string;
+      tags?: string | string[];
+  }
+  /**
+   * An HTTP server on the panel: a TCP system accepting connections on `port`
+   * and `handler(req, res)` (a panel function: its name, or a function as
+   * text) answering each request - see IvaHttp.serve.
+   */
+  export interface HttpServerProps {
+      name: string;
+      port: number;
+      handler: string;
   }
   export interface VideoProps extends Geom, XmlProp {
       url: string;
@@ -685,6 +729,8 @@ declare module 'iva' {
   export declare const Input: Component<InputProps>;
   export declare const Web: Component<WebProps>;
   export declare const Video: Component<VideoProps>;
+  export declare const WebApp: Component<WebAppProps>;
+  export declare const HttpServer: Component<HttpServerProps>;
   export declare const Gesture: Component<GestureProps>;
   export declare const System: Component<SystemProps>;
   export declare const Command: Component<CommandProps>;
@@ -1110,8 +1156,6 @@ declare module 'iva/ui' {
       swatches?: string[] | false;
       /** JavaScript run on each pick, with r, g, b (numbers) and hex */
       onChange?: string;
-      /** the port of the panel's own HTTP server that shows the swatch (a web view loads the colour from it) */
-      port?: number;
       /** what's behind it (the swatch's corners are drawn in it): default the card colour */
       bg?: string;
       x?: number;
@@ -1225,6 +1269,73 @@ declare module 'iva/ui' {
           invalid?: string;
           range?: string;
       };
+  }
+  export interface TrendCurve {
+      /** an analog join (0..65535 stands for `scale`), or a serial one with the number as text: s('supply') */
+      join: Join;
+      label: string;
+      color?: string;
+      scale?: [number, number];
+      decimals?: number;
+      unit?: string;
+      /** an axis of its own, on the right */
+      side?: 'left' | 'right';
+      width?: number;
+  }
+  export interface TrendProps {
+      curves: TrendCurve[];
+      title?: string;
+      /** the range buttons, in seconds (default 5 min, 15 min, 1 h) */
+      ranges?: number[];
+      /** the range shown first */
+      range?: number;
+      /** the left axis (default: to fit) and the right one */
+      min?: number;
+      max?: number;
+      rightMin?: number;
+      rightMax?: number;
+      /** the panel samples the joins every so many seconds (default 1) */
+      every?: number;
+      /** a panel function answering history(from, to) (ms) with { names, rows } - a database, say; default: what the panel recorded */
+      history?: string;
+      /** names its web app (default: from the curves) */
+      name?: string;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  export interface ChartDataset {
+      label?: string;
+      data?: number[];
+      /** a join per label, live: analog (0..65535 stands for `scale`) or serial with a number */
+      joins?: Join[];
+      scale?: [number, number];
+      color?: string;
+      /** a colour per value (pie, doughnut) */
+      colors?: string[];
+      fill?: boolean;
+  }
+  export interface ChartProps {
+      type?: 'bar' | 'line' | 'doughnut' | 'pie' | 'radar' | 'polarArea';
+      labels?: string[];
+      datasets?: ChartDataset[];
+      /** serial join: the data as JSON - { labels, datasets: [{ data }] } or [numbers] - redrawn when it changes */
+      source?: Join;
+      /** bars across */
+      horizontal?: boolean;
+      stacked?: boolean;
+      min?: number;
+      max?: number;
+      unit?: string;
+      legend?: boolean;
+      title?: string;
+      /** names its web app (default: from what it shows) */
+      name?: string;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
   }
   /** A row tone (DataTable, AlarmTable): a tint behind the row, and its badge. */
   export type RowTone = 'alarm' | 'warning' | 'ok' | 'muted' | 'running' | 'heating' | 'cooling' | 'offline' | 'alarmAck' | 'warningAck';
@@ -1450,6 +1561,8 @@ declare module 'iva/ui' {
       DatePicker: (p: DatePickerProps) => VNode;
       NumberField: (p: NumberFieldProps) => VNode;
       DataTable: (p: DataTableProps) => VNode;
+      Trend: (p: TrendProps) => VNode;
+      Chart: (p: ChartProps) => VNode;
       AlarmTable: (p: AlarmTableProps) => VNode;
       AlarmBanner: (p: AlarmBannerProps) => VNode;
       Breadcrumbs: (p: BreadcrumbsProps) => VNode;
@@ -1508,6 +1621,8 @@ declare module 'iva/ui' {
   export declare const DatePicker: Ui['DatePicker'];
   export declare const NumberField: Ui['NumberField'];
   export declare const DataTable: Ui['DataTable'];
+  export declare const Trend: Ui['Trend'];
+  export declare const Chart: Ui['Chart'];
   export declare const AlarmTable: Ui['AlarmTable'];
   export declare const AlarmBanner: Ui['AlarmBanner'];
   export declare const Breadcrumbs: Ui['Breadcrumbs'];
@@ -1534,6 +1649,8 @@ declare const Gauge: typeof import('iva').Gauge;
 declare const List: typeof import('iva').List;
 declare const Input: typeof import('iva').Input;
 declare const Web: typeof import('iva').Web;
+declare const WebApp: typeof import('iva').WebApp;
+declare const HttpServer: typeof import('iva').HttpServer;
 declare const Video: typeof import('iva').Video;
 declare const Gesture: typeof import('iva').Gesture;
 declare const System: typeof import('iva').System;

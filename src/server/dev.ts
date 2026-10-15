@@ -146,6 +146,7 @@ export async function startDev(opts: DevOptions) {
         if (manifest.missingScripts.length) log(`${gui}: missing scripts ${manifest.missingScripts.join(', ')}`);
         return send(res, 200, JSON.stringify(manifest), 'application/json');
       }
+      if (url.pathname.startsWith('/__iva/loop/')) return loop(req, res, url);
       if (url.pathname.startsWith('/__iva/files/')) {
         const rel = decodeURIComponent(url.pathname.slice('/__iva/files/'.length));
         const file = source.file(rel);
@@ -160,8 +161,38 @@ export async function startDev(opts: DevOptions) {
     vite.middlewares(req, res);
   });
 
+  /**
+   * A web view's http://127.0.0.1:<port>/ is the panel itself (a server the
+   * GUI runs): the preview loads it through here, from wherever it's opened.
+   * Only ports a preview page listens on.
+   */
+  function loop(req: http.IncomingMessage, res: http.ServerResponse, url: URL) {
+    const m = /^\/__iva\/loop\/(\d+)(\/.*)?$/.exec(url.pathname);
+    const port = Number(m?.[1]);
+    if (!m || ![...sessions].some((s) => s.listening(port))) return send(res, 404, `no server of the panel's on port ${m?.[1] ?? '?'}`);
+    let answer: http.IncomingMessage | null = null;
+    const upstream = http.request({
+      host: '127.0.0.1', port, method: req.method, path: (m[2] ?? '/') + url.search, agent: false,
+      headers: { ...req.headers, host: `127.0.0.1:${port}`, connection: 'close' },
+    }, (a) => {
+      answer = a;
+      res.writeHead(a.statusCode ?? 502, a.headers);
+      a.pipe(res);
+    });
+    upstream.on('error', (e) => {
+      // bytes after a whole answer: another client's (iViewer sends a server's answers to every client) - a browser ignores them
+      if (answer?.complete) return;
+      if (res.headersSent) res.destroy();
+      else send(res, 502, e.message);
+    });
+    // the page gave up (an aborted request): so does the panel's client
+    res.on('close', () => upstream.destroy());
+    req.pipe(upstream);
+  }
+
   // ── the backend: one HostSession per preview page ──
   const pages = new Set<WebSocket>();
+  const sessions = new Set<HostSession>();
   const wss = new WebSocketServer({ noServer: true });
   httpServer.on('upgrade', (req, socket, head) => {
     if (new URL(req.url ?? '/', 'http://x').pathname !== '/__iva/host') return; // Vite's HMR socket
@@ -172,6 +203,7 @@ export async function startDev(opts: DevOptions) {
     const session = new HostSession((name, payload) => {
       if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ t: 'event', name, payload }));
     }, debug);
+    sessions.add(session);
     ws.on('message', async (raw) => {
       let msg: any;
       try {
@@ -190,6 +222,7 @@ export async function startDev(opts: DevOptions) {
     });
     ws.on('close', () => {
       pages.delete(ws);
+      sessions.delete(session);
       session.dispose();
     });
   });

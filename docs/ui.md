@@ -79,6 +79,8 @@ it as a value in min..max.
 | `SideMenu` | a menu over the page, marking the page shown | `title`, `subtitle`, `items: [{ icon, text, page }]`, `menu`, `slide` |
 | `ConfirmDialog` | a dialog over a dimmed page | `join`, `title`, `message`, `confirmText`, `cancelText`, `danger`, `onConfirm` |
 | `DataTable` | a table: a search field, header taps sort (up, down, off), striped rows in tones, badge columns, a tap selects a row; "9 rows" / "2 of 9 rows" | `columns: [{ key, title, w, align, decimals, badge }]`, `data` or `source` (serial join: a JSON array), `keyField` + `selected` (serial join, both ways), `toneKey` (the field naming the tone: `alarm`·`warning`·`ok`·`running`·`muted`·`heating`·`cooling`·`offline`), `onSelect` (JS with `row`), `search`, `placeholder`, `words` |
+| `Trend` | curves of joins over time (uPlot, in a web view the panel serves): range buttons, ‹ › through the past, Live; a touch reads the values; the panel records the joins | `curves: [{ join, label, color, scale, unit, decimals, side, width }]` (analog: 0..65535 as `scale`; serial: a number as text), `ranges` (seconds), `range`, `min` / `max`, `rightMin` / `rightMax`, `every` (seconds per sample), `history` (a panel function for older data: a database) |
+| `Chart` | a Chart.js chart (in a web view the panel serves): bar, line, doughnut, pie, radar, polarArea | `type`, `labels`, `datasets: [{ label, data, joins (live, one per label), scale, color, colors }]`, `source` (serial join: JSON `{ labels, datasets }` or `[numbers]`), `horizontal`, `stacked`, `min` / `max`, `unit`, `legend`, `title` |
 | `AlarmTable` | an alarm list: new alarms red / amber, acked ones dimmed, cleared grey; All / Active / Unacked, Ack (the selected row), Ack all, the counts. A cleared alarm goes away once acked | `name`, `conditions: [{ id, text, source, severity, join, above / below / equals }]` (checked on the panel), `source` (serial join: a JSON array of `{ id, text, source, severity, active, acked }`), `summary`; from scripts: `IvaAlarms.raise / clear / ack / ackAll(name, …)` |
 | `AlarmBanner` | the newest unacknowledged alarm (alarms before warnings) and "+N more", blinking while any is unacknowledged; then the active ones, steady; else "No alarms" | `alarms` (the AlarmTable's name), `page` / `js` (a tap) |
 | `Breadcrumbs` | Home › Floor 1 › Kitchen: all but the last are links | `items: (string \| { label, page, js })[]`, `back` (‹ to the previous page), `separator`, `fontSize` |
@@ -104,9 +106,13 @@ small images (× 2 for retina) - fewer `steps` for lighter projects.
 The ColorPicker's swatch: iViewer can't colour anything from a script, so
 (as CommandFusion's ColorPicker2 demo does) it's a web view loading a page
 of that colour from the panel itself - the picker brings a TCP system
-accepting connections on `port` (default 8890) and answers
-`GET /iva-color/RRGGBB`. Two pickers share it. Pick a free port when the
-project has an HTTP server of its own.
+the panel's web server answers `GET /iva-color/RRGGBB` (one server, one
+port, for every picker and web app - `<Project httpPort>`): its page knows
+the colour from its own URL, so pickers loading at once can't show each
+other's.
+
+Trend and Chart are web apps (`<WebApp>`, [web.md](web.md)): the panel
+serves the page from a server of its own, the chart library inline.
 
 Pickers open as a sheet in the middle of the panel (`mode="sheet"`,
 dimmed behind) or a dropdown under the field (`mode="dropdown"`); a tap

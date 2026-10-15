@@ -261,6 +261,11 @@ export interface ProjectProps extends XmlProp {
   themes?: string[];
   /** the look it starts in (default: the first of `themes`) */
   theme?: string;
+  /**
+   * the port of the panel's own web server: every <WebApp> and the
+   * ColorPicker's swatch (default: the first free from 8900)
+   */
+  httpPort?: number;
   children?: Child;
 }
 export interface PageProps extends Pick<StyleProps, 'bg' | 'image' | 'theme'>, XmlProp {
@@ -411,7 +416,7 @@ export interface InputProps extends Geom, StyleProps, XmlProp {
   changeMacro?: string;
 }
 export interface WebProps extends Geom, XmlProp {
-  /** what it loads first: a URL, or a file of the project (`page.html`) */
+  /** what it loads first: a URL, a file of the project (`page.html`), or `panel:/path` (a page of the panel's own web server) */
   url: string;
   /** serial join: the URL (setting it loads it) */
   join?: Join;
@@ -422,6 +427,41 @@ export interface WebProps extends Geom, XmlProp {
   forwardJoin?: Join;
   refreshJoin?: Join;
   stopJoin?: Join;
+}
+/**
+ * A web page the panel serves itself: iva bundles `entry` (a JavaScript /
+ * TypeScript module, with the npm packages it imports - uplot, chart.js and
+ * three come with iva - and `iva/web` to talk to the panel) into one script
+ * shipped with the .gui; the panel's own web server (one TCP system for all
+ * of them, <Project httpPort>) sends it to the web view, at /<name>/.
+ */
+export interface WebAppProps extends Geom, XmlProp {
+  /** the app's module ('./web/house.js'), or one iva brings ('iva:trend', 'iva:chart') */
+  entry: string;
+  /** names it: its path on the panel's web server (/<name>/) and its file in the build (default: from the entry's file name) */
+  name?: string;
+  /** joins the app sees and sets, by the names it uses: { kitchen: d('kitchenLight'), temp: a('temp') } */
+  joins?: Record<string, Join>;
+  /** settings for the app, as JSON (panel.options) */
+  options?: Record<string, unknown>;
+  /** panel functions it may call (panel.call(name, ...args)), by name: { history: 'plantHistory' } */
+  handlers?: Record<string, string>;
+  /** the panel keeps the joins' numbers every `every` seconds, the last `keep` (panel.history) */
+  record?: { every?: number; keep?: number; names?: string[] };
+  /** the page's colour until it draws (default black) */
+  bg?: string;
+  title?: string;
+  tags?: string | string[];
+}
+/**
+ * An HTTP server on the panel: a TCP system accepting connections on `port`
+ * and `handler(req, res)` (a panel function: its name, or a function as
+ * text) answering each request - see IvaHttp.serve.
+ */
+export interface HttpServerProps {
+  name: string;
+  port: number;
+  handler: string;
 }
 export interface VideoProps extends Geom, XmlProp {
   url: string;
@@ -619,6 +659,8 @@ export const List: Component<ListProps> = intrinsic<ListProps>('List');
 export const Input: Component<InputProps> = intrinsic<InputProps>('Input');
 export const Web: Component<WebProps> = intrinsic<WebProps>('Web');
 export const Video: Component<VideoProps> = intrinsic<VideoProps>('Video');
+export const WebApp: Component<WebAppProps> = intrinsic<WebAppProps>('WebApp');
+export const HttpServer: Component<HttpServerProps> = intrinsic<HttpServerProps>('HttpServer');
 export const Gesture: Component<GestureProps> = intrinsic<GestureProps>('Gesture');
 export const System: Component<SystemProps> = intrinsic<SystemProps>('System');
 export const Command: Component<CommandProps> = intrinsic<CommandProps>('Command');
@@ -637,7 +679,7 @@ const PLACEMENT = ['x', 'y', 'join', 'visible', 'in', 'out', 'topmost', 'fixed',
 /** The props each element takes (children aside).
  * @internal */
 export const PROPS: Record<string, string[]> = {
-  Project: ['name', 'device', 'orientation', 'width', 'height', 'otherSize', 'autoposition', 'joinBase', 'assets', 'properties', 'themes', 'theme'],
+  Project: ['name', 'device', 'orientation', 'width', 'height', 'otherSize', 'autoposition', 'joinBase', 'assets', 'properties', 'themes', 'theme', 'httpPort'],
   Page: ['name', 'start', 'bg', 'image', 'theme', 'tags'],
   Landscape: ['bg', 'image', 'theme'],
   Portrait: ['bg', 'image', 'theme'],
@@ -654,6 +696,8 @@ export const PROPS: Record<string, string[]> = {
   Input: [...GEOM, 'tags', 'join', 'text', 'password', 'autoFocus', 'cmd', 'macro', 'changeCmd', 'changeMacro', ...STYLE],
   Web: [...GEOM, 'tags', 'url', 'join', 'titleJoin', 'backJoin', 'forwardJoin', 'refreshJoin', 'stopJoin'],
   Video: [...GEOM, 'tags', 'url', 'join', 'playJoin', 'stopJoin', 'format', 'autoplay', 'controls', 'bg', 'cache', 'auth'],
+  WebApp: [...GEOM, 'tags', 'entry', 'name', 'joins', 'options', 'handlers', 'record', 'bg', 'title'],
+  HttpServer: ['name', 'port', 'handler'],
   Gesture: ['type', 'name', 'touches', 'taps', 'direction', 'onBegin', 'onChange', 'onEnd'],
   System: ['name', 'host', 'port', 'protocol', 'localPort', 'accept', 'acceptBroadcasts', 'eom', 'mode', 'idleTimeout', 'dialogTimeout', 'offlineQueue',
     'connectJoin', 'disconnectJoin', 'heartbeat', 'ssl', 'textEncoding', 'sendHandler', 'startupCmd', 'startupMacro', 'maxConnections'],
@@ -672,7 +716,7 @@ export const PROPS: Record<string, string[]> = {
   Group: ['x', 'y'],
   OnStart: ['js', 'joins'],
 };
-for (const [name, props] of Object.entries(PROPS)) if (!['Raw', 'Group', 'OnStart'].includes(name)) props.push('xml');
+for (const [name, props] of Object.entries(PROPS)) if (!['Raw', 'Group', 'OnStart', 'HttpServer'].includes(name)) props.push('xml');
 
 /** Required props (a missing one is an error).
  * @internal */
@@ -683,6 +727,7 @@ export const REQUIRED: Record<string, string[]> = {
   SubpageRef: ['name'],
   Button: ['w', 'h'], Text: ['w', 'h'], Image: ['w', 'h'], Slider: ['w', 'h'], Gauge: ['w', 'h'],
   List: ['w', 'h'], Input: ['w', 'h'], Web: ['w', 'h', 'url'], Video: ['w', 'h', 'url'],
+  WebApp: ['w', 'h', 'entry'], HttpServer: ['name', 'port', 'handler'],
   Gesture: ['type'],
   System: ['name', 'host', 'port'],
   Command: ['name'],
