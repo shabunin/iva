@@ -17,6 +17,8 @@ import { guiUrl, loadManifest } from './loader';
 /** localStorage: the GUI's URL; sessionStorage: the page CF.loadGUI asked for */
 const GUI = 'iva-panel:gui';
 const PAGE = 'iva-panel:page';
+/** localStorage: iViewer's "Disconnect on Exit/Sleep" ('0': off), as CF.loadGUI last set it */
+const DISCONNECT = 'iva-panel:disconnectOnSuspend';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const stage = $<HTMLDivElement>('stage');
@@ -99,6 +101,7 @@ document.addEventListener('focusout', () => setTimeout(turned, 300));
 function loadGui(from: string, url: string, settings: Record<string, unknown>) {
   localStorage.setItem(GUI, url ? new URL(guiUrl(url), from).href : from);
   if (typeof settings.startPage === 'string' && settings.startPage) sessionStorage.setItem(PAGE, settings.startPage);
+  if (typeof settings.disconnectOnSuspend === 'boolean') localStorage.setItem(DISCONNECT, settings.disconnectOnSuspend ? '1' : '0');
   location.reload();
 }
 
@@ -127,6 +130,7 @@ async function start() {
       orientation,
       // not the preview's toolbar: its keys (H: the hand, Ctrl+R...) would take a hardware keyboard's
       menu: false,
+      disconnectOnSuspend: localStorage.getItem(DISCONNECT) !== '0',
       onOrientationChange: (o) => {
         orientation = o;
         fit();

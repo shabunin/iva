@@ -5,6 +5,7 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
+import android.webkit.WebView
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.WindowCompat
@@ -14,8 +15,26 @@ import androidx.core.view.WindowInsetsControllerCompat
 class MainActivity : TauriActivity() {
   private var multicastLock: WifiManager.MulticastLock? = null
 
+  private var webView: WebView? = null
+
   // Back: not the web view's history (the panel has none)
   override val handleBackNavigation: Boolean = false
+
+  override fun onWebViewCreate(webView: WebView) {
+    this.webView = webView
+  }
+
+  // In the background the GUI sleeps, as iViewer's does: the page learns it's hidden (GUISuspended
+  // - its systems disconnect, its page timers stop), then its scripts' timers stop too.
+  override fun onPause() {
+    super.onPause()
+    webView?.pauseTimers()
+  }
+
+  override fun onResume() {
+    super.onResume()
+    webView?.resumeTimers()
+  }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
