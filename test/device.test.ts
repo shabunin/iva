@@ -52,6 +52,8 @@ test('live: the served .gui reloads itself after a change', async () => {
     assert.equal((await get(s.port, '/images/iva-live.js')).body, script);
     assert.match(script, new RegExp(`var base = "http://127\\.0\\.0\\.1:${s.port}"`));
     assert.match(script, /CF\.loadGUI\(base \+ "\/", \{ reloadGUI: true, reloadAssets: true, reloadAllAssets: true \}\)/);
+    // its systems switched off before (iViewer keeps a GUI's sockets past a reload: a server would hold its port)
+    assert.match(script, /var systems = \["Echo"\];[\s\S]*CF\.setSystemProperties\(n, \{ enabled: false \}\)[\s\S]*CF\.loadGUI/);
     const version = /var version = "([^"]+)"/.exec(script)![1];
     // a device waiting for the next build gets it as soon as the file changes
     const waiting = get(s.port, `/__iva/wait?v=${version}`);
@@ -60,6 +62,46 @@ test('live: the served .gui reloads itself after a change', async () => {
     const next = await waiting;
     assert.equal(next.status, 200);
     assert.notEqual(next.body, version);
+  } finally {
+    await s.close();
+  }
+});
+
+test('live: the panel\'s log in the console - CF.log, what its servers get and send, whether they answer', async () => {
+  const lines: string[] = [];
+  const s = await startDeviceServer({
+    target: path.resolve(import.meta.dirname, '../examples/gallery/app.jsx'), port: 0, host: '127.0.0.1', live: true, log: (m) => lines.push(m),
+  });
+  try {
+    const script = (await get(s.port, '/iva-live.js')).body;
+    assert.doesNotThrow(() => new Function(script));
+    // the gallery's web server, found in the .gui: probed and watched
+    assert.match(script, /var servers = \[\{"name":"IvaWeb","port":8900,"feedback":\["request"\]\}\];/);
+    // a fake panel runs it: what it logs and its servers do reaches the console
+    const sent: string[] = [];
+    const watchers: { event: string; cb: (...a: any[]) => void }[] = [];
+    const CF: any = {
+      ConnectionStatusChangeEvent: 'conn', FeedbackMatchedEvent: 'fb', version: '5.0.7', modules: [],
+      log: () => {}, send: () => {}, loadGUI: () => {},
+      watch: (event: string, ...a: any[]) => watchers.push({ event, cb: a[a.length - 1] === true ? a[a.length - 2] : a[a.length - 1] }),
+      request: (url: string, cb: (...a: any[]) => void) => {
+        sent.push(url);
+        if (url.includes('/__iva/log')) get(s.port, url.replace(/^http:\/\/[^/]+/, '')).then(() => cb(200, {}, 'ok'));
+      },
+    };
+    new Function('CF', 'setTimeout', script)(CF, () => 0);
+    // iViewer runs the modules' setup when the scripts start: the servers are probed after
+    for (const m of CF.modules) m.setup();
+    CF.log('hello from the panel');
+    watchers.find((w) => w.event === 'fb')!.cb('request', 'GET /iva-color/000000 HTTP/1.1\r\nHost: x\r\n\r\n');
+    CF.send('IvaWeb', 'HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
+    for (let i = 0; i < 50 && !lines.some((l) => /IvaWeb sends/.test(l)); i++) await new Promise((r) => setTimeout(r, 20));
+    const panel = lines.filter((l) => l.startsWith('panel '));
+    assert.ok(panel.some((l) => /started: iViewer 5\.0\.7, 1 server/.test(l)), panel.join('\n'));
+    assert.ok(panel.some((l) => /hello from the panel/.test(l)));
+    assert.ok(panel.some((l) => /scripts started/.test(l)));
+    assert.ok(panel.some((l) => /IvaWeb got GET \/iva-color\/000000 HTTP\/1\.1/.test(l)));
+    assert.ok(panel.some((l) => /IvaWeb sends HTTP\/1\.1 200 OK/.test(l)));
   } finally {
     await s.close();
   }

@@ -119,10 +119,21 @@ ZeroTier network.
 
 Saving rebuilds the project, and the panel on the device reloads itself: the
 served .gui carries one extra script (`iva-live.js`, only while served by
-iva) that waits for the next build and calls `CF.loadGUI`. A `.gui` is
-re-read when it changes, so a project saved from GUI Designer reloads too.
-`--no-live` serves it untouched. Every request is logged, unknown ones in
-full (iViewer's cache-complete and debugger callbacks aren't documented).
+iva) that waits for the next build, switches the panel's systems off (iViewer
+keeps a GUI's sockets past a reload: a server would hold its port from the
+next one) and calls `CF.loadGUI`. A `.gui` is re-read when it changes, so a
+project saved from GUI Designer reloads too. `--no-live` serves it untouched.
+Every request is logged, unknown ones in full (iViewer's cache-complete and
+debugger callbacks aren't documented).
+
+The same script brings the panel's log to the console - `CF.log`, script
+errors, what the panel's servers get and send, whether they answer - no
+remote debugger needed:
+
+```
+[iva] panel 10.0.0.7: Javascript starting up. iViewer version: 5.0.7
+[iva] panel 10.0.0.7: IvaWeb on 127.0.0.1:8900 (5 s after start): 200 after 40 ms
+```
 
 ## `iva decompile`
 

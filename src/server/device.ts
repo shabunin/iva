@@ -80,17 +80,110 @@ function withLiveScript(xml: string): string {
   return xml.replace(/(\r?\n?\s*)<(page|subpage)\b/, `$1<scripts>${tag}</scripts>$1<$2`);
 }
 
-/** Runs on the device: waits for a build newer than its own, then reloads the panel. */
-function liveScript(base: string, version: string): string {
-  return `// iva serve: reloads this panel when the project is rebuilt (only while served by iva).
+/** A TCP system of the .gui accepting connections (a server on the panel): its name, port, feedback. */
+interface PanelServer {
+  name: string;
+  port: number;
+  feedback: string[];
+}
+
+/** Every system of the .gui, by name. */
+export function systemNames(xml: string): string[] {
+  return [...xml.matchAll(/<system\s[^>]*?\bname="([^"]*)"/g)].map((m) => m[1]);
+}
+
+/** The panel's servers: systems that accept connections (an <HttpServer>, the web server of web apps). */
+export function panelServers(xml: string): PanelServer[] {
+  const out: PanelServer[] = [];
+  for (const m of xml.matchAll(/<system\s([^>]*?)(\/>|>([\s\S]*?)<\/system>)/g)) {
+    const at = (k: string) => new RegExp(`\\s${k}="([^"]*)"`).exec(` ${m[1]}`)?.[1];
+    if (at('accept') !== '1' || (at('protocol') ?? 'tcp') !== 'tcp') continue;
+    const feedback = [...(m[3] ?? '').matchAll(/<fb\s[^>]*name="([^"]*)"/g)].map((f) => f[1]);
+    out.push({ name: at('name') ?? '', port: Number(at('origin')) || Number(at('port')) || 0, feedback });
+  }
+  return out;
+}
+
+/**
+ * Runs on the device: waits for a build newer than its own, then reloads the
+ * panel - its systems switched off first: iViewer keeps a GUI's sockets past
+ * a reload, and a server left listening holds its port from the next GUI's.
+ * Meanwhile the panel's log (CF.log, errors) goes to iva serve's console too,
+ * and the panel's servers say whether they're up: a request to each from the
+ * panel (CF.request), what reaches it, what it sends.
+ */
+function liveScript(base: string, version: string, servers: PanelServer[], systems: string[]): string {
+  return `// iva serve: reloads this panel when the project is rebuilt; its log in iva serve's console (only while served by iva).
 (function () {
   var base = ${JSON.stringify(base)};
   var version = ${JSON.stringify(version)};
+  var servers = ${JSON.stringify(servers)};
+  var systems = ${JSON.stringify(systems)};
+  // the log, a batch at a time
+  var queue = [], sending = false;
+  function flush() {
+    if (sending || !queue.length) return;
+    sending = true;
+    var text = queue.splice(0, 20).join("\\n");
+    CF.request(base + "/__iva/log?m=" + encodeURIComponent(text.slice(0, 1500)), function () {
+      sending = false;
+      flush();
+    });
+  }
+  function out(m) {
+    try {
+      queue.push(String(m));
+      flush();
+    } catch (e) {}
+  }
+  var log = CF.log;
+  CF.log = function (m) {
+    out(m);
+    return log.apply(CF, arguments);
+  };
+  if (typeof window !== "undefined" && window.addEventListener) {
+    window.addEventListener("error", function (e) { out("error: " + e.message + (e.filename ? " (" + e.filename + ":" + e.lineno + ")" : "")); });
+  }
+  var named = {};
+  for (var i = 0; i < servers.length; i++) named[servers[i].name] = servers[i];
+  var send = CF.send;
+  CF.send = function (system, data) {
+    if (named[system]) out(system + " sends " + String(data).split("\\r\\n")[0] + " (" + String(data).length + " B)");
+    return send.apply(CF, arguments);
+  };
+  out("started: iViewer " + (CF.version || "?") + ", " + servers.length + " server(s)");
+  servers.forEach(function (s) {
+    CF.watch(CF.ConnectionStatusChangeEvent, s.name, function (system, connected, remote) {
+      out(s.name + ": " + (connected ? "connected" : "not connected") + (remote ? " (" + remote + ")" : ""));
+    }, true);
+    s.feedback.forEach(function (fb) {
+      CF.watch(CF.FeedbackMatchedEvent, s.name, fb, function (f, data) { out(s.name + " got " + String(data).split("\\r\\n")[0]); });
+    });
+  });
+  // each server asked from the panel itself, once the scripts have started (iViewer connects its systems then)
+  function probe(when) {
+    servers.forEach(function (s) {
+      var t0 = Date.now();
+      CF.request("http://127.0.0.1:" + s.port + "/iva-color/000000", function (status, headers, body) {
+        out(s.name + " on 127.0.0.1:" + s.port + " (" + when + "): " + status + " after " + (Date.now() - t0) + " ms" + (body ? ", " + String(body).length + " B: " + String(body).slice(0, 80) : ""));
+      });
+    });
+  }
+  CF.modules.push({ name: "iva-live", setup: function () {
+    out("scripts started");
+    if (!servers.length) return;
+    setTimeout(function () { probe("5 s after start"); }, 5000);
+    setTimeout(function () { probe("30 s after start"); }, 30000);
+  } });
   function wait() {
     CF.request(base + "/__iva/wait?v=" + encodeURIComponent(version), function (status, headers, body) {
       if (status == 200 && body && body != version) {
         CF.log("iva: new build - reloading");
-        CF.loadGUI(base + "/", { reloadGUI: true, reloadAssets: true, reloadAllAssets: true });
+        // its systems let go of their sockets (a server its port), then the next build
+        systems.forEach(function (n) { CF.setSystemProperties(n, { enabled: false }); });
+        setTimeout(function () {
+          CF.loadGUI(base + "/", { reloadGUI: true, reloadAssets: true, reloadAllAssets: true });
+        }, systems.length ? 500 : 0);
         return;
       }
       setTimeout(wait, status == 200 ? 100 : 3000);
@@ -197,6 +290,12 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
       return;
     }
     if (url.pathname === '/__iva/version') return send(200, s.version, 'text/plain');
+    // the panel's log (the live script sends it)
+    if (url.pathname === '/__iva/log') {
+      const who = req.socket.remoteAddress?.replace(/^::ffff:/, '');
+      for (const line of (url.searchParams.get('m') ?? '').split('\n')) log(`panel ${who}: ${line}`);
+      return send(200, 'ok', 'text/plain');
+    }
 
     const name = decodeURIComponent(url.pathname.slice(1));
     if (name === '' || name.toLowerCase() === s.name.toLowerCase() || (name.toLowerCase().endsWith('.gui') && !s.files.has(name.toLowerCase()))) {
@@ -205,7 +304,8 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
     // the live script: in the image folder, as iViewer looks for scripts (images/iva-live.js)
     if (opts.live && name.toLowerCase().split('/').pop() === LIVE_SCRIPT) {
       const host = req.headers.host ?? `${lanAddresses()[0]?.address ?? '127.0.0.1'}:${opts.port}`;
-      return send(200, liveScript(`http://${host}`, s.version), TYPES['.js']);
+      const xml = s.gui.toString('utf8');
+      return send(200, liveScript(`http://${host}`, s.version, panelServers(xml), systemNames(xml)), TYPES['.js']);
     }
     // only what the map has: a path is a key, never a file system path
     const f = s.files.get(name.toLowerCase());
