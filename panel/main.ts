@@ -121,6 +121,7 @@ async function start() {
       scriptMap: m.scriptMap,
       canvas,
       fileUrl: m.fileUrl,
+      guiUrl: m.url,
       loadGui: (next, settings) => loadGui(m.url, next, settings),
       startPage,
       orientation,

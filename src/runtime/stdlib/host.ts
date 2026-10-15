@@ -54,12 +54,32 @@ export interface TlsHost {
 }
 
 /** What the runtime gets from the platform: sockets, and HTTP / DNS / TLS when the host has them. */
+/** The device the GUI runs on, as iViewer gives it to scripts (CF.device, CF.ipv4address ...). */
+export interface HostDeviceInfo {
+  platform: string;
+  version: string;
+  model: string;
+  name: string;
+  /** an ID of this device (made once, kept) */
+  uuid: string;
+  ipv4address: string;
+  ipv4netmask: string;
+  ipv6address: string;
+  ipv6netmask: string;
+  MACaddress: string;
+  /** None, WiFi, WAN, VPN (as iViewer) */
+  networkType: string;
+  networkSSID: string;
+}
+
 export interface AgapiHost {
   name: string;
   net: NetHost;
   http?: HttpHost;
   dns?: DnsHost;
   tls?: TlsHost;
+  /** the device and its network now */
+  device?: () => Promise<HostDeviceInfo>;
 }
 
 /** Runtime slot set by installHost(). */

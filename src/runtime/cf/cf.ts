@@ -3,6 +3,7 @@ import { CFRenderer } from "./renderer";
 import { CFCallback, CFContext, Watcher } from "./jsapi/types";
 import { EVENTS, CONSTANTS } from "./jsapi/constants";
 import * as guiApi from "./jsapi/gui";
+import { getHost } from "../stdlib/host";
 import * as listsApi from "./jsapi/lists";
 import * as displayApi from "./jsapi/display";
 import * as soundApi from "./jsapi/sound";
@@ -145,6 +146,9 @@ export class CFAPI implements CFContext {
 
     modules: any[] = [];
 
+    /** the runtime the GUI runs on: iva's (not iViewer's - a GUI's workarounds for iViewer can tell) */
+    runtime = 'iva';
+
     // VARIABLES
     currentPage = 'CURRENT_PAGE';
     currentOrientation = CONSTANTS.LandscapeOrientation;
@@ -167,8 +171,65 @@ export class CFAPI implements CFContext {
         return `cf-token:${raw?.children?.find((c) => c.type === 'project')?.text ?? ''}:${name}`;
     }
 
+    /** the network as NetworkStatusChangeEvent hands it to scripts */
+    networkStatus() {
+        return {
+            hasNetwork: !!this.ipv4address && this.networkType !== 'None',
+            ipv4address: this.ipv4address,
+            ipv4netmask: this.ipv4netmask,
+            ipv6address: this.ipv6address,
+            ipv6netmask: this.ipv6netmask,
+            networkType: this.networkType,
+        };
+    }
+
+    /**
+     * CF.device and the network variables from the host - the device's own;
+     * the placeholders stay where it has none (or doesn't answer in 2 s).
+     */
+    async loadDevice(): Promise<void> {
+        const host = getHost();
+        if (!host?.device) return;
+        try {
+            const d = await Promise.race([host.device(), new Promise<null>((r) => setTimeout(() => r(null), 2000))]);
+            if (!d) return;
+            Object.assign(this.device, { platform: d.platform, version: d.version, model: d.model, name: d.name, uuid: d.uuid, uniqueIdentifier: d.uuid });
+            this.ipv4address = d.ipv4address;
+            this.ipv4netmask = d.ipv4netmask;
+            this.ipv6address = d.ipv6address;
+            this.ipv6netmask = d.ipv6netmask;
+            this.MACaddress = d.MACaddress;
+            this.networkType = d.networkType;
+            this.networkSSID = d.networkSSID;
+        } catch (e) {
+            console.warn('[CF] the device info:', e);
+        }
+    }
+
+    /**
+     * The page hidden - the app in the background, the screen off - and shown
+     * again: GUISuspendedEvent, GUIResumedEvent; on a resume the network as it
+     * is then, as NetworkStatusChangeEvent (iViewer sends one then too).
+     */
+    private suspended = false;
+    private onVisibility = () => {
+        if (document.visibilityState === 'hidden') {
+            if (this.suspended) return;
+            this.suspended = true;
+            this.dispatchEvent(this.GUISuspendedEvent);
+        } else if (this.suspended) {
+            this.suspended = false;
+            this.dispatchEvent(this.GUIResumedEvent);
+            void this.loadDevice().then(() => this.dispatchEvent(this.NetworkStatusChangeEvent, this.networkStatus()));
+        }
+    };
+
     init(renderer: CFRenderer) {
         this.renderer = renderer;
+        if (typeof document !== 'undefined') {
+            document.removeEventListener('visibilitychange', this.onVisibility);
+            document.addEventListener('visibilitychange', this.onVisibility);
+        }
 
         // Initialize Global Tokens from XML
         if (renderer.project && renderer.project.tokens) {
@@ -260,6 +321,7 @@ export class CFAPI implements CFContext {
      * if we only tear down the webview (window.location.reload).
      */
     stopSystems() {
+        if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.onVisibility);
         const seen = new Set<any>();
         for (const name in this.controlSystems) {
             const sys = this.controlSystems[name];
@@ -641,14 +703,7 @@ export class CFAPI implements CFContext {
                     callback(name, connected, remote);
                 }
             } else if (event === this.NetworkStatusChangeEvent) {
-                callback({
-                    hasNetwork: true,
-                    ipv4address: this.ipv4address,
-                    ipv4netmask: this.ipv4netmask,
-                    ipv6address: this.ipv6address,
-                    ipv6netmask: this.ipv6netmask,
-                    networkType: this.networkType
-                });
+                callback(this.networkStatus());
             } else if (event === this.JoinChangeEvent && joins) {
                 // Fire with current value for each watched join
                 const joinList = Array.isArray(joins) ? joins : [joins];

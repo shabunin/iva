@@ -1,10 +1,12 @@
 // TCP, UDP, TLS and DNS for the runtime's systems and scripts - agapi's
-// src-tauri/src/plugins/net (its mDNS and device-status parts left out).
+// src-tauri/src/plugins/net (its mDNS and device-status parts left out) - and
+// the device's own info for CF.device (device.rs).
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::{Manager, AppHandle, Runtime};
 use tokio::sync::Mutex;
 
+pub mod device;
 pub mod dns;
 pub mod tcp;
 pub mod tls;

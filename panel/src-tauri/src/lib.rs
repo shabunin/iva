@@ -18,6 +18,7 @@ pub fn run() {
             plugins::net::tcp::tcp_set_keep_alive,
             plugins::net::tcp::tcp_set_no_delay,
             plugins::net::dns::dns_lookup,
+            plugins::net::device::device_info,
             plugins::net::tls::tls_connect,
             plugins::net::tls::tls_write,
             plugins::net::tls::tls_shutdown,

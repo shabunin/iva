@@ -9,6 +9,8 @@ import net from 'node:net';
 import tls from 'node:tls';
 import dgram from 'node:dgram';
 import dns from 'node:dns/promises';
+import os from 'node:os';
+import { createHash } from 'node:crypto';
 import http from 'node:http';
 import https from 'node:https';
 
@@ -257,6 +259,10 @@ export class HostSession {
     // ── HTTP client (what the browser can't do: no CORS, self-signed certs) ──
 
     http_fetch: (args: Args) => httpFetch(args as FetchArgs),
+
+    // ── the device (CF.device, CF.ipv4address ...): this machine ──
+
+    device_info: () => deviceInfo(),
   };
 
   private get<T>(map: Map<string, T>, id: string): T {
@@ -317,4 +323,39 @@ function httpFetch(args: FetchArgs, redirects = 0): Promise<unknown> {
     if (body) req.write(Buffer.from(body, 'base64'));
     req.end();
   });
+}
+
+/**
+ * The machine iva dev runs on, as a GUI's scripts see a device (CF.device,
+ * CF.ipv4address ...): the main interface - Wi-Fi, then wired, then the rest
+ * - told apart by name, as the panel app does; its ID from the machine.
+ */
+export function deviceInfo() {
+  const rank = (name: string): [number, string] => {
+    const n = name.toLowerCase();
+    if (/^(wl|wi-?fi)/.test(n) || n.includes('wi-fi')) return [0, 'WiFi'];
+    if (/^(eth|en)/.test(n) || n.includes('ethernet')) return [1, 'WiFi'];
+    if (/^(tun|zt|wg|ppp|utun)/.test(n) || n.includes('tailscale')) return [2, 'VPN'];
+    return [1, 'WiFi'];
+  };
+  const ifaces = Object.entries(os.networkInterfaces()).flatMap(([name, list]) => (list ?? []).filter((a) => !a.internal).map((a) => ({ name, ...a })));
+  const main = ifaces.filter((a) => a.family === 'IPv4').sort((a, b) => rank(a.name)[0] - rank(b.name)[0])[0];
+  const v6 = main ? ifaces.filter((a) => a.name === main.name && a.family === 'IPv6').sort((a, b) => Number(a.address.startsWith('fe80')) - Number(b.address.startsWith('fe80')))[0] : undefined;
+  const platform = ({ linux: 'Linux', win32: 'Windows', darwin: 'macOS' } as Record<string, string>)[process.platform] ?? process.platform;
+  const host = os.hostname();
+  const id = createHash('sha1').update(`${host}|${main?.mac ?? ''}`).digest('hex').toUpperCase();
+  return {
+    platform,
+    version: os.release(),
+    model: host,
+    name: host,
+    uuid: `${id.slice(0, 8)}-${id.slice(8, 12)}-${id.slice(12, 16)}-${id.slice(16, 20)}-${id.slice(20, 32)}`,
+    ipv4address: main?.address ?? '',
+    ipv4netmask: main?.netmask ?? '',
+    ipv6address: v6?.address ?? '',
+    ipv6netmask: v6?.netmask ?? '',
+    MACaddress: main?.mac && main.mac !== '00:00:00:00:00:00' ? main.mac.toUpperCase() : '',
+    networkType: main ? rank(main.name)[1] : 'None',
+    networkSSID: '',
+  };
 }

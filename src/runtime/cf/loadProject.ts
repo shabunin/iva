@@ -61,6 +61,8 @@ export interface LoadProjectOptions {
   loadGui?: (url: string, settings: Record<string, unknown>) => void;
   /** The page to show first (CF.loadGUI's startPage), when the GUI has it. */
   startPage?: string;
+  /** Where the GUI came from (CF.guiURL). */
+  guiUrl?: string;
   /** Previous renderer to tear down (stage children only). */
   previousRenderer?: CFRenderer | null;
   /** Destroy previous web menu when reloading a project. */
@@ -174,6 +176,9 @@ export async function loadProject(options: LoadProjectOptions): Promise<LoadProj
 
   const scriptElements: HTMLScriptElement[] = [];
   const scriptBlobUrls: string[] = [];
+  // the device and its network (CF.device, CF.ipv4address ...) before any script reads them
+  globalCF.guiURL = options.guiUrl ?? '';
+  await globalCF.loadDevice?.();
 
   if (project.scripts) {
     for (const scriptNode of project.scripts) {

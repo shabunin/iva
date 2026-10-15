@@ -114,11 +114,12 @@ const FEEDBACK: Record<string, string> = { none: '0', momentary: '1', toggle: '2
  * system - no TCP client connects, no server listens - until it's switched
  * off and on, as a remote debugger's connectToSystems does: so, once the
  * scripts run, each one that hasn't connected by then. Not under a remote
- * debugger (CF.debug), nor elsewhere (iOS, the preview).
+ * debugger (CF.debug), nor elsewhere (iOS, iva's own runtime: the preview,
+ * the panel app).
  */
 function restartSystems(names: string[]): string {
   return `(function (names) {
-    if (CF.debug || !CF.device || CF.device.platform !== "Android") return;
+    if (CF.debug || CF.runtime === "iva" || !CF.device || CF.device.platform !== "Android") return;
     var on = {};
     names.forEach(function (n) { CF.watch(CF.ConnectionStatusChangeEvent, n, function (s, c) { if (c) on[n] = true; }, true); });
     setTimeout(function () {

@@ -145,6 +145,8 @@ async function boot(gui: string) {
       return lo ? `/__iva/loop/${lo[1] ?? '80'}${lo[2] ?? '/'}${lo[3] ?? ''}` : undefined;
     },
     loadGui: (url, settings) => void loadGui(url, settings),
+    // where it came from: a URL, else the project's .gui on this server
+    guiUrl: /^(https?|cf):\/\//i.test(m.gui) ? m.gui : new URL(m.fileBase + m.gui.split('/').pop(), location.href).href,
     startPage: params.get('page') ?? undefined,
     orientation,
     onOrientationChange: (o) => setOrientation(o),

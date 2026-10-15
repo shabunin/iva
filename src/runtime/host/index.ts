@@ -3,7 +3,8 @@
  * done by the iva dev backend over one WebSocket (see bridge/). Scripts and
  * CF systems get real sockets on the machine running `iva dev`.
  */
-import type { AgapiHost, HttpHost } from '../stdlib/host';
+import type { AgapiHost, HostDeviceInfo, HttpHost } from '../stdlib/host';
+import { invoke } from './bridge/tauri-core';
 import { TauriNetworkProvider } from './net/provider';
 import { createDnsHost } from './dns';
 import { createTlsHost } from './tls/index';
@@ -29,5 +30,6 @@ export function createIvaHost(): AgapiHost {
     http: createHttpHost(),
     dns: createDnsHost(),
     tls: createTlsHost(),
+    device: () => invoke<HostDeviceInfo>('device_info'),
   };
 }

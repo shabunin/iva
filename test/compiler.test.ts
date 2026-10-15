@@ -369,7 +369,7 @@ test('<WebApp>: bundled into the build, a web view on the panel\'s one web serve
   assert.ok(start.indexOf('IvaHttp.web("IvaWeb", 8901);') < start.indexOf('IvaHttp.app('));
   for (const path of ['app/', 'energy/', 'iva-color/FFB000']) assert.match(start, new RegExp(`IvaHttp\\.view\\(Joins\\.s\\["iva_web_[0-9a-f]{8}"\\], "${path}"\\);`), path);
   // iViewer on Android starts systems once they're switched off and on: so, once the scripts run (not under a debugger)
-  assert.match(start, /if \(CF\.debug \|\| !CF\.device \|\| CF\.device\.platform !== "Android"\) return;[\s\S]*CF\.setSystemProperties\(n, \{ enabled: false \}\)[\s\S]*\}\)\(\["api","IvaWeb"\]\);/);
+  assert.match(start, /if \(CF\.debug \|\| CF\.runtime === "iva" \|\| !CF\.device \|\| CF\.device\.platform !== "Android"\) return;[\s\S]*CF\.setSystemProperties\(n, \{ enabled: false \}\)[\s\S]*\}\)\(\["api","IvaWeb"\]\);/);
   assert.equal(start.match(/IvaHttp\.app\("app"/g)!.length, 1);
   assert.match(start, /joins: \{ "lamp": Joins\.d\["lamp"\], "temp": "a12" \}, options: \{"rooms":2\}/);
   assert.match(start, /IvaHttp\.serve\("api", myApi\);/);
