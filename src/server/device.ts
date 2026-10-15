@@ -265,6 +265,8 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
         'CF-Server': CF_SERVER,
         ...(status === 200 ? { 'Last-Modified': s.modified.toUTCString(), ETag: `"${s.version}"` } : {}),
         'Content-Type': type,
+        // the iva panel app's page loads the images from here (another origin: WebGL needs CORS)
+        'Access-Control-Allow-Origin': '*',
         ...extra,
       });
       res.end(req.method === 'HEAD' ? undefined : data);

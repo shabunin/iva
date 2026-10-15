@@ -120,7 +120,10 @@ test('a JSX project is built and served from memory', async () => {
     assert.match(gui, /<imagefolder>images<\/imagefolder>/);
     assert.match(gui, /<script name="scripts\/iva-joins\.js" \/>\s*<script name="scripts\/main\.js" \/>\s*<script name="iva-live\.js" \/>/);
     const png = /controls\/iva_track_[0-9a-f]+\.png/.exec(gui)![0];
-    assert.equal((await get(s.port, `/images/${png}`)).headers.get('content-type'), 'image/png');
+    const image = await get(s.port, `/images/${png}`);
+    assert.equal(image.headers.get('content-type'), 'image/png');
+    // the panel app's page (another origin) draws them with WebGL: CORS
+    assert.equal(image.headers.get('access-control-allow-origin'), '*');
     // scripts in the image folder: iViewer looks for <script name="scripts/x.js"> in images/
     assert.match((await get(s.port, '/images/scripts/iva-joins.js')).body, /var Joins/);
     assert.equal((await get(s.port, '/scripts/iva-joins.js')).status, 404);
