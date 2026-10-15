@@ -885,8 +885,10 @@ export class CFRenderer {
       this.cfApi.currentOrientation = isLandscape
         ? this.cfApi.LandscapeOrientation
         : this.cfApi.PortraitOrientation;
+      // as iViewer: (the page left - none at first -, the page shown, the orientation)
+      const from = this.cfApi.currentPage === 'CURRENT_PAGE' ? '' : this.cfApi.currentPage;
       this.cfApi.currentPage = pageName;
-      this.cfApi.dispatchEvent(this.cfApi.PageFlipEvent, pageName);
+      this.cfApi.dispatchEvent(this.cfApi.PageFlipEvent, from, pageName, this.cfApi.currentOrientation);
     }
 
     const nodes = (isLandscape && pageObj.landscape) ? pageObj.landscape : (pageObj.portrait || pageObj.landscape || []);
