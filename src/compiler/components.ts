@@ -68,13 +68,14 @@ export type DrawRef = { $$draw: 1; name?: string } & (
   | { kind: 'dot'; size: number; ring: number; at: number; diameter: number; color: string }
   | { kind: 'knob'; size: number; color: string; pointer: string; at: number }
   | { kind: 'ticks'; size: number; count: number; from: number; to: number; length: number; width: number; color: string }
+  | { kind: 'box'; w: number; h: number; radius?: number; fill?: string; borderWidth?: number; borderColor?: string }
   | { kind: 'wheel'; size: number }
   | { kind: 'ring'; size: number; thickness: number; color: string; outline?: string }
   | { kind: 'cutout'; w: number; h: number; radius: number; color: string }
 );
 type Drawing<K extends DrawRef['kind']> = Omit<Extract<DrawRef, { kind: K }>, '$$draw' | 'kind'>;
 /** Images iva draws, for <Image src>: draw.arc({ size, thickness, from, to, color }), draw.dot(...),
- * draw.knob(...), draw.ticks(...), draw.wheel({ size }) (hue round, white in the middle),
+ * draw.knob(...), draw.ticks(...), draw.box({ w, h, radius, fill, borderWidth, borderColor }), draw.wheel({ size }) (hue round, white in the middle),
  * draw.ring({ size, thickness, color, outline }), draw.cutout({ w, h, radius, color }) (a frame
  * with a rounded hole, to round a web view's corners). `name` fixes the file name (else: from the content). */
 export const draw: {
@@ -82,6 +83,7 @@ export const draw: {
   dot: (o: Drawing<'dot'>) => DrawRef;
   knob: (o: Drawing<'knob'>) => DrawRef;
   ticks: (o: Drawing<'ticks'>) => DrawRef;
+  box: (o: Drawing<'box'>) => DrawRef;
   wheel: (o: Drawing<'wheel'>) => DrawRef;
   ring: (o: Drawing<'ring'>) => DrawRef;
   cutout: (o: Drawing<'cutout'>) => DrawRef;
@@ -90,6 +92,7 @@ export const draw: {
   dot: (o) => ({ $$draw: 1, kind: 'dot', ...o }),
   knob: (o) => ({ $$draw: 1, kind: 'knob', ...o }),
   ticks: (o) => ({ $$draw: 1, kind: 'ticks', ...o }),
+  box: (o) => ({ $$draw: 1, kind: 'box', ...o }),
   wheel: (o) => ({ $$draw: 1, kind: 'wheel', ...o }),
   ring: (o) => ({ $$draw: 1, kind: 'ring', ...o }),
   cutout: (o) => ({ $$draw: 1, kind: 'cutout', ...o }),

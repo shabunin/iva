@@ -11,7 +11,8 @@ export const sections = [
   { page: 'Pickers', icon: 'calendar-days', text: 'Pickers', sub: 'TimePicker, DatePicker, NumberField' },
   { page: 'Lists', icon: 'list', text: 'Lists', sub: 'DataList, ListRow, ScrollBox' },
   { page: 'Schedule', icon: 'clock', text: 'Schedule & security', sub: 'WeekDays, AlarmCard, PinPad' },
-  { page: 'Navigation', icon: 'compass', text: 'Navigation & feedback', sub: 'Header, SideMenu, NavCard, ConfirmDialog' },
+  { page: 'Tables', icon: 'table', text: 'Tables & alarms', sub: 'DataTable, AlarmTable, AlarmBanner' },
+  { page: 'Navigation', icon: 'compass', text: 'Navigation & feedback', sub: 'Header, SideMenu, Breadcrumbs, Pager, Loader, ConfirmDialog' },
 ];
 
 /** What every page has: the header, and the side menu it opens. */

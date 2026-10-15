@@ -19,6 +19,10 @@ var IvaUI = (function () {
   var selectOf = {};
   // a row's button pressed in a list, until it's let go: a tap unless the list scrolled meanwhile
   var pressed = {};
+  var tables = {};
+  var tableOf = {};
+  var alarmSets = {};
+  var pagers = {};
   function rowsOf(list) {
     CF.watch(CF.ListWillStartScrollingEvent, list, function () { if (pressed[list]) pressed[list].moved = true; });
   }
@@ -88,6 +92,16 @@ var IvaUI = (function () {
   // runtime themes (iva-themes.js, with <Project themes>): names in the look shown
   function themed() { return typeof IvaTheme !== 'undefined' ? IvaTheme : null; }
   function file(name) { var T = themed(); return T ? T.file(name) : name; }
+  // an AlarmTable's acknowledgement: a cleared alarm, once acknowledged, goes away
+  function acknowledge(set, which) {
+    var kept = [];
+    for (var i = 0; i < set.list.length; i++) {
+      var a = set.list[i];
+      if (which(a)) a.acked = true;
+      if (a.active || !a.acked) kept.push(a);
+    }
+    set.list = kept;
+  }
   function hex2(n) { var h = Math.round(clamp(n, 0, 255)).toString(16); return h.length < 2 ? '0' + h : h; }
   function hsvRgb(h, s, v) {
     h = (((h % 360) + 360) % 360) / 60;
@@ -576,8 +590,278 @@ var IvaUI = (function () {
       CF.setJoin(st.o.join, st.matches[Number(index)]);
       CF.setJoin(st.o.open, 0);
     },
+    /**
+     * a table: rows (o.data, a JSON serial join o.source, or IvaUI.tableRows)
+     * filtered by a search (o.input), sorted by a column (a header tap: up,
+     * down, off), each row's tint and badges by its tone, a tap selecting it
+     */
+    table: function (id, o) {
+      var tb = tables[id] = { o: o, all: o.data || [], view: [], sort: -1, dir: 0, q: '', sel: null };
+      tableOf[o.list] = id;
+      rowsOf(o.list);
+      if (o.source) {
+        CF.watch(CF.JoinChangeEvent, o.source, function (j, v) {
+          var rows = [];
+          try { rows = JSON.parse(v || '[]'); } catch (e) { rows = []; }
+          tb.all = rows;
+          IvaUI.tableShow(id);
+        }, true);
+      }
+      if (o.input) {
+        CF.watch(CF.InputFieldEditedEvent, o.input, function (j, v) { tb.q = String(v || '').toLowerCase(); IvaUI.tableShow(id); });
+        CF.setJoin(o.hint, o.placeholder);
+      }
+      if (o.selected) {
+        CF.watch(CF.JoinChangeEvent, o.selected, function (j, v) {
+          if (String(v) !== String(tb.sel)) { tb.sel = v === '' ? null : v; IvaUI.tableShow(id); }
+        }, true);
+      }
+      IvaUI.tableShow(id);
+    },
+    /** new rows for a table (the alarms, a script's data) */
+    tableRows: function (id, rows) {
+      var tb = tables[id];
+      if (!tb) return;
+      tb.all = rows;
+      IvaUI.tableShow(id);
+    },
+    tableShow: function (id) {
+      var tb = tables[id], o = tb.o, view = [], i, c;
+      for (i = 0; i < tb.all.length; i++) {
+        var r = tb.all[i], hit = !tb.q;
+        for (c = 0; c < o.cols.length && !hit; c++) hit = String(r[o.cols[c].key] === undefined ? '' : r[o.cols[c].key]).toLowerCase().indexOf(tb.q) >= 0;
+        if (hit) view.push({ r: r, i: i });
+      }
+      if (tb.dir) {
+        var col = o.cols[tb.sort], k = col.sortKey || col.key;
+        view.sort(function (a, b) {
+          var x = a.r[k], y = b.r[k], n = Number(x), m = Number(y);
+          var cmp = x === y ? 0 : (typeof x === 'number' || (x !== '' && !isNaN(n))) && (typeof y === 'number' || (y !== '' && !isNaN(m))) ? n - m : String(x).localeCompare(String(y));
+          return cmp * tb.dir || a.i - b.i;
+        });
+      }
+      tb.view = [];
+      var items = [];
+      for (i = 0; i < view.length; i++) {
+        var row = view[i].r, tone = o.tones[(o.toneKey && row[o.toneKey]) || ''] || o.tones[''];
+        var selected = o.key && tb.sel !== null && String(row[o.key]) === String(tb.sel);
+        var it = { subpage: o.row, s20: tone.rows[selected ? 2 : i % 2] };
+        for (c = 0; c < o.cols.length; c++) {
+          var v = row[o.cols[c].key];
+          it['s' + (c + 1)] = v === undefined || v === null ? '' : o.cols[c].decimals !== undefined && v !== '' && !isNaN(Number(v)) ? Number(v).toFixed(o.cols[c].decimals) : String(v);
+          if (o.cols[c].badge) it['s' + (21 + c)] = tone.badge;
+        }
+        items.push(it);
+        tb.view.push(row);
+      }
+      IvaUI.fill(o.list, items);
+      for (c = 0; c < o.heads.length; c++) CF.setJoin(o.heads[c], o.titles[c] + (tb.sort === c && tb.dir ? (tb.dir > 0 ? ' \\u25B2' : ' \\u25BC') : ''));
+      CF.setJoin(o.empty, view.length ? '' : o.words.empty);
+      if (o.count) CF.setJoin(o.count, view.length === tb.all.length ? view.length + ' ' + o.words.rows : view.length + ' ' + o.words.of + ' ' + tb.all.length + ' ' + o.words.rows);
+    },
+    /** a header tap: by this column up, down, then as it came */
+    tableSort: function (id, c) {
+      var tb = tables[id];
+      if (!tb) return;
+      if (tb.sort !== c) { tb.sort = c; tb.dir = 1; } else if (tb.dir === 1) tb.dir = -1; else { tb.sort = -1; tb.dir = 0; }
+      IvaUI.tableShow(id);
+    },
+    tableTap: function (list, index) {
+      var id = tableOf[list], tb = tables[id];
+      if (!tb || !tapped(list)) return;
+      var row = tb.view[Number(index)];
+      if (!row || !tb.o.key) return;
+      tb.sel = row[tb.o.key];
+      if (tb.o.selected) CF.setJoin(tb.o.selected, String(tb.sel));
+      IvaUI.tableShow(id);
+      if (tb.o.onSelect) tb.o.onSelect(row);
+    },
+    /**
+     * alarms of an AlarmTable (o.table): from conditions on joins, a JSON
+     * serial join (o.source) or IvaAlarms.raise / clear / ack; o.filters:
+     * the all / active / unacked buttons' joins; o.summary: the counts
+     */
+    alarms: function (name, o) {
+      var set = alarmSets[name] = { o: o, list: [], filter: 0, banners: [] };
+      for (var i = 0; i < o.conditions.length; i++) {
+        (function (c) {
+          CF.watch(CF.JoinChangeEvent, c.join, function (j, v) {
+            var n = Number(v);
+            var on = c.above !== undefined ? n > c.above : c.below !== undefined ? n < c.below : String(v) === String(c.equals);
+            if (on) IvaUI.alarmRaise(name, c); else IvaUI.alarmClear(name, c.id);
+          }, true);
+        })(o.conditions[i]);
+      }
+      if (o.source) {
+        CF.watch(CF.JoinChangeEvent, o.source, function (j, v) {
+          var list = [];
+          try { list = JSON.parse(v || '[]'); } catch (e) { list = []; }
+          set.list = [];
+          for (var k = 0; k < list.length; k++) {
+            var a = list[k];
+            set.list.push({ id: String(a.id), text: a.text || '', source: a.source || '', severity: a.severity === 'warning' ? 'warning' : 'alarm',
+              active: a.active !== false, acked: !!a.acked, time: a.time ? new Date(a.time).getTime() || Date.now() : Date.now() });
+          }
+          IvaUI.alarmShow(name);
+        }, true);
+      }
+      IvaUI.alarmFilter(name, 0);
+    },
+    alarmRaise: function (name, a) {
+      var set = alarmSets[name];
+      if (!set) return;
+      var x = null;
+      for (var i = 0; i < set.list.length; i++) if (set.list[i].id === String(a.id)) x = set.list[i];
+      if (x && x.active) { x.text = a.text || x.text; return IvaUI.alarmShow(name); }
+      if (x) set.list.splice(set.list.indexOf(x), 1);
+      set.list.unshift({ id: String(a.id), text: a.text || '', source: a.source || '', severity: a.severity === 'warning' ? 'warning' : 'alarm', active: true, acked: false, time: Date.now() });
+      IvaUI.alarmShow(name);
+    },
+    /** back to normal: a cleared alarm that was acknowledged goes away, else it waits for an ack */
+    alarmClear: function (name, alarmId) {
+      var set = alarmSets[name];
+      if (!set) return;
+      for (var i = 0; i < set.list.length; i++) {
+        var a = set.list[i];
+        if (a.id !== String(alarmId) || !a.active) continue;
+        if (a.acked) set.list.splice(i, 1); else a.active = false;
+        return IvaUI.alarmShow(name);
+      }
+    },
+    /** acknowledge one alarm; no id: the row selected */
+    alarmAck: function (name, alarmId) {
+      var set = alarmSets[name];
+      if (!set) return;
+      var id = String(alarmId !== undefined ? alarmId : tables[set.o.table].sel);
+      acknowledge(set, function (a) { return a.id === id; });
+      IvaUI.alarmShow(name);
+    },
+    alarmAckAll: function (name) {
+      var set = alarmSets[name];
+      if (!set) return;
+      acknowledge(set, function () { return true; });
+      IvaUI.alarmShow(name);
+    },
+    alarmFilter: function (name, k) {
+      var set = alarmSets[name];
+      if (!set) return;
+      set.filter = k;
+      for (var i = 0; i < set.o.filters.length; i++) CF.setJoin(set.o.filters[i], i === k ? 1 : 0);
+      IvaUI.alarmShow(name);
+    },
+    alarmShow: function (name) {
+      var set = alarmSets[name], rows = [], alarms = 0, warnings = 0, unacked = 0, i;
+      for (i = 0; i < set.list.length; i++) {
+        var a = set.list[i];
+        if (a.active && a.severity === 'alarm') alarms++;
+        if (a.active && a.severity === 'warning') warnings++;
+        if (!a.acked) unacked++;
+        if (set.filter === 1 && !a.active) continue;
+        if (set.filter === 2 && a.acked) continue;
+        var d = new Date(a.time);
+        rows.push({ id: a.id, ts: a.time, time: pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()),
+          severity: a.severity === 'warning' ? 'Warning' : 'Alarm', source: a.source, text: a.text,
+          state: !a.active ? 'Cleared' : a.acked ? 'Acked' : 'Active', tone: !a.active ? 'offline' : a.acked ? a.severity + 'Ack' : a.severity });
+      }
+      IvaUI.tableRows(set.o.table, rows);
+      CF.setJoin(set.o.summary, alarms + (alarms === 1 ? ' alarm' : ' alarms') + ' \\u00B7 ' + warnings + (warnings === 1 ? ' warning' : ' warnings') + ' \\u00B7 ' + unacked + ' unacked');
+      for (i = 0; i < set.banners.length; i++) set.banners[i]();
+    },
+    /**
+     * what a banner shows: the unacknowledged alarms (alarms before warnings,
+     * the newest first), else the active ones; count: how many of them
+     */
+    alarmTop: function (name) {
+      var set = alarmSets[name], top = null, count = 0;
+      if (!set) return { top: null, count: 0 };
+      for (var pass = 0; pass < 2 && !top; pass++) {
+        for (var i = 0; i < set.list.length; i++) {
+          var a = set.list[i];
+          if (pass === 0 ? a.acked : !a.active) continue;
+          count++;
+          if (!top || (a.severity === 'alarm' && top.severity !== 'alarm') || (a.severity === top.severity && a.time > top.time)) top = a;
+        }
+      }
+      return { top: top, count: count };
+    },
+    /** a banner of an AlarmTable's alarms, blinking while any is unacknowledged */
+    alarmBanner: function (name, o) {
+      var phase = 0, timer = null;
+      function show() {
+        var t = IvaUI.alarmTop(name), a = t.top, blink = !!a && !a.acked;
+        if (blink && !timer) {
+          timer = setInterval(function () {
+            phase++;
+            var u = IvaUI.alarmTop(name).top;
+            if (u && !u.acked) CF.setJoin(o.bg, file(o.looks[u.severity][phase % 2]));
+          }, 600);
+        }
+        if (!blink && timer) { clearInterval(timer); timer = null; }
+        if (!a) {
+          CF.setJoin(o.bg, file(o.looks.none[0]));
+          CF.setJoin(o.icon, file(o.icons.none));
+          CF.setJoin(o.text, 'No alarms');
+          CF.setJoin(o.more, '');
+          return;
+        }
+        CF.setJoin(o.icon, file(o.icons[a.severity]));
+        CF.setJoin(o.text, (a.source ? a.source + ': ' : '') + a.text);
+        CF.setJoin(o.more, t.count > 1 ? '+' + (t.count - 1) + ' more' : '');
+        CF.setJoin(o.bg, file(o.looks[a.severity][blink ? phase % 2 : 1]));
+      }
+      // the table may start after the banner
+      function attach() {
+        var set = alarmSets[name];
+        if (!set) return setTimeout(attach, 50);
+        set.banners.push(show);
+        show();
+      }
+      attach();
+    },
+    /** a busy overlay: its icon spins while the join is on */
+    loader: function (join, icon) {
+      var on = false, angle = 0;
+      function spin() {
+        if (!on) return;
+        angle += 360;
+        CF.setProperties({ join: icon, zrotation: angle }, 0, 0.9, CF.AnimationCurveLinear, spin);
+      }
+      CF.watch(CF.JoinChangeEvent, join, function (j, v) {
+        var was = on;
+        on = Number(v) > 0;
+        if (on && !was) spin();
+      }, true);
+    },
+    /** pages in one place: the one shown in o.join (analog: 0, 1 ...), its page and dot joins on */
+    pager: function (id, o) {
+      pagers[id] = o;
+      CF.watch(CF.JoinChangeEvent, o.join, function (j, v) {
+        var k = clamp(Math.round(Number(v) || 0), 0, o.pages.length - 1);
+        for (var i = 0; i < o.pages.length; i++) {
+          CF.setJoin(o.pages[i], i === k ? 1 : 0);
+          CF.setJoin(o.dots[i], i === k ? 1 : 0);
+        }
+      }, true);
+      CF.setJoin(o.join, o.value || 0);
+    },
+    pagerGo: function (id, k) {
+      var o = pagers[id];
+      if (o) CF.setJoin(o.join, clamp(k, 0, o.pages.length - 1));
+    },
+    pagerStep: function (id, dir) {
+      var o = pagers[id];
+      if (!o) return;
+      CF.getJoin(o.join, function (j, v) { IvaUI.pagerGo(id, Math.round(Number(v) || 0) + dir); });
+    },
     /** a digital join off */
     off: function (join) { CF.setJoin(join, 0); }
   };
 })();
+/** An AlarmTable's alarms, for scripts: IvaAlarms.raise('plant', { id: 'p1', text: 'Pump fault', source: 'P1', severity: 'alarm' }). */
+var IvaAlarms = {
+  raise: function (name, alarm) { IvaUI.alarmRaise(name, alarm); },
+  clear: function (name, id) { IvaUI.alarmClear(name, id); },
+  ack: function (name, id) { IvaUI.alarmAck(name, id); },
+  ackAll: function (name) { IvaUI.alarmAckAll(name); }
+};
 `;

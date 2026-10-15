@@ -538,6 +538,117 @@ export interface NumberFieldProps extends FieldProps {
   /** the messages for a bad number: invalid ('Not a number'), range ('From {min} to {max}') */
   words?: { invalid?: string; range?: string };
 }
+/** A row tone (DataTable, AlarmTable): a tint behind the row, and its badge. */
+export type RowTone = 'alarm' | 'warning' | 'ok' | 'muted' | 'running' | 'heating' | 'cooling' | 'offline' | 'alarmAck' | 'warningAck';
+export interface TableColumn {
+  /** the row field it shows */
+  key: string;
+  title: string;
+  /** width (default: an equal share of what's left) */
+  w?: number;
+  align?: 'left' | 'center' | 'right';
+  /** digits after the point, for numbers */
+  decimals?: number;
+  /** shown as a badge in the row's tone */
+  badge?: boolean;
+}
+export interface DataTableProps {
+  columns: TableColumn[];
+  /** the rows; or `source` */
+  data?: Record<string, unknown>[];
+  /** serial join with the rows as a JSON array (a script or a feedback fills it) */
+  source?: Join;
+  /** the field that names a row: a tap selects it, `selected` gets it */
+  keyField?: string;
+  /** serial join: the selected row's key (both ways) */
+  selected?: Join;
+  /** the field naming the row's tone (alarm, warning, ok, muted, running, heating, cooling, offline) */
+  toneKey?: string;
+  /** a search field over the table (default true) */
+  search?: boolean;
+  placeholder?: string;
+  /** JavaScript run on a tap, with `row` (the row's object) */
+  onSelect?: string;
+  words?: { rows?: string; of?: string; empty?: string };
+  rowH?: number;
+  fontSize?: number;
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+}
+export interface AlarmCondition {
+  /** the alarm's id */
+  id: string;
+  text: string;
+  source?: string;
+  severity?: 'alarm' | 'warning';
+  /** the join watched ('d12', d('door'), a('temp')) */
+  join: Join;
+  /** active while the join's value is above / below / equal to */
+  above?: number;
+  below?: number;
+  equals?: number | string;
+}
+export interface AlarmTableProps {
+  /** names it for AlarmBanner and IvaAlarms (IvaAlarms.raise('plant', {...})) */
+  name: string;
+  /** alarms raised and cleared on the panel, from joins */
+  conditions?: AlarmCondition[];
+  /** serial join with alarms as a JSON array ({ id, text, source, severity, active, acked }) */
+  source?: Join;
+  /** serial join: the counts as text ("2 alarms · 1 warning · 3 unacked") */
+  summary?: Join;
+  rowH?: number;
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+}
+export interface AlarmBannerProps {
+  /** the AlarmTable's name */
+  alarms: string;
+  /** a tap: a page, or JavaScript */
+  page?: string;
+  js?: string;
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+}
+export interface BreadcrumbsProps {
+  /** where you are: strings or { label, page, js }; all but the last are links */
+  items: (string | { label: string; page?: string; js?: string })[];
+  /** a back arrow first (to the previous page) */
+  back?: boolean;
+  separator?: string;
+  fontSize?: number;
+  x?: number;
+  y?: number;
+  h?: number;
+}
+export interface LoaderProps {
+  /** digital join: shown while on */
+  join: Join;
+  /** the text under the spinner, or a serial join's */
+  text?: string;
+  textJoin?: Join;
+  icon?: string;
+}
+export interface PagerProps {
+  /** analog join: the page shown (0, 1, ...), both ways */
+  join: Join;
+  /** the first page shown */
+  value?: number;
+  /** the dots under the pages (default true) */
+  dots?: boolean;
+  x?: number;
+  y?: number;
+  w: number;
+  h: number;
+  /** one page per child */
+  children?: Child;
+}
 export interface AlarmCardProps {
   title: string;
   /** digital join: the alarm on */
@@ -639,6 +750,12 @@ export interface Ui {
   TimePicker: (p: TimePickerProps) => VNode;
   DatePicker: (p: DatePickerProps) => VNode;
   NumberField: (p: NumberFieldProps) => VNode;
+  DataTable: (p: DataTableProps) => VNode;
+  AlarmTable: (p: AlarmTableProps) => VNode;
+  AlarmBanner: (p: AlarmBannerProps) => VNode;
+  Breadcrumbs: (p: BreadcrumbsProps) => VNode;
+  Loader: (p: LoaderProps) => VNode;
+  Pager: (p: PagerProps) => VNode;
   AlarmCard: (p: AlarmCardProps) => VNode;
   Knob: (p: KnobProps) => VNode;
   Thermostat: (p: ThermostatProps) => VNode;
@@ -664,6 +781,27 @@ function hash(text: string): string {
   let h = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
   return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+/**
+ * About how wide a text is drawn (Helvetica / Arial advances, 1/1000 em):
+ * enough to place things after a label sized to it.
+ */
+const ADVANCES: Record<string, number> = Object.fromEntries([
+  ...[...' !,./:;I[\\]ijlt|'].map((c) => [c, c === 'i' || c === 'j' || c === 'l' ? 222 : c === 't' || c === 'I' ? 278 : 278]),
+  ...[...'frJ"()*-`{}'].map((c) => [c, c === 'J' ? 500 : c === '"' ? 355 : c === '*' ? 389 : 333]),
+  ...[...'cksvxyz'].map((c) => [c, 500]),
+  ...[...'FTZL'].map((c) => [c, c === 'L' ? 556 : 611]),
+  ...[...'ABEKPSVXY'].map((c) => [c, 667]),
+  ...[...'CDHNRUw'].map((c) => [c, 722]),
+  ...[...'GOQ'].map((c) => [c, 778]),
+  ...[...'Mm'].map((c) => [c, 833]),
+  ['W', 944], ['%', 889], ['@', 1015], ['&', 667],
+]);
+function textWidth(text: string, size: number): number {
+  let w = 0;
+  for (const c of text) w += ADVANCES[c] ?? (c.charCodeAt(0) > 0x2e80 ? 1000 : 556);
+  return Math.ceil((w * size) / 1000);
 }
 
 /** A colour lighter (amount > 0) or darker. */
@@ -1667,10 +1805,331 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     );
   }
 
+  // ── tables & alarms ─────────────────────────────────────────────
+
+  /** The tones' colours (a row's tint, its badge): from the theme, two of their own. */
+  const toneColors = (): Record<string, string> => ({
+    '': '', alarm: t.danger, warning: t.warning, ok: t.accent, running: t.accent, muted: t.muted, heating: '#F07A22', cooling: '#2D8CF0', offline: t.muted,
+    // acknowledged alarms: the colour, dimmed
+    alarmAck: t.danger, warningAck: t.warning,
+  });
+
+  /**
+   * A table's row and badge images per tone: drawn with fixed names (a row
+   * sets them by name through its joins), in a subpage of their own so they
+   * ship with the .gui.
+   */
+  function tableImages(key: string, w: number, rowH: number, badgeW: number) {
+    const draws = new Map<string, ReturnType<typeof draw.box>>();
+    const add = (o: Parameters<typeof draw.box>[0]) => {
+      const name = `iva_row_${hash(JSON.stringify(o))}`;
+      draws.set(name, draw.box({ ...o, name }));
+      return `${name}.png`;
+    };
+    const files: Record<string, { rows: string[]; badge: string }> = {};
+    for (const [tone, color] of Object.entries(toneColors())) {
+      const h = rowH - 2;
+      const dim = tone.endsWith('Ack');
+      const tint = (alpha: string) => (color ? `${color}${alpha}` : alpha === '00' ? '#00000000' : `${t.raised}${alpha}`);
+      const [even, odd] = dim ? ['14', '1F'] : ['2E', '42'];
+      files[tone] = {
+        // normal, every other row, selected
+        rows: [add({ w, h, radius: 8, fill: tint(color ? even : '00') }), add({ w, h, radius: 8, fill: tint(color ? odd : '99') }),
+          add({ w, h, radius: 8, fill: color ? tint(even) : `${t.accent}26`, borderWidth: 2, borderColor: t.accent })],
+        badge: add({ w: badgeW, h: 24, radius: 12, fill: `${color || t.muted}${dim ? '26' : '40'}` }),
+      };
+    }
+    const holder = (
+      <Subpage name={`ui_tbl_${key}_images`} define w={1} h={1}>
+        {[...draws.values()].map((src) => <Image w={1} h={1} src={src} />)}
+      </Subpage>
+    );
+    return { files, holder };
+  }
+
+  /** The columns laid out: fixed widths, the rest shared. */
+  function layoutColumns(columns: TableColumn[], w: number) {
+    const fixed = columns.reduce((sum, c) => sum + (c.w ?? 0), 0);
+    const flex = columns.filter((c) => c.w === undefined).length;
+    const share = flex ? Math.max(40, Math.floor((w - fixed) / flex)) : 0;
+    let x = 0;
+    return columns.map((c) => {
+      const cw = c.w ?? share;
+      const at = x;
+      x += cw;
+      return { ...c, x: at, w: cw };
+    });
+  }
+
+  /** A table's header, list and row subpage (DataTable, AlarmTable); the runtime's IvaUI.table fills it. */
+  function tableBody(id: string, key: string, columns: TableColumn[], w: number, h: number, top: number, rowH: number, fontSize: number) {
+    const cols = layoutColumns(columns, w);
+    const badgeW = 110;
+    const list: JoinRef = l(`ui_${key}_tbl`);
+    const row = `ui_tbl_${key}_row`;
+    const heads = cols.map((_, i) => s(`ui_${key}_th${i}`));
+    const empty: JoinRef = s(`ui_${key}_empty`);
+    const images = tableImages(key, w, rowH, badgeW);
+    const headH = 36;
+    const cell = (c: (typeof cols)[number], i: number) =>
+      c.badge ? (
+        <>
+          <Image x={c.x + 12} y={Math.round((rowH - 24) / 2)} w={badgeW} h={24} join={21 + i} />
+          <Text x={c.x + 12} w={badgeW} h={rowH} join={i + 1} align="center" font={font} fontSize={fontSize - 2} />
+        </>
+      ) : (
+        <Text x={c.x + 12} w={c.w - 24} h={rowH} join={i + 1} align={c.align ?? 'left'} font={font} fontSize={fontSize} />
+      );
+    const body = (
+      <>
+        <Box y={top} w={w} h={headH} bg={t.raised} radius={t.radius - 4} />
+        {cols.map((c, i) => (
+          <Button x={c.x} y={top} w={c.w} h={headH} text={c.title} textJoin={heads[i]} align={c.align ?? 'left'} padding={[0, 12, 0, 12]}
+                  color={t.muted} active={{ color: t.text }} font={font} fontSize={15} bold feedback="none" js={`IvaUI.tableSort(${id}, ${i})`} />
+        ))}
+        <Subpage name={row} define w={w} h={rowH}>
+          <Image w={w} h={rowH - 2} join={20} />
+          {cols.map(cell)}
+          <Button w={w} h={rowH} feedback="none" onPress={[jsAction('IvaUI.rowDown(list)')]} onRelease={[jsAction('IvaUI.tableTap(list, listIndex)')]} />
+        </Subpage>
+        {images.holder}
+        <List y={top + headH + 4} w={w} h={h - top - headH - 4} join={list} item={row} />
+        <Text x={12} y={top + headH + 12} w={w - 24} h={30} join={empty} color={t.muted} font={font} fontSize={fontSize} />
+      </>
+    );
+    const data = { list: jsJoin('l', list), row: JSON.stringify(row), heads: `[${heads.map((j) => jsJoin('s', j)).join(', ')}]`, empty: jsJoin('s', empty) };
+    return { body, cols, images: images.files, data, joins: [list, ...heads, empty] };
+  }
+
+  /** A JS object literal from parts that are already JavaScript (joins) and plain values. */
+  const jsObject = (parts: Record<string, string | undefined>) =>
+    `{ ${Object.entries(parts).filter(([, v]) => v !== undefined).map(([k, v]) => `${k}: ${v}`).join(', ')} }`;
+
+  /**
+   * A table: a search field, a header (a tap sorts: up, down, off), rows in
+   * tones, a badge column, a tap selecting a row, the row count. The rows
+   * come from `data`, or a serial join with JSON.
+   */
+  function DataTable({ columns, data, source, keyField, selected, toneKey, search = true, placeholder = 'Search…', onSelect, words = {},
+                       rowH = 40, fontSize = 18, x = 0, y = 0, w = 900, h = 360 }: DataTableProps): VNode {
+    const key = `dt_${hash(JSON.stringify([columns, keyField, toneKey, w, h, rowH, source ?? null, selected ?? null]))}`;
+    const id = JSON.stringify(key);
+    const input: JoinRef = s(`ui_${key}_q`);
+    const hint: JoinRef = s(`ui_${key}_hint`);
+    const count: JoinRef = s(`ui_${key}_count`);
+    const top = search ? 56 : 0;
+    const tb = tableBody(id, key, columns, w, h, top, rowH, fontSize);
+    const o = jsObject({
+      ...tb.data, cols: JSON.stringify(tb.cols.map((c) => ({ key: c.key, decimals: c.decimals, badge: !!c.badge }))), titles: JSON.stringify(columns.map((c) => c.title)),
+      tones: JSON.stringify(tb.images), key: JSON.stringify(keyField ?? ''), toneKey: JSON.stringify(toneKey ?? ''),
+      selected: selected === undefined ? undefined : jsJoin('s', selected), source: source === undefined ? undefined : jsJoin('s', source),
+      data: source === undefined ? JSON.stringify(data ?? []) : undefined,
+      input: search ? jsJoin('s', input) : undefined, hint: search ? jsJoin('s', hint) : undefined, placeholder: JSON.stringify(placeholder), count: jsJoin('s', count),
+      words: JSON.stringify({ rows: words.rows ?? 'rows', of: words.of ?? 'of', empty: words.empty ?? 'Nothing to show' }),
+      onSelect: onSelect ? `function (row) { ${onSelect} }` : undefined,
+    });
+    const sw = Math.min(420, Math.round(w * 0.45));
+    return (
+      <Group x={x} y={y}>
+        {search && (
+          <>
+            <Box w={sw} h={44} bg={t.raised} radius={t.radius} />
+            <Image x={14} y={13} w={18} h={18} src={fa('magnifying-glass', { size: 16, color: t.muted })} />
+            <Text x={42} w={sw - 54} h={44} join={hint} color={t.muted} font={font} fontSize={17} />
+            <Input x={42} w={sw - 54} h={44} join={input} color={t.text} font={font} fontSize={17} />
+          </>
+        )}
+        <Text x={w - 300} w={300} h={44} join={count} align="right" color={t.muted} font={font} fontSize={16} />
+        {tb.body}
+        {runtime}
+        <OnStart js={`IvaUI.table(${id}, ${o});`}
+                 joins={[...tb.joins, count, ...(search ? [input, hint] : []), ...(selected !== undefined ? [typeof selected === 'object' ? selected : s(selected)] : []),
+                   ...(source !== undefined ? [typeof source === 'object' ? source : s(source)] : [])]} />
+      </Group>
+    );
+  }
+
+  /**
+   * Alarms: raised and cleared from joins (`conditions`), a JSON serial join
+   * or scripts (IvaAlarms.raise(name, { id, text, source, severity })). New
+   * ones are tinted red / amber, acknowledged ones dimmed, cleared ones grey;
+   * a filter (all / active / unacked), Ack (the row selected), Ack all.
+   */
+  function AlarmTable({ name, conditions = [], source, summary, rowH = 38, x = 0, y = 0, w = 1100, h = 320 }: AlarmTableProps): VNode {
+    const key = `al_${name.replace(/\W/g, '_')}`;
+    const tableId = JSON.stringify(key);
+    const columns: TableColumn[] = [
+      { key: 'time', title: 'Time', w: 110 }, { key: 'severity', title: 'Severity', w: 140, badge: true }, { key: 'source', title: 'Source', w: Math.round(w * 0.2) },
+      { key: 'text', title: 'Text' }, { key: 'state', title: 'State', w: 120 },
+    ];
+    const tb = tableBody(tableId, key, columns, w, h, 56, rowH, 17);
+    const filters = ['All', 'Active', 'Unacked'];
+    const filterJoins = filters.map((_, i) => d(`ui_${key}_f${i}`));
+    const sum: JoinRef = summary === undefined ? s(`ui_${key}_summary`) : typeof summary === 'object' ? summary : s(summary);
+    const conds = conditions.map((c) => jsObject({
+      id: JSON.stringify(c.id), text: JSON.stringify(c.text), source: JSON.stringify(c.source ?? ''), severity: JSON.stringify(c.severity ?? 'alarm'),
+      join: jsJoin(typeof c.join === 'object' ? (c.join.type as 'd' | 'a' | 's') : 'd', c.join),
+      above: c.above === undefined ? undefined : String(c.above), below: c.below === undefined ? undefined : String(c.below),
+      equals: c.equals === undefined ? undefined : JSON.stringify(c.equals),
+    }));
+    const table = jsObject({
+      ...tb.data, cols: JSON.stringify(tb.cols.map((c) => ({ key: c.key, badge: !!c.badge, sortKey: c.key === 'time' ? 'ts' : undefined }))),
+      titles: JSON.stringify(columns.map((c) => c.title)), tones: JSON.stringify(tb.images), key: '"id"', toneKey: '"tone"',
+      words: JSON.stringify({ rows: 'alarms', of: 'of', empty: 'No alarms' }), data: '[]',
+    });
+    const o = jsObject({
+      table: tableId, conditions: `[${conds.join(', ')}]`, source: source === undefined ? undefined : jsJoin('s', source), summary: jsJoin('s', sum),
+      filters: `[${filterJoins.map((j) => jsJoin('d', j)).join(', ')}]`,
+    });
+    const btn = { h: 44, radius: t.radius, bg: t.raised, active: { bg: t.accent }, font, fontSize: 17 };
+    return (
+      <Group x={x} y={y}>
+        <Box w={330} h={44} bg={t.raised} radius={t.radius} />
+        {filters.map((f, i) => (
+          <Button x={4 + i * 108} y={4} w={106} h={36} text={f} join={filterJoins[i]} feedback="none" js={`IvaUI.alarmFilter(${JSON.stringify(name)}, ${i})`}
+                  radius={t.radius - 3} bg={t.raised} color={t.muted} active={{ bg: t.accent, color: t.text }} font={font} fontSize={16} />
+        ))}
+        <Button x={346} w={120} text="Ack" icon={fa('check', { size: 16 })} iconAlign="left" js={`IvaUI.alarmAck(${JSON.stringify(name)})`} {...btn} />
+        <Button x={476} w={130} text="Ack all" icon={fa('check-double', { size: 16 })} iconAlign="left" js={`IvaUI.alarmAckAll(${JSON.stringify(name)})`} {...btn} />
+        <Text x={620} w={w - 620} h={44} join={sum} align="right" color={t.muted} font={font} fontSize={16} />
+        {tb.body}
+        {runtime}
+        <OnStart js={`IvaUI.table(${tableId}, ${table}); IvaUI.alarms(${JSON.stringify(name)}, ${o});`}
+                 joins={[...tb.joins, sum, ...filterJoins, ...(source !== undefined ? [typeof source === 'object' ? source : s(source)] : [])]} />
+      </Group>
+    );
+  }
+
+  /** The newest unacknowledged alarm (the most severe first) and how many more, blinking while any is unacknowledged. */
+  function AlarmBanner({ alarms, page, js, x = 0, y = 0, w = 860, h = 52 }: AlarmBannerProps): VNode {
+    const key = `ab_${alarms.replace(/\W/g, '_')}_${w}_${h}`;
+    const bg: JoinRef = s(`ui_${key}_bg`);
+    const ic: JoinRef = s(`ui_${key}_icon`);
+    const text: JoinRef = s(`ui_${key}_text`);
+    const more: JoinRef = s(`ui_${key}_more`);
+    const box = (fill: string, border?: string) => {
+      const name = `iva_banner_${hash(JSON.stringify([w, h, fill, border]))}`;
+      return { name, src: draw.box({ w, h, radius: t.radius, fill, borderWidth: border ? 2 : 0, borderColor: border, name }) };
+    };
+    const icon = (n: string, color: string) => {
+      const file = `iva_icon_${hash(`${n}|${color}|22`)}`;
+      return { name: file, src: fa(n, { size: 22, color, file }) };
+    };
+    const looks = {
+      alarm: [box(`${t.danger}40`, t.danger), box(`${t.danger}14`, t.danger)], warning: [box(`${t.warning}40`, t.warning), box(`${t.warning}14`, t.warning)],
+      none: [box(t.raised)],
+    };
+    const icons = { alarm: icon('triangle-exclamation', t.danger), warning: icon('triangle-exclamation', t.warning), none: icon('circle-check', t.accent) };
+    const all = [...Object.values(looks).flat(), ...Object.values(icons)];
+    const o = jsObject({
+      bg: jsJoin('s', bg), icon: jsJoin('s', ic), text: jsJoin('s', text), more: jsJoin('s', more),
+      looks: JSON.stringify(Object.fromEntries(Object.entries(looks).map(([k, v]) => [k, v.map((b) => `${b.name}.png`)]))),
+      icons: JSON.stringify(Object.fromEntries(Object.entries(icons).map(([k, v]) => [k, `${v.name}.png`]))),
+    });
+    return (
+      <Group x={x} y={y}>
+        <Image w={w} h={h} join={bg} src={looks.none[0].src} />
+        <Image x={16} y={Math.round((h - 22) / 2)} w={22} h={22} join={ic} src={icons.none.src} />
+        <Text x={50} w={w - 200} h={h} join={text} font={font} fontSize={18} />
+        <Text x={w - 150} w={134} h={h} join={more} align="right" color={t.muted} font={font} fontSize={16} />
+        {(page || js) && <Button w={w} h={h} feedback="none" page={page} js={js} />}
+        <Subpage name={`ui_${key}_images`} define w={1} h={1}>{all.map((a) => <Image w={1} h={1} src={a.src} />)}</Subpage>
+        {runtime}
+        <OnStart js={`IvaUI.alarmBanner(${JSON.stringify(alarms)}, ${o});`} joins={[bg, ic, text, more]} />
+      </Group>
+    );
+  }
+
+  /** Where you are: Home › Floor 1 › Kitchen - all but the last are links; a back arrow first, if asked. */
+  function Breadcrumbs({ items, back = false, separator = '›', fontSize = 20, x = 0, y = 0, h = 44 }: BreadcrumbsProps): VNode {
+    const parts = items.map((it) => (typeof it === 'string' ? { label: it } : it));
+    const width = (label: string) => textWidth(label, fontSize) + 8;
+    let at = back ? 44 : 0;
+    const placed = parts.map((p) => {
+      const px = at;
+      at += width(p.label) + 26;
+      return { ...p, x: px, w: width(p.label) };
+    });
+    return (
+      <Group x={x} y={y}>
+        {back && <Button w={40} h={h} icon={fa('chevron-left', { size: 18 })} feedback="none" page="Return" color={t.accent} />}
+        {placed.map((p, i) => (i < placed.length - 1 ? (
+          <>
+            <Button x={p.x} w={p.w} h={h} text={p.label} page={p.page} js={p.js} feedback="none" align="left" color={t.accent}
+                    active={{ color: shade(t.accent, 0.4) }} font={font} fontSize={fontSize} />
+            <Text x={p.x + p.w + 4} w={18} h={h} text={separator} align="center" color={t.muted} font={font} fontSize={fontSize} />
+          </>
+        ) : (
+          <Text x={p.x} w={p.w + 40} h={h} text={p.label} font={font} fontSize={fontSize} />
+        )))}
+      </Group>
+    );
+  }
+
+  /** A busy overlay over the whole panel, while a digital join is on: dimmed, a spinning icon, a text. */
+  function Loader({ join, text = 'Loading…', textJoin, icon = 'circle-notch' }: LoaderProps): VNode {
+    const key = keyOf(join);
+    const spin: JoinRef = s(`ui_${key}_spin`);
+    const { width: W, height: H } = t.panel;
+    const bw = 240;
+    const bh = 190;
+    const fade = { type: 'fade' as const, time: 0.15 };
+    return (
+      <>
+        <Subpage name={`ui_loader_${key}`} fixed topmost w={W} h={H} join={join} bg="#000000a0" in={fade} out={fade}>
+          {/* taps don't go through */}
+          <Button w={W} h={H} feedback="none" />
+          <Group x={Math.round((W - bw) / 2)} y={Math.round((H - bh) / 2)}>
+            <Box w={bw} h={bh} bg={t.surface} radius={t.radius + 4} />
+            <Image x={Math.round(bw / 2 - 28)} y={36} w={56} h={56} join={spin} src={fa(icon, { size: 52, color: t.accent })} />
+            <Text y={116} w={bw} h={40} text={text} join={textJoin} align="center" font={font} fontSize={19} />
+          </Group>
+        </Subpage>
+        {runtime}
+        <OnStart js={`IvaUI.loader(${jsJoin('d', join)}, ${jsJoin('s', spin)});`} joins={[spin]} />
+      </>
+    );
+  }
+
+  /** Pages side by side in one place: a swipe (or a dot) goes to the next / previous; the page shown in an analog join. */
+  function Pager({ join, value = 0, dots = true, x = 0, y = 0, w, h, children }: PagerProps): VNode {
+    const key = keyOf(join);
+    const id = JSON.stringify(key);
+    const pages = (Array.isArray(children) ? (children as unknown[]).flat(Infinity) : [children]).filter((c): c is VNode => !!c && typeof c === 'object');
+    const dotH = dots ? 32 : 0;
+    const pageJoins = pages.map((_, i) => d(`ui_${key}_pg${i}`));
+    const dotJoins = pages.map((_, i) => d(`ui_${key}_dot${i}`));
+    const fade = { type: 'fade' as const, time: 0.2 };
+    const dw = 14;
+    const gap = 12;
+    const dotsW = pages.length * dw + (pages.length - 1) * gap;
+    return (
+      <Group x={x} y={y}>
+        {pages.map((page, i) => (
+          <Subpage name={`ui_pg_${key}_${i}`} w={w} h={h - dotH} join={pageJoins[i]} in={fade} out={fade}>
+            {/* a swipe on the page (where its own content doesn't take the touch) */}
+            <Image w={w} h={h - dotH} src={draw.box({ w: 4, h: 4, fill: '#00000000', name: 'iva_clear_4' })}>
+              <Gesture type="swipe" direction="left" onBegin={`IvaUI.pagerStep(${id}, 1)`} />
+              <Gesture type="swipe" direction="right" onBegin={`IvaUI.pagerStep(${id}, -1)`} />
+            </Image>
+            {page}
+          </Subpage>
+        ))}
+        {dots && pages.map((_, i) => (
+          <Button x={Math.round((w - dotsW) / 2) + i * (dw + gap)} y={h - dotH + Math.round((dotH - dw) / 2)} w={dw} h={dw} radius={dw / 2}
+                  join={dotJoins[i]} feedback="none" bg={t.raised} active={{ bg: t.accent }} js={`IvaUI.pagerGo(${id}, ${i})`} />
+        ))}
+        {runtime}
+        <OnStart js={`IvaUI.pager(${id}, { join: ${jsJoin('a', join)}, pages: [${pageJoins.map((j) => jsJoin('d', j)).join(', ')}], dots: [${dotJoins.map((j) => jsJoin('d', j)).join(', ')}], value: ${value} });`}
+                 joins={[typeof join === 'object' ? join : a(join), ...pageJoins, ...dotJoins]} />
+      </Group>
+    );
+  }
+
   return {
     theme: t, Card, Icon, IconButton, Tile, Badge, Stat, Toggle, Slider, Stepper, Segmented, SceneBar, Dimmer, Dial, Knob, Thermostat, Blinds,
     RadioGroup, CheckBox, CheckBoxGroup, SelectBox, ListRow, DataList, ScrollBox, WeekDays, PinPad, AlarmCard, NavCard, Header, SideMenu, ConfirmDialog,
-    ColorPicker, TextField, SearchSelect, TimePicker, DatePicker, NumberField,
+    ColorPicker, TextField, SearchSelect, TimePicker, DatePicker, NumberField, DataTable, AlarmTable, AlarmBanner, Breadcrumbs, Loader, Pager,
   };
 }
 
@@ -1708,6 +2167,12 @@ export const SearchSelect: Ui['SearchSelect'] = ui.SearchSelect;
 export const TimePicker: Ui['TimePicker'] = ui.TimePicker;
 export const DatePicker: Ui['DatePicker'] = ui.DatePicker;
 export const NumberField: Ui['NumberField'] = ui.NumberField;
+export const DataTable: Ui['DataTable'] = ui.DataTable;
+export const AlarmTable: Ui['AlarmTable'] = ui.AlarmTable;
+export const AlarmBanner: Ui['AlarmBanner'] = ui.AlarmBanner;
+export const Breadcrumbs: Ui['Breadcrumbs'] = ui.Breadcrumbs;
+export const Loader: Ui['Loader'] = ui.Loader;
+export const Pager: Ui['Pager'] = ui.Pager;
 export const NavCard: Ui['NavCard'] = ui.NavCard;
 export const Header: Ui['Header'] = ui.Header;
 export const SideMenu: Ui['SideMenu'] = ui.SideMenu;

@@ -24,6 +24,7 @@ function drawImage(d: DrawRef, sc: number): Buffer {
     case 'dot': return dotOnRing(d.size, d.ring, d.at, d.diameter, d.color, sc);
     case 'knob': return knob(d.size, d.color, d.pointer, d.at, sc);
     case 'ticks': return ticks(d.size, d.count, d.from, d.to, d.length, d.width, d.color, sc);
+    case 'box': return box({ w: d.w, h: d.h, radius: d.radius, fill: d.fill, borderWidth: d.borderWidth ?? 0, borderColor: d.borderColor }, sc);
     case 'wheel': return wheel(d.size, sc);
     case 'ring': return ring(d.size, d.thickness, d.color, d.outline, sc);
     case 'cutout': return cutout(d.w, d.h, d.radius, d.color, sc);

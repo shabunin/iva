@@ -36,8 +36,19 @@ function panel() {
     setProperties() {},
     log() {},
   };
-  const IvaUI = new Function('CF', 'setTimeout', `${UI_RUNTIME}\nreturn IvaUI;`)(CF, (f: () => void) => f());
+  const IvaUI = new Function('CF', 'setTimeout', 'setInterval', 'clearInterval', `${UI_RUNTIME}\nreturn IvaUI;`)(
+    CF, (f: () => void) => f(), () => 0, () => {});
   return { CF, IvaUI, joins, lists, scrolls, fire };
+}
+
+/** Tones of a table: each one's row images (normal, every other, selected) and badge. */
+const TONES = Object.fromEntries(['', 'alarm', 'alarmAck', 'warning', 'warningAck', 'running', 'offline'].map((t) => [t, { rows: [`${t}0`, `${t}1`, `${t}sel`], badge: `${t}b` }]));
+
+function table(IvaUI: any, id: string, more: Record<string, unknown> = {}) {
+  IvaUI.table(id, {
+    list: 'l1', row: 'row', heads: ['h1', 'h2', 'h3'], empty: 'se', titles: ['ID', 'Temp', 'State'], tones: TONES, toneKey: 'tone', count: 'sc',
+    cols: [{ key: 'id' }, { key: 'temp', decimals: 1 }, { key: 'state', badge: true }], words: { rows: 'rows', of: 'of', empty: 'Nothing' }, ...more,
+  });
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -147,4 +158,74 @@ test('IvaTheme: switches themes by tag, images by join, lists with the look\'s r
   } finally {
     delete (globalThis as any).IvaTheme;
   }
+});
+
+test('DataTable: rows in tones, search, sort up / down / off, a tap selects', () => {
+  const { IvaUI, joins, lists, fire } = panel();
+  const data = [{ id: 'P1', temp: 41.5, state: 'Running', tone: 'running' }, { id: 'B1', temp: 96.42, state: 'Overheat', tone: 'alarm' },
+    { id: 'P2', temp: 22, state: 'Stopped' }];
+  table(IvaUI, 't', { data, key: 'id', selected: 's9', input: 'si', hint: 'sh', placeholder: 'Search' });
+  assert.deepEqual(lists.l1[1], { subpage: 'row', s20: 'alarm1', s1: 'B1', s2: '96.4', s3: 'Overheat', s23: 'alarmb' });
+  assert.equal(lists.l1[2].s20, '0'); // no tone: the plain row, the first look of the pair
+  assert.deepEqual([joins.sc, joins.sh], ['3 rows', 'Search']);
+  fire('input', 'si', 'p');
+  assert.deepEqual(lists.l1.map((r: any) => r.s1), ['P1', 'P2']);
+  assert.equal(joins.sc, '2 of 3 rows');
+  fire('input', 'si', '');
+  IvaUI.tableSort('t', 1);
+  assert.deepEqual(lists.l1.map((r: any) => r.s1), ['P2', 'P1', 'B1']);
+  assert.equal(joins.h2, 'Temp \u25B2');
+  IvaUI.tableSort('t', 1);
+  assert.deepEqual(lists.l1.map((r: any) => r.s1), ['B1', 'P1', 'P2']);
+  IvaUI.tableSort('t', 1);
+  assert.deepEqual([lists.l1.map((r: any) => r.s1), joins.h2], [['P1', 'B1', 'P2'], 'Temp']);
+  IvaUI.rowDown('l1');
+  IvaUI.tableTap('l1', 1);
+  assert.equal(joins.s9, 'B1');
+  assert.equal(lists.l1[1].s20, 'alarmsel');
+  fire('input', 'si', 'zz');
+  assert.equal(joins.se, 'Nothing');
+});
+
+test('AlarmTable: raised by a join, acked, cleared; an acked cleared alarm goes away; the banner', () => {
+  const { CF, IvaUI, joins, lists } = panel();
+  table(IvaUI, 'a', { key: 'id', cols: [{ key: 'time' }, { key: 'severity', badge: true }, { key: 'source' }, { key: 'text' }, { key: 'state' }] });
+  IvaUI.alarms('plant', { table: 'a', filters: ['f0', 'f1', 'f2'], summary: 'ss',
+    conditions: [{ id: 'hot', join: 'd5', above: 0.5, severity: 'alarm', source: 'B1', text: 'Too hot' }] });
+  const looks = { alarm: ['a0', 'a1'], warning: ['w0', 'w1'], none: ['n0'] };
+  IvaUI.alarmBanner('plant', { bg: 'sb', icon: 'si', text: 'st', more: 'sm', looks, icons: { alarm: 'ia', warning: 'iw', none: 'in' } });
+  const rows = () => lists.l1.map((r: any) => `${r.s3} ${r.s5}`);
+  assert.deepEqual([joins.st, joins.sb, joins.f0], ['No alarms', 'n0', 1]);
+  CF.setJoin('d5', 1);
+  IvaUI.alarmRaise('plant', { id: 'door', severity: 'warning', source: 'Access', text: 'Door open' });
+  assert.deepEqual(rows(), ['Access Active', 'B1 Active']);
+  assert.equal(joins.ss, '1 alarm \u00B7 1 warning \u00B7 2 unacked');
+  // the alarm before the warning, though older
+  assert.deepEqual([joins.st, joins.sm, joins.sb], ['B1: Too hot', '+1 more', 'a0']);
+  IvaUI.alarmAck('plant', 'hot');
+  assert.equal(lists.l1[1].s20, 'alarmAck1');
+  assert.equal(joins.st, 'Access: Door open');
+  // cleared but not acked: it stays, grey, until acked
+  IvaUI.alarmClear('plant', 'door');
+  assert.deepEqual(rows(), ['Access Cleared', 'B1 Acked']);
+  IvaUI.alarmFilter('plant', 2);
+  assert.deepEqual([rows(), joins.f2, joins.f0], [['Access Cleared'], 1, 0]);
+  IvaUI.alarmFilter('plant', 0);
+  IvaUI.alarmAckAll('plant');
+  assert.deepEqual(rows(), ['B1 Acked']);
+  // all acked: the banner shows the active alarm, still
+  assert.deepEqual([joins.st, joins.sm, joins.sb], ['B1: Too hot', '', 'a1']);
+  CF.setJoin('d5', 0);
+  assert.deepEqual([rows(), joins.st, joins.ss], [[], 'No alarms', '0 alarms \u00B7 0 warnings \u00B7 0 unacked']);
+});
+
+test('Pager: the page and its dot from a join, steps stop at the ends', () => {
+  const { IvaUI, joins } = panel();
+  IvaUI.pager('p', { join: 'a1', pages: ['d1', 'd2', 'd3'], dots: ['d11', 'd12', 'd13'], value: 1 });
+  assert.deepEqual([joins.d1, joins.d2, joins.d12], [0, 1, 1]);
+  IvaUI.pagerStep('p', 1);
+  IvaUI.pagerStep('p', 1);
+  assert.deepEqual([joins.a1, joins.d3, joins.d13, joins.d2], [2, 1, 1, 0]);
+  IvaUI.pagerGo('p', 0);
+  assert.deepEqual([joins.d1, joins.d11, joins.d3], [1, 1, 0]);
 });

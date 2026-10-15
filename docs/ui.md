@@ -78,6 +78,12 @@ it as a value in min..max.
 | `Header` | the top bar: menu button, title, breadcrumbs, clock | `title`, `section`, `home`, `menu`, `clock`, `themeToggle` (a ◐ button: `IvaTheme.toggle()`) |
 | `SideMenu` | a menu over the page, marking the page shown | `title`, `subtitle`, `items: [{ icon, text, page }]`, `menu`, `slide` |
 | `ConfirmDialog` | a dialog over a dimmed page | `join`, `title`, `message`, `confirmText`, `cancelText`, `danger`, `onConfirm` |
+| `DataTable` | a table: a search field, header taps sort (up, down, off), striped rows in tones, badge columns, a tap selects a row; "9 rows" / "2 of 9 rows" | `columns: [{ key, title, w, align, decimals, badge }]`, `data` or `source` (serial join: a JSON array), `keyField` + `selected` (serial join, both ways), `toneKey` (the field naming the tone: `alarm`·`warning`·`ok`·`running`·`muted`·`heating`·`cooling`·`offline`), `onSelect` (JS with `row`), `search`, `placeholder`, `words` |
+| `AlarmTable` | an alarm list: new alarms red / amber, acked ones dimmed, cleared grey; All / Active / Unacked, Ack (the selected row), Ack all, the counts. A cleared alarm goes away once acked | `name`, `conditions: [{ id, text, source, severity, join, above / below / equals }]` (checked on the panel), `source` (serial join: a JSON array of `{ id, text, source, severity, active, acked }`), `summary`; from scripts: `IvaAlarms.raise / clear / ack / ackAll(name, …)` |
+| `AlarmBanner` | the newest unacknowledged alarm (alarms before warnings) and "+N more", blinking while any is unacknowledged; then the active ones, steady; else "No alarms" | `alarms` (the AlarmTable's name), `page` / `js` (a tap) |
+| `Breadcrumbs` | Home › Floor 1 › Kitchen: all but the last are links | `items: (string \| { label, page, js })[]`, `back` (‹ to the previous page), `separator`, `fontSize` |
+| `Loader` | a busy overlay over everything while a join is on: a spinner and a text; taps stay on it | `join` (digital), `text` / `textJoin`, `icon` |
+| `Pager` | pages in one place: swipe, or tap a dot | `join` (analog: the page shown, 0, 1 …, both ways), `value`, `dots`, `w`, `h`; a page per child |
 
 Put `Header` and `SideMenu` on every page (a small `Shell` component, as
 the gallery does): the menu's subpages are defined the same each time, so
@@ -114,4 +120,8 @@ themes"), `createUi()` builds each look in its colours and the panel switches
 between them; `createUi({ accent: '#0A84FF' }, { light: { accent: '#0060DF' } })`
 changes a colour in every look, and one look's own.
 
-Not yet: Pager, tables.
+Tables: a DataTable is a CF list whose rows are a subpage of their own.
+iViewer can't colour a row from a script, so each tone's row (normal, every
+other, selected) and badge is an image iva draws (kept in a hidden subpage,
+so they ship with the .gui), and each row sets its own through a serial
+join. The search and the sorting run on the panel, over the rows it has.

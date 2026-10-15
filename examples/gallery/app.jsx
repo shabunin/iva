@@ -7,6 +7,7 @@ import Forms from './pages/Forms.jsx';
 import Pickers from './pages/Pickers.jsx';
 import Lists from './pages/Lists.jsx';
 import Schedule from './pages/Schedule.jsx';
+import Tables from './pages/Tables.jsx';
 import Navigation from './pages/Navigation.jsx';
 
 export default (
@@ -20,6 +21,7 @@ export default (
     {Pickers}
     {Lists}
     {Schedule}
+    {Tables}
     {Navigation}
   </Project>
 );

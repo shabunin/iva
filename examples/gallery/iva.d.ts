@@ -135,6 +135,14 @@ declare module 'iva' {
       width: number;
       color: string;
   } | {
+      kind: 'box';
+      w: number;
+      h: number;
+      radius?: number;
+      fill?: string;
+      borderWidth?: number;
+      borderColor?: string;
+  } | {
       kind: 'wheel';
       size: number;
   } | {
@@ -154,7 +162,7 @@ declare module 'iva' {
       kind: K;
   }>, '$$draw' | 'kind'>;
   /** Images iva draws, for <Image src>: draw.arc({ size, thickness, from, to, color }), draw.dot(...),
-   * draw.knob(...), draw.ticks(...), draw.wheel({ size }) (hue round, white in the middle),
+   * draw.knob(...), draw.ticks(...), draw.box({ w, h, radius, fill, borderWidth, borderColor }), draw.wheel({ size }) (hue round, white in the middle),
    * draw.ring({ size, thickness, color, outline }), draw.cutout({ w, h, radius, color }) (a frame
    * with a rounded hole, to round a web view's corners). `name` fixes the file name (else: from the content). */
   export declare const draw: {
@@ -162,6 +170,7 @@ declare module 'iva' {
       dot: (o: Drawing<'dot'>) => DrawRef;
       knob: (o: Drawing<'knob'>) => DrawRef;
       ticks: (o: Drawing<'ticks'>) => DrawRef;
+      box: (o: Drawing<'box'>) => DrawRef;
       wheel: (o: Drawing<'wheel'>) => DrawRef;
       ring: (o: Drawing<'ring'>) => DrawRef;
       cutout: (o: Drawing<'cutout'>) => DrawRef;
@@ -1217,6 +1226,125 @@ declare module 'iva/ui' {
           range?: string;
       };
   }
+  /** A row tone (DataTable, AlarmTable): a tint behind the row, and its badge. */
+  export type RowTone = 'alarm' | 'warning' | 'ok' | 'muted' | 'running' | 'heating' | 'cooling' | 'offline' | 'alarmAck' | 'warningAck';
+  export interface TableColumn {
+      /** the row field it shows */
+      key: string;
+      title: string;
+      /** width (default: an equal share of what's left) */
+      w?: number;
+      align?: 'left' | 'center' | 'right';
+      /** digits after the point, for numbers */
+      decimals?: number;
+      /** shown as a badge in the row's tone */
+      badge?: boolean;
+  }
+  export interface DataTableProps {
+      columns: TableColumn[];
+      /** the rows; or `source` */
+      data?: Record<string, unknown>[];
+      /** serial join with the rows as a JSON array (a script or a feedback fills it) */
+      source?: Join;
+      /** the field that names a row: a tap selects it, `selected` gets it */
+      keyField?: string;
+      /** serial join: the selected row's key (both ways) */
+      selected?: Join;
+      /** the field naming the row's tone (alarm, warning, ok, muted, running, heating, cooling, offline) */
+      toneKey?: string;
+      /** a search field over the table (default true) */
+      search?: boolean;
+      placeholder?: string;
+      /** JavaScript run on a tap, with `row` (the row's object) */
+      onSelect?: string;
+      words?: {
+          rows?: string;
+          of?: string;
+          empty?: string;
+      };
+      rowH?: number;
+      fontSize?: number;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  export interface AlarmCondition {
+      /** the alarm's id */
+      id: string;
+      text: string;
+      source?: string;
+      severity?: 'alarm' | 'warning';
+      /** the join watched ('d12', d('door'), a('temp')) */
+      join: Join;
+      /** active while the join's value is above / below / equal to */
+      above?: number;
+      below?: number;
+      equals?: number | string;
+  }
+  export interface AlarmTableProps {
+      /** names it for AlarmBanner and IvaAlarms (IvaAlarms.raise('plant', {...})) */
+      name: string;
+      /** alarms raised and cleared on the panel, from joins */
+      conditions?: AlarmCondition[];
+      /** serial join with alarms as a JSON array ({ id, text, source, severity, active, acked }) */
+      source?: Join;
+      /** serial join: the counts as text ("2 alarms · 1 warning · 3 unacked") */
+      summary?: Join;
+      rowH?: number;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  export interface AlarmBannerProps {
+      /** the AlarmTable's name */
+      alarms: string;
+      /** a tap: a page, or JavaScript */
+      page?: string;
+      js?: string;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  export interface BreadcrumbsProps {
+      /** where you are: strings or { label, page, js }; all but the last are links */
+      items: (string | {
+          label: string;
+          page?: string;
+          js?: string;
+      })[];
+      /** a back arrow first (to the previous page) */
+      back?: boolean;
+      separator?: string;
+      fontSize?: number;
+      x?: number;
+      y?: number;
+      h?: number;
+  }
+  export interface LoaderProps {
+      /** digital join: shown while on */
+      join: Join;
+      /** the text under the spinner, or a serial join's */
+      text?: string;
+      textJoin?: Join;
+      icon?: string;
+  }
+  export interface PagerProps {
+      /** analog join: the page shown (0, 1, ...), both ways */
+      join: Join;
+      /** the first page shown */
+      value?: number;
+      /** the dots under the pages (default true) */
+      dots?: boolean;
+      x?: number;
+      y?: number;
+      w: number;
+      h: number;
+      /** one page per child */
+      children?: Child;
+  }
   export interface AlarmCardProps {
       title: string;
       /** digital join: the alarm on */
@@ -1321,6 +1449,12 @@ declare module 'iva/ui' {
       TimePicker: (p: TimePickerProps) => VNode;
       DatePicker: (p: DatePickerProps) => VNode;
       NumberField: (p: NumberFieldProps) => VNode;
+      DataTable: (p: DataTableProps) => VNode;
+      AlarmTable: (p: AlarmTableProps) => VNode;
+      AlarmBanner: (p: AlarmBannerProps) => VNode;
+      Breadcrumbs: (p: BreadcrumbsProps) => VNode;
+      Loader: (p: LoaderProps) => VNode;
+      Pager: (p: PagerProps) => VNode;
       AlarmCard: (p: AlarmCardProps) => VNode;
       Knob: (p: KnobProps) => VNode;
       Thermostat: (p: ThermostatProps) => VNode;
@@ -1373,6 +1507,12 @@ declare module 'iva/ui' {
   export declare const TimePicker: Ui['TimePicker'];
   export declare const DatePicker: Ui['DatePicker'];
   export declare const NumberField: Ui['NumberField'];
+  export declare const DataTable: Ui['DataTable'];
+  export declare const AlarmTable: Ui['AlarmTable'];
+  export declare const AlarmBanner: Ui['AlarmBanner'];
+  export declare const Breadcrumbs: Ui['Breadcrumbs'];
+  export declare const Loader: Ui['Loader'];
+  export declare const Pager: Ui['Pager'];
   export declare const NavCard: Ui['NavCard'];
   export declare const Header: Ui['Header'];
   export declare const SideMenu: Ui['SideMenu'];

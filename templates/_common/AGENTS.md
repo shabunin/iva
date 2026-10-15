@@ -47,8 +47,9 @@ iva serve          # to iViewer on a real device (GUI File URL http://<this mach
   IconButton, Toggle, Slider, Stepper, Segmented, SceneBar, Dimmer, Blinds,
   Dial, Knob, Thermostat, ColorPicker, RadioGroup, CheckBox, SelectBox,
   TextField, SearchSelect, TimePicker, DatePicker, NumberField, DataList,
-  WeekDays, AlarmCard, PinPad, Header, SideMenu, ConfirmDialog, ...); see
-  iva's docs/ui.md.
+  WeekDays, AlarmCard, PinPad, Header, SideMenu, ConfirmDialog, DataTable,
+  AlarmTable, AlarmBanner, Breadcrumbs, Loader, Pager, ...);
+  see iva's docs/ui.md.
 - Devices: `<System host port>` with `<Command>` and `<Feedback>`; button
   `cmd="Name"` sends a command.
 - Keep it valid for the real iViewer: prefer iva's props; `xml={{...}}` and

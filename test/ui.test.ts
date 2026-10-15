@@ -119,3 +119,42 @@ test('pickers: drum lists with their rows, popups last, a popup each for pickers
   for (const f of ["kind: 'time'", "kind: 'date'", 'IvaUI.num(', 'IvaUI.select(']) assert.ok(start.includes(f), f);
   assert.deepEqual(r.warnings, []);
 });
+
+test('Tables and navigation: row subpages, tone images shipped, setup for each', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-tables-'));
+  fs.writeFileSync(path.join(dir, 'app.jsx'), `import { DataTable, AlarmTable, AlarmBanner, Breadcrumbs, Loader, Pager } from 'iva/ui';
+export default (
+  <Project name="T" width={1280} height={800}>
+    <Page name="P">
+      <DataTable name="plant" keyField="id" selected="equipment" toneKey="tone" w={800} h={300}
+        columns={[{ key: 'id', title: 'ID', w: 80 }, { key: 'temp', title: 'Temp', align: 'right', decimals: 1 }, { key: 'state', title: 'State', badge: true }]}
+        data={[{ id: 'P1', temp: 41.5, state: 'Running', tone: 'running' }]} />
+      <AlarmTable name="plant_alarms" y={320} w={800} h={300} conditions={[{ id: 'hot', join: 'hot', above: 0.5, severity: 'alarm', text: 'Hot' }]} />
+      <AlarmBanner alarms="plant_alarms" y={640} w={800} page="P" />
+      <Breadcrumbs x={850} items={[{ label: 'Home', page: 'P' }, 'Kitchen']} back />
+      <Loader join="busy" text="Working…" />
+      <Pager join="pg" x={850} y={100} w={400} h={200}>
+        <Text w={400} h={200} text="one" />
+        <Text w={400} h={200} text="two" />
+      </Pager>
+    </Page>
+  </Project>
+);
+`);
+  const r = await compile(path.join(dir, 'app.jsx'));
+  assert.deepEqual(r.warnings, []);
+  for (const sc of r.scripts) assert.doesNotThrow(() => new Function(sc.code!), sc.name);
+  const start = r.scripts.find((x) => x.name === 'iva-start.js')!.code!;
+  for (const call of ['IvaUI.table(', 'IvaUI.alarms(', 'IvaUI.alarmBanner(', 'IvaUI.loader(', 'IvaUI.pager(']) assert.ok(start.includes(call), call);
+  // rows come from a subpage of their own; each table's tone images ship in a hidden one
+  for (const sp of ['ui_tbl_al_plant_alarms_row', 'ui_tbl_al_plant_alarms_images', 'ui_loader_busy', 'ui_pg_pg_0', 'ui_pg_pg_1']) {
+    assert.match(r.xml, new RegExp(`<subpage name="${sp}" w=`), sp);
+  }
+  const rows = new Set([...start.matchAll(/iva_row_\w+\.png/g)].map((m) => m[0]));
+  assert.ok(rows.size > 10);
+  for (const f of rows) assert.ok(r.assets.some((a) => a.name === f), f);
+  // the back arrow and the link are buttons to pages; the last crumb is text
+  assert.match(r.xml, /<btn [^>]*flip="Return"/);
+  assert.match(r.xml, /<btn [^>]*flip="P"[^>]*>\s*<inactive [^>]*>Home</);
+  assert.match(r.xml, />Kitchen</);
+});
