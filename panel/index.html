@@ -14,9 +14,11 @@
       <label for="url">GUI</label>
       <input id="url" type="text" inputmode="url" placeholder="http://192.168.1.10:8019" autocomplete="off" autocapitalize="off" spellcheck="false" />
       <p class="hint">A .gui or a zipped GUI on a web server (http://, cf://), or <code>iva serve</code>'s address.</p>
+      <p class="hint" id="saved"></p>
       <div class="row">
         <button type="submit">Load</button>
         <button type="button" id="cancel">Back</button>
+        <button type="button" id="forget" hidden>Forget the copy</button>
       </div>
       <p class="hint">Settings again: hold three fingers on the screen, or a finger in the top-left corner, or press F1.</p>
       <pre id="errors"></pre>

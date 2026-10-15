@@ -7,6 +7,7 @@
  * src/server/project.ts does the same for iva dev, on the server side.
  */
 import { fetch as hostFetch } from '@tauri-apps/plugin-http';
+import type { SavedGui } from './store';
 
 export interface Manifest {
   /** where it came from: CF.loadGUI's links resolve against it */
@@ -33,11 +34,30 @@ export const guiUrl = (url: string) => {
   return /^[a-z][a-z0-9+.-]*:\/\//i.test(u) ? u : `http://${u}`;
 };
 
-async function get(url: string): Promise<Uint8Array<ArrayBuffer>> {
-  const res = await hostFetch(url, { method: 'GET', connectTimeout: 15000 });
-  if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
-  return new Uint8Array(await res.arrayBuffer());
+/** What a server gave: the bytes, and what tells this version from its next one. */
+export interface Download {
+  url: string;
+  bytes: Uint8Array<ArrayBuffer>;
+  etag?: string;
+  lastModified?: string;
+  /** its Server header (iva serve has the whole build in one archive) */
+  server?: string;
 }
+
+/** GET url - with `known` (a saved copy's ETag, Last-Modified): null when the server says it's the same */
+async function download(url: string, known?: { etag?: string; lastModified?: string }): Promise<Download | null> {
+  const headers: Record<string, string> = {};
+  if (known?.etag) headers['If-None-Match'] = known.etag;
+  if (known?.lastModified) headers['If-Modified-Since'] = known.lastModified;
+  const res = await hostFetch(url, { method: 'GET', headers, connectTimeout: 15000 });
+  if (res.status === 304) return null;
+  if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+  const header = (name: string) => res.headers.get(name) ?? undefined;
+  return { url, bytes: new Uint8Array(await res.arrayBuffer()), etag: header('etag'), lastModified: header('last-modified'), server: header('server') };
+}
+
+const get = async (url: string) => (await download(url))!.bytes;
+const isZip = (b: Uint8Array) => b[0] === 0x50 && b[1] === 0x4b && b[2] === 3 && b[3] === 4;
 
 function decodeXml(b: Uint8Array): string {
   // GUI Designer writes UTF-8 with a BOM; tolerate UTF-16 too
@@ -63,15 +83,80 @@ function scriptNames(xml: string): string[] {
 const folderOf = (xml: string) => (xml.match(/<imagefolder>([^<]*)<\/imagefolder>/)?.[1] ?? '').trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
 const titleOf = (xml: string, fallback: string) => xml.match(/<project>([^<]*)<\/project>/)?.[1]?.trim() || fallback;
 
-/** The GUI at `url`: a .gui, or a zip (by what comes, whatever the URL says). */
-export async function loadManifest(url: string): Promise<Manifest> {
-  const at = guiUrl(url);
-  const bytes = await get(at);
-  if (bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 3 && bytes[3] === 4) return zipManifest(await unzip(bytes), at);
-  const xml = decodeXml(bytes);
+/** The GUI at `url` from its server - a .gui, or a zip (by what comes, whatever the URL says) - and what came. */
+export async function loadManifest(url: string): Promise<{ manifest: Manifest; got: Download }> {
+  const got = (await download(guiUrl(url)))!;
+  return { manifest: await manifestOf(got), got };
+}
+
+async function manifestOf(got: Download): Promise<Manifest> {
+  if (isZip(got.bytes)) return zipManifest(await unzip(got.bytes), got.url);
+  const xml = decodeXml(got.bytes);
   // a web page, a wrong address: say so, not an empty screen
-  if (!/<gui[\s>]/.test(xml)) throw new Error(`${at}: not a GUI (a .gui, a zipped GUI or iva serve's address)`);
-  return remoteManifest(at, xml);
+  if (!/<gui[\s>]/.test(xml)) throw new Error(`${got.url}: not a GUI (a .gui, a zipped GUI or iva serve's address)`);
+  return remoteManifest(got.url, xml);
+}
+
+/** A GUI from its copy on the device. */
+export async function savedManifest(saved: SavedGui): Promise<Manifest> {
+  return zipManifest(saved.zip ? await unzip(saved.zip) : new Map(Object.entries(saved.files ?? {})), saved.url);
+}
+
+/** a web view's page in the GUI's files (url="page.html"), not one on the web */
+const webPages = (xml: string) =>
+  [...xml.matchAll(/<web\b[^>]*\burl\s*=\s*"([^"]+)"/gi)].map((m) => m[1].trim()).filter((u) => u && !/^[a-z][a-z0-9+.-]*:/i.test(u) && !u.startsWith('//'));
+
+/** `work` on each, `n` at a time */
+async function each<T>(items: T[], n: number, work: (item: T) => Promise<void>) {
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => {
+    while (next < items.length) await work(items[next++]);
+  }));
+}
+
+/**
+ * What to keep of a GUI that came from its server: a zip as it came; iva
+ * serve's whole build (its web pages, the assets its scripts load); or the
+ * files a .gui names - its images, scripts and web pages - beside it.
+ */
+export async function toSave(got: Download, m: Manifest): Promise<SavedGui> {
+  const base = { url: got.url, etag: got.etag, lastModified: got.lastModified, savedAt: Date.now() };
+  if (isZip(got.bytes)) return { ...base, zip: got.bytes, bytes: got.bytes.length };
+  const gui = decodeXml(got.bytes);
+  if (got.server?.startsWith('iva')) {
+    const zip = await download(new URL('/__iva/gui.zip', got.url).href).catch(() => null);
+    if (zip && isZip(zip.bytes)) return { ...base, gui, zip: zip.bytes, bytes: zip.bytes.length };
+  }
+  const folder = folderOf(gui);
+  const inFolder = (name: string) => (folder ? `${folder}/` : '') + name.replace(/\\/g, '/');
+  const own = decodeURIComponent(new URL(got.url).pathname.split('/').pop() ?? '');
+  const files: Record<string, Uint8Array<ArrayBuffer>> = { [/\.gui$/i.test(own) ? own : 'gui.gui']: got.bytes };
+  const names = [...new Set([...imageNames(gui), ...webPages(gui)].map((n) => n.replace(/\\/g, '/')))];
+  await each(names, 6, async (name) => {
+    const href = m.fileUrl(name);
+    if (!href) return;
+    try {
+      files[inFolder(name)] = await get(href);
+    } catch {
+      // not on the server: missing when it runs from there too
+    }
+  });
+  for (const [name, code] of Object.entries(m.scriptMap)) files[inFolder(name)] = new TextEncoder().encode(code);
+  return { ...base, gui, files, bytes: Object.values(files).reduce((n, f) => n + f.length, 0) };
+}
+
+/** The server's version of a saved GUI, to keep - null if it's the one saved (or the same bytes again). */
+export async function newerVersion(saved: SavedGui): Promise<SavedGui | null> {
+  const got = await download(saved.url, saved);
+  if (!got) return null;
+  if (isZip(got.bytes) ? !saved.gui && !!saved.zip && same(saved.zip, got.bytes) : saved.gui === decodeXml(got.bytes)) return null;
+  return toSave(got, await manifestOf(got));
+}
+
+function same(a: Uint8Array, b: Uint8Array) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
 }
 
 async function remoteManifest(at: string, guiXml: string): Promise<Manifest> {
@@ -187,10 +272,11 @@ export async function unzip(z: Uint8Array<ArrayBuffer>): Promise<Map<string, Uin
     entries.push({ name, method, data: z.slice(start, start + size) });
   }
   const out = new Map<string, Uint8Array<ArrayBuffer>>();
-  await Promise.all(entries.map(async ({ name, method, data }) => {
+  // a few at a time: a thousand inflating streams at once fail ("Failed to fetch")
+  await each(entries, 8, async ({ name, method, data }) => {
     if (method === 0) out.set(name, data);
     else if (method === 8) out.set(name, new Uint8Array(await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer()));
     else throw new Error(`${name}: zip compression ${method} isn't supported`);
-  }));
+  });
   return out;
 }

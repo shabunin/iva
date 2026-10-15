@@ -12,13 +12,16 @@ import { installHost } from '../src/runtime/stdlib';
 import { loadProject, type LoadProjectResult, type Orientation } from '../src/runtime/cf';
 import { createIvaHost } from '../src/runtime/host';
 import { installFonts } from '../src/preview/fonts';
-import { guiUrl, loadManifest } from './loader';
+import { guiUrl, loadManifest, newerVersion, savedManifest, toSave, type Download, type Manifest } from './loader';
+import { forgetGui, keptGui, saveGui, savedGui, usedGui, type SavedGui } from './store';
 
 /** localStorage: the GUI's URL; sessionStorage: the page CF.loadGUI asked for */
 const GUI = 'iva-panel:gui';
 const PAGE = 'iva-panel:page';
 /** localStorage: iViewer's "Disconnect on Exit/Sleep" ('0': off), as CF.loadGUI last set it */
 const DISCONNECT = 'iva-panel:disconnectOnSuspend';
+/** sessionStorage: CF.loadGUI asked for the server's GUI, not the copy kept (its reloadGUI) */
+const FRESH = 'iva-panel:fresh';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const stage = $<HTMLDivElement>('stage');
@@ -102,9 +105,48 @@ function loadGui(from: string, url: string, settings: Record<string, unknown>) {
   localStorage.setItem(GUI, url ? new URL(guiUrl(url), from).href : from);
   if (typeof settings.startPage === 'string' && settings.startPage) sessionStorage.setItem(PAGE, settings.startPage);
   if (typeof settings.disconnectOnSuspend === 'boolean') localStorage.setItem(DISCONNECT, settings.disconnectOnSuspend ? '1' : '0');
+  // "Reload GUI" (iva serve's live reload): the server's, not the copy kept
+  if (settings.reloadGUI === true || settings.reloadAssets === true) sessionStorage.setItem(FRESH, '1');
   location.reload();
 }
 
+const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/** Run it. */
+async function show(m: Manifest) {
+  document.title = `${m.title} · iva panel`;
+  const startPage = sessionStorage.getItem(PAGE) ?? undefined;
+  sessionStorage.removeItem(PAGE);
+  current = await loadProject({
+    guiXml: m.guiXml,
+    imageMap: m.imageMap,
+    scriptMap: m.scriptMap,
+    canvas,
+    fileUrl: m.fileUrl,
+    guiUrl: m.url,
+    loadGui: (next, settings) => loadGui(m.url, next, settings),
+    startPage,
+    orientation,
+    // not the preview's toolbar: its keys (H: the hand, Ctrl+R...) would take a hardware keyboard's
+    menu: false,
+    disconnectOnSuspend: localStorage.getItem(DISCONNECT) !== '0',
+    onOrientationChange: (o) => {
+      orientation = o;
+      fit();
+    },
+  });
+  // a GUI with one orientation: shown in it, whichever way the device is
+  orientation = (current.renderer.targetOrientation as Orientation | undefined) ?? orientation;
+  fit();
+  say(m.missingScripts.length ? `missing scripts: ${m.missingScripts.join(', ')}` : '');
+}
+
+/**
+ * The GUI: its copy on the device at once, if it has one - its server asked
+ * for a newer one behind it - else from its server (then kept on the device).
+ * Its server not there: the copy, else again in a while, as a panel on the
+ * wall should.
+ */
 async function start() {
   await installFonts();
   const url = localStorage.getItem(GUI);
@@ -112,43 +154,85 @@ async function start() {
     openSettings();
     return;
   }
+  const fresh = sessionStorage.getItem(FRESH) === '1';
+  sessionStorage.removeItem(FRESH);
+  const saved = await savedGui(url).catch((e) => void noteError(`the copy kept: ${message(e)}`));
+  if (saved && !fresh) {
+    try {
+      await show(await savedManifest(saved));
+      kept = saved;
+      void usedGui(url).catch(() => {});
+      void checkServer();
+      return;
+    } catch (e) {
+      noteError(`the copy kept of ${url}: ${message(e)}`);
+    }
+  }
   say(`loading ${url}…`);
   try {
-    const m = await loadManifest(url);
-    document.title = `${m.title} · iva panel`;
-    const startPage = sessionStorage.getItem(PAGE) ?? undefined;
-    sessionStorage.removeItem(PAGE);
-    current = await loadProject({
-      guiXml: m.guiXml,
-      imageMap: m.imageMap,
-      scriptMap: m.scriptMap,
-      canvas,
-      fileUrl: m.fileUrl,
-      guiUrl: m.url,
-      loadGui: (next, settings) => loadGui(m.url, next, settings),
-      startPage,
-      orientation,
-      // not the preview's toolbar: its keys (H: the hand, Ctrl+R...) would take a hardware keyboard's
-      menu: false,
-      disconnectOnSuspend: localStorage.getItem(DISCONNECT) !== '0',
-      onOrientationChange: (o) => {
-        orientation = o;
-        fit();
-      },
-    });
-    // a GUI with one orientation: shown in it, whichever way the device is
-    orientation = (current.renderer.targetOrientation as Orientation | undefined) ?? orientation;
-    fit();
-    say(m.missingScripts.length ? `missing scripts: ${m.missingScripts.join(', ')}` : '');
+    const { manifest, got } = await loadManifest(url);
+    await show(manifest);
+    void keep(got, manifest);
   } catch (e) {
-    // its server isn't there (yet): again in a while, as a panel on the wall should
-    const why = e instanceof Error ? e.message : String(e);
+    const why = message(e);
     noteError(why);
+    // the server's asked for and not there: the copy kept
+    if (saved && !current) {
+      try {
+        await show(await savedManifest(saved));
+        kept = saved;
+        say(`${why} - the copy kept on ${new Date(saved.savedAt).toLocaleString()}`);
+        setTimeout(() => say(''), 8000);
+        return;
+      } catch (e2) {
+        noteError(`the copy kept of ${url}: ${message(e2)}`);
+      }
+    }
     say(`${why} - trying again in 5 s (three fingers held: settings)`);
     failed = true;
     retryLater();
   }
 }
+
+/** the copy of the GUI shown kept on the device: what the next start runs, what the server's is checked against */
+let kept: SavedGui | null = null;
+
+/** What came from the server, kept on the device (behind the GUI running): the next start runs it. */
+async function keep(got: Download, m: Manifest) {
+  try {
+    const s = await toSave(got, m);
+    await saveGui(s);
+    kept = s;
+  } catch (e) {
+    noteError(`keeping ${got.url} on the device: ${message(e)}`);
+  }
+}
+
+/** The server asked for a newer version of the GUI kept: kept, and run now (on the page shown). */
+let checking = false;
+let checkedAt = 0;
+async function checkServer() {
+  if (!kept || checking) return;
+  checking = true;
+  checkedAt = Date.now();
+  try {
+    const newer = await newerVersion(kept);
+    if (!newer) return;
+    await saveGui(newer);
+    const page = current?.renderer.currentPageName;
+    if (page) sessionStorage.setItem(PAGE, page);
+    location.reload();
+  } catch (e) {
+    // no server now: the copy runs on
+    noteError(`asking for a newer GUI: ${message(e)}`);
+  } finally {
+    checking = false;
+  }
+}
+// back in front: the server asked again (at most once a minute)
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && Date.now() - checkedAt > 60_000) void checkServer();
+});
 
 /** the GUI didn't load: again in 5 s - not while the settings are open (the page would go from under the typing) */
 let failed = false;
@@ -165,9 +249,24 @@ function openSettings() {
   input.value = localStorage.getItem(GUI) ?? '';
   $('errors').textContent = errors.slice().reverse().join('\n');
   $('cancel').hidden = !current && !failed;
+  void showKept();
   form.hidden = false;
   input.focus();
 }
+
+/** whether the GUI is kept on the device, since when */
+async function showKept() {
+  const url = localStorage.getItem(GUI);
+  const k = url ? await keptGui(url).catch(() => undefined) : undefined;
+  $('saved').textContent = k
+    ? `Kept on this device (${new Date(k.savedAt).toLocaleString()}, ${k.bytes < 1048576 ? `${Math.ceil(k.bytes / 1024)} KB` : `${(k.bytes / 1048576).toFixed(1)} MB`}): it starts without its server.`
+    : url ? 'Not kept on this device yet: it is once it has loaded from its server.' : '';
+  $('forget').hidden = !k;
+}
+$('forget').addEventListener('click', () => {
+  const url = localStorage.getItem(GUI);
+  if (url) void forgetGui(url).then(showKept, (e) => noteError(message(e)));
+});
 form.addEventListener('submit', (e) => {
   e.preventDefault();
   const v = input.value.trim();
