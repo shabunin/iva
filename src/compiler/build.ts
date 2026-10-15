@@ -163,6 +163,8 @@ export class Builder {
   private size: ScreenSize = { width: 1024, height: 768 };
   /** the .gui's image folder, as it names it */
   private imageFolder = '';
+  /** joins an element carries ('d:menu', 'a:1012') */
+  private carried = new Set<string>();
   private sizesAsked: ScreenSize[] = [];
 
   /**
@@ -282,6 +284,7 @@ export class Builder {
           .join('\n')}\n} });\n`,
       });
     }
+    this.holdJoins();
     this.joins.allocate();
     const named = this.joins.map();
     if (Object.keys(named).length) {
@@ -426,10 +429,35 @@ export class Builder {
 
   private join(node: VNode, prop: string, type: 'd' | 'a' | 's' | 'l'): JoinSlot | '0' {
     try {
-      return fixedJoin(type, node.props[prop]) ?? '0';
+      const slot = fixedJoin(type, node.props[prop]) ?? '0';
+      // an element carries it: iViewer knows the join (it knows no other)
+      if (slot !== '0') this.carried.add(`${slot.type}:${slot.id}`);
+      return slot;
     } catch (e: any) {
       throw this.err(node, `${prop}: ${e.message}`);
     }
+  }
+
+  /**
+   * Named joins no element carries - a dial's value, a picker's hour, what a
+   * script keeps - get one in a hidden subpage on the start page: iViewer
+   * only knows the joins of its elements (CF.getJoins leaves the rest out,
+   * CF.setJoin and CF.watch don't reach them).
+   */
+  private holdJoins() {
+    const ref = (type: string, id: string) => ({ $$join: 1, type, id });
+    const items: VNode[] = [];
+    for (const { type, name } of this.joins.names()) {
+      if (type === 'l' || this.carried.has(`${type}:${name}`)) continue;
+      const props = { y: items.length, w: 1, h: 1, join: ref(type, name) };
+      items.push({ $$iva: 1, type: type === 'd' ? 'Button' : type === 'a' ? 'Gauge' : 'Text', props: type === 'd' ? { ...props, feedback: 'none' } : props, children: [] });
+    }
+    if (!items.length) return;
+    const page = this.pages.find((pg) => pg.attrs.some(([k, v]) => k === 'start' && v === '1')) ?? this.pages[0];
+    const holder: VNode = { $$iva: 1, type: 'Subpage', props: { name: 'iva_joins', w: 1, h: Math.max(1, items.length), visible: false }, children: items };
+    const placed = this.item(holder);
+    const main = page.children.find((c) => c.tag === this.primary) ?? page.children[0];
+    main.children.push(placed);
   }
 
   private target(node: VNode, prop: string, value?: unknown): JoinSlot | string | undefined {
@@ -881,10 +909,11 @@ export class Builder {
     return this.webView(node, { ...geom, j: 0, title: 0, back: 0, forward: 0, refresh: 0, stop: 0, tags: tagsAttr(p.tags) }, `${name}/`);
   }
 
-  /** A web view's URL: a page of the project (url="page.html", shipped from assets/) where the build puts it. */
-  private webPage(url: string): string {
-    if (!this.folders || /^[a-z][a-z0-9+.-]*:/i.test(url) || url.startsWith('/') || !this.assets.has(url.toLowerCase())) return url;
-    return `${IMAGES_DIR}/${url}`;
+  /** A web view's URL that's a page of the project (url="page.html", shipped from assets/): its name in the image folder. */
+  private localPage(url: string): string | null {
+    if (/^[a-z][a-z0-9+.-]*:/i.test(url) || url.startsWith('/') || url.startsWith('//')) return null;
+    const a = this.assets.get(url.toLowerCase());
+    return a ? a.name : null;
   }
 
   /**
@@ -1088,7 +1117,10 @@ export class Builder {
         // url="panel:/iva-color/000000": a page of the panel's own web server
         const own = /^panel:\/*(.*)$/i.exec(String(p.url));
         if (own) return this.webView(node, { ...attrs, tags: tagsAttr(p.tags) }, own[1]);
-        return this.E('web', { ...attrs, url: this.webPage(p.url), tags: tagsAttr(p.tags) });
+        // a page of the project: iViewer's web views load URLs only - the panel's web server serves it
+        const local = this.localPage(String(p.url));
+        if (local) return this.webView(node, { ...attrs, tags: tagsAttr(p.tags) }, `iva-file/${local.split('/').map(encodeURIComponent).join('/')}`);
+        return this.E('web', { ...attrs, url: p.url, tags: tagsAttr(p.tags) });
       }
       case 'Video': {
         const auth = p.auth ?? {};

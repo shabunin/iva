@@ -203,3 +203,15 @@ test('the web server with runtime themes: the look\'s options and colour; a swit
     delete (globalThis as any).IvaTheme;
   }
 });
+
+test('the web server: a page of the project (/iva-file/page.html) in the boot page, numbered; a missing one says so', () => {
+  const { IvaHttp, sent, request } = panel({ 'page.html': '<h1>Hallo Küche</h1>', 'docs/a b.html': '<p>x</p>' });
+  IvaHttp.web('IvaWeb', 8900);
+  request('IvaWeb', '/iva-file/page.html?r=p1');
+  assert.deepEqual(dataOf(last(sent)), { path: 'page.html', file: '<h1>Hallo Küche</h1>' });
+  assert.equal(parse(last(sent)).headers['x-iva-req'], 'p1');
+  request('IvaWeb', '/iva-file/docs/a%20b.html');
+  assert.equal(dataOf(last(sent)).file, '<p>x</p>');
+  request('IvaWeb', '/iva-file/gone.html');
+  assert.deepEqual([parse(last(sent)).status, dataOf(last(sent))], ['HTTP/1.1 404 Not Found', { path: 'gone.html', error: 'not found: gone.html' }]);
+});

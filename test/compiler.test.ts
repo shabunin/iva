@@ -475,3 +475,29 @@ test('<Project licenses>: the devices licensed to run it, in <properties> as GUI
   assert.match(r.xml, /<debug [^>]*\/>\s*<devices>\s*<device name="Kitchen iPad">8437F51DCCD3F92EA6898A980ACA0259<\/device>\s*<device name="Phone">B61C91A1867233DEC98FE9605E2AA91B<\/device>\s*<\/devices>\s*<\/properties>/);
   await fails(`export default (<Project name="T" width={1024} height={768} licenses={{ 'Phone': '12345' }}><Page name="P" /></Project>);`, /licenses: "Phone": "12345" isn't a device code/);
 });
+
+test('joins only scripts use get a hidden element each (iViewer knows no other); a page of the project comes from the panel\'s web server', async () => {
+  const r = await build(`export default (
+  <Project name="T" width={1024} height={768}>
+    <Page name="Main">
+      <Button w={100} h={50} join="lamp" />
+      <Web y={100} w={300} h={200} url="page.html" />
+      <OnStart js="CF.setJoin(Joins.a.level, 5); CF.setJoin(Joins.s.note, 'x'); CF.setJoin(Joins.d.armed, 1); CF.setJoin(Joins.d.lamp, 1);"
+               joins={[a('level'), s('note'), d('armed'), d('lamp')]} />
+    </Page>
+  </Project>
+);`, { 'assets/page.html': '<p>hi</p>' });
+  const holder = /<subpage name="iva_joins" w="1" h="3"[^>]*>([\s\S]*?)<\/subpage>/.exec(r.xml)!;
+  assert.ok(holder, 'the holder subpage');
+  const joins = r.joins;
+  assert.match(holder[1], new RegExp(`<gauge j="${joins.analog.level}"`));
+  assert.match(holder[1], new RegExp(`<txt j="${joins.serial.note}"`));
+  assert.match(holder[1], new RegExp(`<btn j="${joins.digital.armed}"`));
+  // a join a button carries: no holder
+  assert.doesNotMatch(holder[1], new RegExp(`<btn j="${joins.digital.lamp}"`));
+  // placed, hidden, on the start page
+  assert.match(r.xml, /<page name="Main"[\s\S]*<subpage name="iva_joins" x="0" y="0"[^>]*v="0"/);
+  // the web view: the panel's web server, the file by name
+  assert.match(r.xml, /<web [^>]*url="http:\/\/127\.0\.0\.1:8900\/iva-file\/page\.html"/);
+  assert.match(r.xml, /<system name="IvaWeb"/);
+});

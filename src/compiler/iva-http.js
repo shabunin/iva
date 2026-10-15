@@ -80,6 +80,18 @@ var IvaHttp = (() => {
     }
     var name = location.pathname.replace(/\/+$/, '').split('/').pop();
     var tries = 0;
+    // a page of the project (/iva-file/page.html): its HTML in the data, written over this page
+    var file = /\/iva-file\/(.+)$/.exec(location.pathname);
+    var path = file ? decodeURIComponent(file[1]) : '';
+    function show(data) {
+      if (data.error) {
+        document.body.textContent = data.error;
+        return;
+      }
+      document.open();
+      document.write(data.file);
+      document.close();
+    }
     // the data is after this script, in the page's last script
     function unwrap(text) {
       var at = text.lastIndexOf('id="iva-data">');
@@ -93,6 +105,19 @@ var IvaHttp = (() => {
     function ask() {
       var r = Math.random().toString(36).slice(2, 10);
       var x = new XMLHttpRequest();
+      if (file) {
+        // the page again, numbered: until the answer is its own
+        x.open('GET', location.pathname + '?r=' + r);
+        x.timeout = 30000;
+        x.onload = function () {
+          var data = x.getResponseHeader('X-Iva-Req') === r ? unwrap(x.responseText) : null;
+          if (data && data.path === path) return show(data);
+          setTimeout(ask, Math.min(3000, 30 * ++tries));
+        };
+        x.onerror = x.ontimeout = function () { setTimeout(ask, Math.min(5000, 250 * ++tries)); };
+        x.send();
+        return;
+      }
       x.open('GET', 'iva/boot?r=' + r);
       x.timeout = 30000;
       x.onload = function () {
@@ -119,6 +144,7 @@ var IvaHttp = (() => {
       } catch (e) {
         own = null;
       }
+      if (file && own && own.path === path) return show(own);
       if (own && own.app === name && own.bg) document.body.style.background = own.bg;
       ask();
     }
@@ -314,6 +340,15 @@ var IvaHttp = (() => {
     const parts = req.path.replace(/^\/+/, '').split('/');
     // a swatch: the boot page shows the colour its URL names
     if (parts[0] === 'iva-color') return res.page(null);
+    // a page of the project (a file of its image folder, CF.loadAsset): the boot page writes it in
+    if (parts[0] === 'iva-file') {
+      const name = parts.slice(1).map((x) => decodeURIComponent(x)).join('/');
+      CF.loadAsset(name, CF.UTF8, (text) => {
+        if (text === null || text === undefined) res.page({ path: name, error: `not found: ${name}` }, 404);
+        else res.page({ path: name, file: String(text) });
+      });
+      return;
+    }
     const a = apps[parts[0]];
     if (!a) return res.page({ error: `no web app "${parts[0]}"` }, 404);
     route(a, `/${parts.slice(1).join('/')}`, req, res);

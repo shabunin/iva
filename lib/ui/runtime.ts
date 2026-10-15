@@ -86,6 +86,8 @@ var IvaUI = (function () {
     return unit.charAt(0) === '\\u00B0' ? s + unit : s + ' ' + unit;
   }
   function clamp(v, min, max) { return v < min ? min : v > max ? max : v; }
+  // a join's value from what CF.getJoins answers (iViewer leaves out joins it doesn't know: 0 then)
+  function valueIn(j, join) { var x = j && j[join]; return x ? Number(x.value) || 0 : 0; }
   // analog joins run 0..65535; min..max is what they stand for
   function toJoin(v, min, max) { return Math.round(clamp((v - min) / ((max - min) || 1), 0, 1) * 65535); }
   function fromJoin(j, min, max) { return min + (Number(j) || 0) / 65535 * (max - min); }
@@ -309,7 +311,7 @@ var IvaUI = (function () {
       function follow() {
         if (c.busy) return;
         CF.getJoins([o.r, o.g, o.b], function (j) {
-          var hsv = rgbHsv(Number(j[o.r].value) || 0, Number(j[o.g].value) || 0, Number(j[o.b].value) || 0);
+          var hsv = rgbHsv(valueIn(j, o.r), valueIn(j, o.g), valueIn(j, o.b));
           // black and greys have no hue of their own: keep the one there was
           if (hsv[1] > 0) c.h = hsv[0];
           if (hsv[2] > 0) c.s = hsv[1];
@@ -409,7 +411,7 @@ var IvaUI = (function () {
       CF.watch(CF.JoinChangeEvent, o.watch, function () {
         CF.getJoins(o.watch, function (j) {
           var v = [];
-          for (var k = 0; k < o.watch.length; k++) v.push(Number(j[o.watch[k]].value) || 0);
+          for (var k = 0; k < o.watch.length; k++) v.push(valueIn(j, o.watch[k]));
           CF.setJoin(o.label, p.kind.text(o, v));
         });
       }, true);
@@ -421,7 +423,7 @@ var IvaUI = (function () {
       var p = pickers[id], o = p.o;
       CF.getJoins(o.watch, function (j) {
         var v = [];
-        for (var k = 0; k < o.watch.length; k++) v.push(Number(j[o.watch[k]].value) || 0);
+        for (var k = 0; k < o.watch.length; k++) v.push(valueIn(j, o.watch[k]));
         CF.setJoin(o.open, 1);
         var rows = p.kind.rows(o, v);
         setTimeout(function () { IvaUI.drumTo(id, rows, false); }, 30);
@@ -813,7 +815,8 @@ var IvaUI = (function () {
       function spin() {
         if (!on) return;
         angle += 360;
-        CF.setProperties({ join: icon, zrotation: angle }, 0, 0.9, CF.AnimationCurveLinear, spin);
+        // a function, not a name: iViewer calls a named callback by its name, globally
+        CF.setProperties({ join: icon, zrotation: angle }, 0, 0.9, CF.AnimationCurveLinear, function () { spin(); });
       }
       CF.watch(CF.JoinChangeEvent, join, function (j, v) {
         var was = on;

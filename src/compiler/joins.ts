@@ -73,6 +73,11 @@ export class JoinAllocator {
     for (const { slot, set } of this.slots) set(this.named[slot.type].get(slot.id as string)!);
   }
 
+  /** The named joins so far, by type (before allocate: what to give numbers to). */
+  names(): { type: JoinType; name: string }[] {
+    return (['d', 'a', 's', 'l'] as JoinType[]).flatMap((type) => [...this.named[type].keys()].map((name) => ({ type, name })));
+  }
+
   /** name -> number, per type (after allocate) */
   map() {
     const out: Record<string, Record<string, number>> = {};
