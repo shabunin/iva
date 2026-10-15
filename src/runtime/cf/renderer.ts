@@ -13,6 +13,7 @@ import { renderImage } from './components/Image';
 import { renderText } from './components/Text';
 import { renderVideo } from './components/Video';
 import { renderWeb } from './components/Web';
+import { renderTimer } from './components/Timer';
 import { renderInput } from './components/Input';
 import { DomLayer } from './domLayer';
 import { bindGestures } from './components/Gestures';
@@ -572,6 +573,8 @@ export class CFRenderer {
       renderWeb(node, container, this);
     } else if (node.type === "input") {
       renderInput(node, container, this, cssState0, listPrefix, listIndex);
+    } else if (node.type === "timer") {
+      renderTimer(node, container, this);
     }
 
     // Apply actual dimensions unconditionally

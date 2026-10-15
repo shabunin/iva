@@ -21,6 +21,7 @@ import { crc, crcOf, hash } from '../src/runtime/cf/jsapi/utilities.ts';
 import { listRemove, listUpdate } from '../src/runtime/cf/jsapi/lists.ts';
 import { getJoin, getJoins } from '../src/runtime/cf/jsapi/gui.ts';
 import { joinStore } from '../src/runtime/cf/joinStore.ts';
+import { TimerClock } from '../src/runtime/cf/timerClock.ts';
 
 test('CF.crc: the six CRCs iViewer names (their check values) in its four outputs', () => {
   const check: Record<string, number> = {
@@ -74,4 +75,18 @@ test('CF.getJoin / getJoins: values as strings, as iViewer hands them ("1" / "0"
   for (const j of ['d901', 'a901', 's901', 'd902']) getJoin(ctx, j, (_j, v) => got.push(v));
   assert.deepEqual(got, ['1', '32768', 'hello', '0']);
   getJoins(ctx, ['d901', 'a901'], (all) => assert.deepEqual([all.d901.value, all.a901.value], ['1', '32768']));
+});
+
+test('timers: an interval after showing, then every interval while shown, repeatCount times; over again when shown again', () => {
+  const runs = (clock: TimerClock, steps: [number, boolean, number][]) => steps.filter(([t, shown, i]) => clock.tick(t, shown, i)).map(([t]) => t);
+  // continuous, 1000 ms: shown at 0 -> 1000, 2000; hidden at 2500; shown again at 3000 -> 4000
+  assert.deepEqual(runs(new TimerClock(0), [[0, true, 1000], [500, true, 1000], [1000, true, 1000], [1500, true, 1000], [2000, true, 1000],
+    [2500, false, 1000], [3000, true, 1000], [3500, true, 1000], [4000, true, 1000]]), [1000, 2000, 4000]);
+  // twice only
+  assert.deepEqual(runs(new TimerClock(2), [[0, true, 100], [100, true, 100], [200, true, 100], [300, true, 100], [400, true, 100]]), [100, 200]);
+  // interval 0: never; once (repeatCount 1): at once - GUI Designer's own demos (a page's setup command)
+  assert.deepEqual(runs(new TimerClock(0), [[0, true, 0], [100, true, 0]]), []);
+  assert.deepEqual(runs(new TimerClock(1), [[0, true, 0], [100, true, 0], [200, false, 0], [300, true, 0]]), [0, 300]);
+  // the join changes the interval: 0 -> 500 starts it
+  assert.deepEqual(runs(new TimerClock(0), [[0, true, 0], [100, true, 500], [599, true, 500], [600, true, 500]]), [600]);
 });
