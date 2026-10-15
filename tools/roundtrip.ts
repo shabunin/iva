@@ -16,7 +16,7 @@ const only = flags.find((f) => !f.startsWith('-'));
 let ok = 0;
 const raw: Record<string, number> = {};
 const failed: string[] = [];
-for (const g of findGuis(root)) {
+for (const g of findGuis(root).filter((x) => x.rel.endsWith('.gui'))) {
   if (only && !g.rel.includes(only)) continue;
   const file = path.resolve(root, g.rel);
   const out = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-rt-'));

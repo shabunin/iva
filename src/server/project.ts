@@ -7,6 +7,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { zipHasGui } from './zip.js';
 
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|svg|bmp)$/i;
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist']);
@@ -50,13 +51,17 @@ function walk(dir: string, visit: (file: string) => void, depth = 0) {
   }
 }
 
-/** Every .gui under the root (or the root itself, if it is a .gui file). */
+/** A zip file that is a GUI (a .gui inside), as iViewer loads one. */
+export const isZip = (name: string) => /\.zip$/i.test(name);
+
+/** Every .gui under the root, and every zipped GUI (or the root itself, if it is a .gui or a .zip file). */
 export function findGuis(root: string): GuiEntry[] {
   const st = fs.statSync(root);
   if (st.isFile()) return [{ rel: path.basename(root), name: path.basename(root) }];
   const out: GuiEntry[] = [];
   walk(root, (f) => {
-    if (f.toLowerCase().endsWith('.gui')) {
+    const zipped = isZip(f) && zipHasGui(fs.readFileSync(f));
+    if (f.toLowerCase().endsWith('.gui') || zipped) {
       const rel = toPosix(path.relative(root, f));
       out.push({ rel, name: rel });
     }
@@ -197,3 +202,41 @@ export function resolveGuiLink(guis: GuiEntry[], from: string, url: string): { g
   return { gui: abs };
 }
 
+/**
+ * The manifest for a zipped GUI (`files`: the archive's): its .gui - the one
+ * named after the archive (clock.gui.zip: clock.gui), else the shallowest -
+ * and its images and scripts from the archive, at `fileUrl(path in it)`.
+ */
+export function zipManifest(files: Map<string, Buffer>, id: string, fileUrl: (inZip: string) => string): ProjectManifest {
+  const guis = [...files.keys()].filter((n) => /\.gui$/i.test(n));
+  if (!guis.length) throw Object.assign(new Error(`${id}: no .gui in the archive`), { status: 422 });
+  const own = decodeURIComponent(id.split(/[/?#]/).filter(Boolean).pop() ?? '').replace(/\.zip$/i, '').toLowerCase();
+  const entry = guis.find((n) => n.split('/').pop()!.toLowerCase() === own)
+    ?? guis.find((n) => `${n.split('/').pop()!.toLowerCase().replace(/\.gui$/, '')}` === own)
+    ?? [...guis].sort((a, b) => a.split('/').length - b.split('/').length || a.localeCompare(b))[0];
+  const guiXml = decodeXml(files.get(entry)!);
+  const dir = entry.includes('/') ? entry.slice(0, entry.lastIndexOf('/') + 1) : '';
+  // images by their path in the image folder, and by bare name
+  const folder = (guiXml.match(/<imagefolder>([^<]*)<\/imagefolder>/)?.[1] ?? '').trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+  const imageRoot = dir + (folder ? `${folder}/` : '');
+  const imageMap: Record<string, string> = {};
+  for (const name of [...files.keys()].sort((a, b) => a.split('/').length - b.split('/').length)) {
+    if (!IMAGE_RE.test(name)) continue;
+    const url = fileUrl(name);
+    if (name.startsWith(imageRoot) && !imageMap[name.slice(imageRoot.length)]) imageMap[name.slice(imageRoot.length)] = url;
+    const leaf = name.split('/').pop()!;
+    if (!imageMap[leaf]) imageMap[leaf] = url;
+  }
+  const scriptMap: Record<string, string> = {};
+  const missingScripts: string[] = [];
+  const names = [...files.keys()];
+  for (const name of scriptNames(guiXml)) {
+    const want = toPosix(name.replace(/\\/g, '/')).toLowerCase();
+    const leaf = want.split('/').pop()!;
+    const found = names.find((n) => n.toLowerCase() === dir.toLowerCase() + want) ?? names.find((n) => n.split('/').pop()!.toLowerCase() === leaf);
+    if (found) scriptMap[name] = files.get(found)!.toString('utf8');
+    else missingScripts.push(name);
+  }
+  const title = guiXml.match(/<project>([^<]*)<\/project>/)?.[1]?.trim() || entry.split('/').pop()!.replace(/\.gui$/i, '');
+  return { gui: id, title, guiXml, imageMap, scriptMap, missingScripts, fileBase: fileUrl(dir) };
+}

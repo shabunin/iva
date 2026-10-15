@@ -26,7 +26,7 @@ iva create my-panel --template demo   # or blank; --device "iPhone X"; --from Ol
 cd my-panel
 iva dev        # live preview, rebuilds on save; real TCP/UDP/HTTP to the devices
 iva check      # what the editor underlines + a test build
-iva build      # -> dist/: the .gui, images, scripts, joins.json
+iva build      # -> dist/: the .gui, images, scripts, joins.json (--zip: also one .gui.zip)
 iva serve      # to iViewer on a real device (GUI File URL http://<this machine>:8019)
 iva designer   # build and open it in CommandFusion GUI Designer
 ```
@@ -49,7 +49,9 @@ dist/
 ```
 
 `<Project folders={false}>` puts everything beside the .gui instead (a
-decompiled .gui keeps its own layout this way).
+decompiled .gui keeps its own layout this way). `iva build --zip` also writes
+`dist/my-panel.gui.zip`: the same files in one archive, a zipped GUI iViewer
+loads from a URL.
 
 Every element and prop: [docs/components.md](docs/components.md).
 Build errors point at the file and line, with "did you mean" for typos.
@@ -140,6 +142,7 @@ npm install
 node bin/iva.mjs dev path/to/project.gui      # or a folder: every .gui in it, with a picker
 node bin/iva.mjs dev fixtures/DemoUserInterfaces   # after `npm run fixtures`
 node bin/iva.mjs dev http://192.168.0.10:8019/my.gui   # a .gui on a web server
+node bin/iva.mjs dev path/to/my.gui.zip           # a zipped GUI (a .zip with a .gui in it)
 ```
 
 Open http://127.0.0.1:5180/. Saving a file the project is built from (its .jsx
@@ -177,8 +180,10 @@ src/runtime/host    ── invoke/listen ──────► /__iva/host (WebS
 - One backend session per page: a reload closes every socket it opened.
 
 - GUI links (`href="cf://…"`, `CF.loadGUI`) open the GUI they name: the
-  project's own `.gui` of that name, else the URL
-  ([docs/components.md](docs/components.md#gui-linking)).
+  project's own `.gui` (or `.zip`) of that name, else the URL
+  ([docs/components.md](docs/components.md#gui-linking)). Zipped GUIs load
+  from their archive, on disk or over HTTP; a folder's `.zip` files with a
+  `.gui` in them are in the picker too.
 
 Not in the backend yet: WebSocket servers, mDNS, device APIs.
 

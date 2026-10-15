@@ -5,7 +5,8 @@ import { parseArgs } from 'node:util';
 import fs from 'node:fs';
 import path from 'node:path';
 import { startDev } from '../server/dev.js';
-import { compile, IvaError, slug, writeBuild } from '../compiler/index.js';
+import { buildFiles, compile, IvaError, slug, writeBuild } from '../compiler/index.js';
+import { writeZip } from '../server/zip.js';
 import { decompile } from '../decompiler/index.js';
 import { create, templates, VERSION } from '../create.js';
 import { check } from '../check.js';
@@ -42,6 +43,7 @@ Usage:
 
 Options (build):
   -o, --out <dir>      output folder (default: dist/ next to the entry)
+      --zip            also <name>.gui.zip: the build in one file (a zipped GUI)
 
 Options (dev):
   -p, --port <n>       port (default 5180)
@@ -137,7 +139,7 @@ async function main(argv: string[]) {
     const { values, positionals } = parseArgs({
       args: rest,
       allowPositionals: true,
-      options: { out: { type: 'string', short: 'o' }, help: { type: 'boolean', short: 'h' } },
+      options: { out: { type: 'string', short: 'o' }, zip: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } },
     });
     if (values.help) {
       process.stdout.write(HELP);
@@ -152,6 +154,12 @@ async function main(argv: string[]) {
       const gui = writeBuild(result, path.resolve(values.out ?? path.join(path.dirname(entry), 'dist')));
       const counts = `${result.assets.length} files, ${result.scripts.length} scripts`;
       process.stdout.write(`${path.relative(process.cwd(), gui)} (${counts}) in ${Date.now() - t0} ms\n`);
+      if (values.zip) {
+        // the same files in one archive: iViewer loads it from a URL (GUI File URL .../name.gui.zip)
+        const zip = `${gui}.zip`;
+        fs.writeFileSync(zip, writeZip(buildFiles(result)));
+        process.stdout.write(`${path.relative(process.cwd(), zip)} (${Math.round(fs.statSync(zip).size / 1024)} KiB)\n`);
+      }
     } catch (e) {
       if (e instanceof IvaError) {
         process.stderr.write(`${e.format()}\n`);

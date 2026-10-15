@@ -153,3 +153,13 @@ export function writeBuild(result: CompileResult, outDir: string): string {
   fs.writeFileSync(path.join(outDir, 'joins.json'), JSON.stringify(result.joins, null, 2) + '\n');
   return gui;
 }
+
+/** The build's files as one archive's: the .gui, images/..., scripts/... (a zipped GUI, as iViewer loads one from a URL). */
+export function buildFiles(result: CompileResult): [string, Buffer][] {
+  const at = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
+  return [
+    [`${slug(result.name)}.gui`, Buffer.from('\ufeff' + result.xml, 'utf8')],
+    ...result.assets.map((a): [string, Buffer] => [at(result.layout.images, a.name), a.data ?? fs.readFileSync(a.file!)]),
+    ...result.scripts.map((s): [string, Buffer] => [at(result.layout.scripts, s.name), s.code !== undefined ? Buffer.from(s.code) : fs.readFileSync(s.file!)]),
+  ];
+}

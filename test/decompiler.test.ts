@@ -57,7 +57,7 @@ test('the decompiled project reads like code', async () => {
 
 test('CommandFusion demos: every one compiles back to the same .gui', { skip: !fs.existsSync(DEMOS) && 'npm run fixtures' }, async () => {
   const failed: string[] = [];
-  for (const g of findGuis(DEMOS)) {
+  for (const g of findGuis(DEMOS).filter((x) => x.rel.endsWith('.gui'))) {
     const { diffs } = await roundTrip(path.join(DEMOS, g.rel));
     if (diffs.length) failed.push(`${g.rel}: ${diffs[0]}`);
   }

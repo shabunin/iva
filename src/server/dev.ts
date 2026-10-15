@@ -15,7 +15,8 @@ import { createServer as createVite } from 'vite';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { HostSession } from './host/session.js';
 import { watchInputs, watchTree } from './watch.js';
-import { findGuis, guiUrl, isUrl, loadManifest, loadRemoteManifest, resolveGuiLink, rootDir, safeJoin, type GuiEntry, type ProjectManifest } from './project.js';
+import { findGuis, guiUrl, isUrl, isZip, loadManifest, loadRemoteManifest, resolveGuiLink, rootDir, safeJoin, zipManifest, type GuiEntry, type ProjectManifest } from './project.js';
+import { readZip } from './zip.js';
 import { compile, IvaError, slug, type CompileResult } from '../compiler/index.js';
 
 const IVA_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -59,12 +60,45 @@ interface ProjectSource {
   inputs?(): { files: string[]; dirs: string[] } | null;
 }
 
-function guiSource(target: string): ProjectSource {
+/** Zipped GUIs' files, by an id (a project path, a URL), read once: served at /__iva/zip/<id>/<path in the archive>. */
+class ZipStore {
+  private zips = new Map<string, { files: Map<string, Buffer>; stamp: string }>();
+
+  /** the archive's files, read again when `stamp` changes (a file's mtime) */
+  files(id: string, stamp: string, read: () => Buffer): Map<string, Buffer> {
+    const had = this.zips.get(id);
+    if (had && had.stamp === stamp) return had.files;
+    const files = readZip(read());
+    this.zips.set(id, { files, stamp });
+    return files;
+  }
+
+  url(id: string): (inZip: string) => string {
+    return (inZip) => `/__iva/zip/${Buffer.from(id).toString('base64url')}/${encodePath(inZip)}`;
+  }
+
+  /** a request for /__iva/zip/<id>/<path> */
+  file(pathname: string): Buffer | null {
+    const m = /^\/__iva\/zip\/([\w-]+)\/(.*)$/.exec(pathname);
+    if (!m) return null;
+    const files = this.zips.get(Buffer.from(m[1], 'base64url').toString())?.files;
+    return files?.get(decodeURIComponent(m[2])) ?? null;
+  }
+}
+
+function guiSource(target: string, zips: ZipStore): ProjectSource {
   const base = rootDir(target);
   return {
     dir: base,
     guis: () => findGuis(target),
-    manifest: (gui) => loadManifest(base, gui, (rel) => `/__iva/files/${encodePath(rel)}`),
+    manifest: (gui) => {
+      if (!isZip(gui)) return loadManifest(base, gui, (rel) => `/__iva/files/${encodePath(rel)}`);
+      // a zipped GUI: its files from the archive, as iViewer loads one
+      const file = safeJoin(base, gui);
+      if (!file || !fs.existsSync(file)) throw Object.assign(new Error(`no such .zip: ${gui}`), { status: 404 });
+      const files = zips.files(gui, String(fs.statSync(file).mtimeMs), () => fs.readFileSync(file));
+      return zipManifest(files, gui, zips.url(gui));
+    },
     file: (rel) => safeJoin(base, rel),
     refresh: async () => null,
   };
@@ -134,7 +168,8 @@ export async function startDev(opts: DevOptions) {
   if (!remoteTarget && !fs.existsSync(target)) throw new Error(`not found: ${opts.target}`);
   const log = (msg: string) => console.log(`[iva] ${msg}`);
   const debug = opts.verbose ? log : () => {};
-  const source = remoteTarget ? urlSource(target) : isEntry(target) ? await jsxSource(target, log) : guiSource(target);
+  const zips = new ZipStore();
+  const source = remoteTarget ? urlSource(target) : isEntry(target) ? await jsxSource(target, log) : guiSource(target, zips);
 
   // ── GUIs on web servers (CF.loadGUI, cf:// links, iva dev <url>) ──
   /** the folders of the remote GUIs loaded: their files go through /__iva/remote/ */
@@ -144,6 +179,13 @@ export async function startDev(opts: DevOptions) {
     return `/__iva/remote/${u.protocol.replace(':', '')}/${u.host}${u.pathname}${u.search}`;
   };
   const remoteManifest = async (gui: string): Promise<ProjectManifest> => {
+    // a zipped GUI on a server: the archive, then everything from it
+    if (isZip(new URL(guiUrl(gui)).pathname)) {
+      const res = await fetch(guiUrl(gui), { signal: AbortSignal.timeout(30000) });
+      if (!res.ok) throw new Error(`${gui}: HTTP ${res.status}`);
+      const data = Buffer.from(await res.arrayBuffer());
+      return zipManifest(zips.files(gui, String(Date.now()), () => data), gui, zips.url(gui));
+    }
     const m = await loadRemoteManifest(gui, (abs) => {
       if (abs.endsWith('/')) remoteBases.add(abs);
       return remotePath(abs);
@@ -204,6 +246,10 @@ export async function startDev(opts: DevOptions) {
       if (url.pathname.startsWith('/__iva/remote/')) {
         remote(res, url);
         return;
+      }
+      if (url.pathname.startsWith('/__iva/zip/')) {
+        const data = zips.file(url.pathname);
+        return data ? send(res, 200, data, MIME[path.extname(url.pathname).toLowerCase()] ?? 'application/octet-stream') : send(res, 404, 'not found');
       }
       if (url.pathname.startsWith('/__iva/loop/')) return loop(req, res, url);
       if (url.pathname.startsWith('/__iva/files/')) {

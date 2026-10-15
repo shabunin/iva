@@ -179,8 +179,12 @@ CommandFusion's GUILinking demo links `cf://192.168.0.10:8019/gui-B.gui`,
 the preview opens this machine's `gui-B.gui` and says so in the status
 bar); else the URL, fetched by `iva dev` with its images and scripts (the
 browser can't fetch another site's files) - `iva dev http://host/x.gui`
-previews one too. iViewer 5 profiles (`profile:Name`) are the device's
-own: not in the preview.
+previews one too. A zipped GUI (`x.gui.zip`, `x.zip`: the .gui and its
+files in one archive, as iViewer loads one) loads from the archive - on disk,
+or fetched: its .gui is the one named after the archive, else the
+shallowest; images, scripts and CF.loadAsset's files come from the archive.
+iViewer 5 profiles (`profile:Name`) are the device's own: not in the
+preview.
 
 ## What iva doesn't model
 
