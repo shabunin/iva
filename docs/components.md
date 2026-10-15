@@ -8,7 +8,7 @@ injected); `import { Button } from 'iva'` works too.
 
 | JSX | `.gui` | Key props |
 |---|---|---|
-| `<Project>` | `<gui>` + `<properties>` | `name`; `device` (`iPad`, `iPad Pro 11`, `iPad Pro 12.9`, `iPad Air 10.5`, `iPhone X`, `iPhone XS Max`, `iPhone 8`, `iPhone 8 Plus`, `iPhone 5`, `iPhone 4`) + `orientation`, or `width` / `height` (wider than tall → landscape is the main orientation); `otherSize`, `autoposition`, `joinBase`, `assets` (a folder shipped whole; images found there by bare name; default `./assets`), `properties` (raw XML after `<size>`), `themes` + `theme` (looks switched at runtime, below), `folders` (default true: the build's images/ - the .gui's image folder, iva's drawings in backgrounds/ icons/ controls/ - and scripts/; false: everything beside the .gui), `httpPort` (the panel's web server: web apps, swatches; default the first free from 8900) |
+| `<Project>` | `<gui>` + `<properties>` | `name`; `device` (`iPad`, `iPad Pro 11`, `iPad Pro 12.9`, `iPad Air 10.5`, `iPhone X`, `iPhone XS Max`, `iPhone 8`, `iPhone 8 Plus`, `iPhone 5`, `iPhone 4`) + `orientation`, or `width` / `height` (wider than tall → landscape is the main orientation); `otherSize`, `autoposition`, `joinBase`, `assets` (a folder shipped whole; images found there by bare name; default `./assets`), `properties` (raw XML after `<size>`), `themes` + `theme` (looks switched at runtime, below), `folders` (default true: the build's images/ - the .gui's image folder, iva's drawings in backgrounds/ icons/ controls/ - and scripts/; false: everything beside the .gui), `httpPort` (the panel's web server: web apps, swatches; default the first free from 8900), `sizes` (other screens it's built for, `'1920x1080'`, a phone's `'1400x1400@3x'`: [Screen sizes](#screen-sizes)) |
 | `<Page>` | `<page>` + `<portrait>`/`<landscape>` | `name`, `start`, `bg`, `image`, `theme`, `tags`. Items go into the main orientation (the other is written empty, as GUI Designer does) |
 | `<Landscape>` / `<Portrait>` | `<landscape>` / `<portrait>` | `bg`, `image`, `theme`. With these, the page has exactly the orientations given, in that order |
 | `<Subpage>` | `<subpage name w h>` (definition) + placement | `name`, `w`, `h`, `clip`, `bg`/`image`/`theme`, `radius` / `borderWidth` / `borderColor` (drawn). Inside a page it is defined *and* placed (`x`, `y`, `join`, `visible`, `in`, `out`, `topmost` (above everything: placed last), `fixed` (at x / y whatever `<Group>` it is in), `clickthrough`), or only defined with `define`; in `<Project>` it is only defined |
@@ -145,6 +145,36 @@ The looks must be the same elements: only colours (themes, drawn images)
 may differ - iva says where they don't. Not switched: a slider's thumb
 image, a page background from an image file, lists a project's own script
 fills with its default row.
+
+## Screen sizes
+
+iViewer shows a GUI on any screen: smaller than the screen, it's scaled up
+to fill it, keeping its proportions (black bars where they differ - on
+Android the project's positioning, iva's `autoposition="scale"`); bigger,
+it's cropped. To fit a screen for real, a project is built for it:
+
+```jsx
+const { width, height } = screen();   // the size being built
+<Project name="Home" width={1280} height={800} sizes={['1920x1080', '1400x1400@3x']}>
+```
+
+- `screen()` is the size being built: the `<Project>`'s own, or the one
+  asked for. A project that lays itself out from it fits every size (iva/ui
+  does: its header, menu and dialogs follow it; `ui.grid()` places cards,
+  `ui.ScrollArea` scrolls what doesn't fit - [docs/ui.md](ui.md)).
+- `sizes`: the other screens. `iva build` writes the project's own size to
+  `dist/` and each other in `dist/<W>w<H>h/` (`1920w1080h/`); `--zip` puts
+  them all in one archive - iViewer (4.1 on) loads the GUI whose path names
+  its screen (Android: `1080w1920h`, either orientation; else the first GUI
+  in the archive). `iva dev` lists each size in the GUI picker; `--size
+  1400x1400` builds or previews one size (`iva build`, `dev`, `serve`,
+  `designer`).
+- A phone: `'1400x1400@3x'`. Its screen is dense - laid out at its own
+  pixels, a tablet's layout comes out a third of the size. So it's laid out
+  at the size divided by the scale (467x467; `screen().scale` is 3), iViewer
+  scales the GUI up to the screen, and iva draws its images at 3x so they
+  stay sharp. Pick the scale for the screen's density (a 1400x1400 phone of
+  4.5": 3; 2 or 2.5 fit more on it).
 
 ## Joins
 

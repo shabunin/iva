@@ -53,6 +53,13 @@ decompiled .gui keeps its own layout this way). `iva build --zip` also writes
 `dist/my-panel.gui.zip`: the same files in one archive, a zipped GUI iViewer
 loads from a URL.
 
+One project, several screens: `<Project sizes={['1920x1080', '1400x1400@3x']}>`
+builds a GUI per size (`dist/1920w1080h/`, ...; in the `.zip`, iViewer loads
+the one for its screen), the layout made from `screen()`; `@3x` is a phone's
+dense screen - laid out at a third of it and scaled up by iViewer, so things
+are as big as on a tablet. `--size 1400x1400@3x` builds just that one
+([docs/components.md](docs/components.md#screen-sizes)).
+
 Every element and prop: [docs/components.md](docs/components.md).
 Build errors point at the file and line, with "did you mean" for typos.
 

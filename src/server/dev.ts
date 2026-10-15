@@ -18,6 +18,7 @@ import { watchInputs, watchTree } from './watch.js';
 import { findGuis, guiUrl, isUrl, isZip, loadManifest, loadRemoteManifest, resolveGuiLink, rootDir, safeJoin, zipManifest, type GuiEntry, type ProjectManifest } from './project.js';
 import { readZip } from './zip.js';
 import { compile, IvaError, slug, type CompileResult } from '../compiler/index.js';
+import { sizeFolder, sizeLabel, type ScreenSize } from '../compiler/components.js';
 
 const IVA_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PREVIEW_DIR = path.join(IVA_ROOT, 'src', 'preview');
@@ -35,6 +36,8 @@ export interface DevOptions {
   port: number;
   host: string;
   verbose?: boolean;
+  /** a JSX project at this screen size instead of its own ('1400x1400') */
+  size?: string;
 }
 
 const encodePath = (rel: string) => rel.split('/').map(encodeURIComponent).join('/');
@@ -51,7 +54,7 @@ interface ProjectSource {
   /** the folder to watch (none: a .gui on a web server) */
   dir: string | null;
   guis(): GuiEntry[];
-  manifest(gui: string): ProjectManifest;
+  manifest(gui: string): ProjectManifest | Promise<ProjectManifest>;
   /** a file the manifest points at: its path, or its content (images iva drew) */
   file(rel: string): string | Buffer | null;
   /** after a change; resolves to an error message, or null when it's fine to reload */
@@ -104,46 +107,91 @@ function guiSource(target: string, zips: ZipStore): ProjectSource {
   };
 }
 
-async function jsxSource(entry: string, log: (m: string) => void): Promise<ProjectSource> {
-  let result: CompileResult | null = null;
-  let error: IvaError | null = null;
-  const build = async () => {
-    const t0 = Date.now();
-    try {
-      result = await compile(entry);
-      error = null;
-      for (const w of result.warnings) log(`warning: ${w}`);
-      log(`built ${path.basename(entry)} in ${Date.now() - t0} ms`);
-      return null;
-    } catch (e: any) {
-      error = e instanceof IvaError ? e : new IvaError(String(e?.stack ?? e));
-      const text = error.format(path.dirname(entry));
-      log(`build failed:\n${text}`);
-      return text;
-    }
+/**
+ * A JSX project: built at its own size (or --size); with <Project sizes>, each
+ * other size is a GUI of its own in the picker (<W>w<H>h/name.gui), built the
+ * first time it's shown. After a change, the one shown last is built again
+ * (with the main one); the others when they're next shown.
+ */
+async function jsxSource(entry: string, log: (m: string) => void, size?: string): Promise<ProjectSource> {
+  interface Built { result: CompileResult | null; error: IvaError | null; fresh: boolean }
+  const builds = new Map<string, Built>([['', { result: null, error: null, fresh: false }]]);
+  let sizes: ScreenSize[] = [];
+  let shown = '';
+  // one build at a time: a build sets globals (variant(), screen()) while the project runs
+  let queue: Promise<unknown> = Promise.resolve();
+  const build = (key: string): Promise<string | null> => {
+    const run = async () => {
+      const b = builds.get(key)!;
+      const at = sizes.find((x) => sizeFolder(x) === key);
+      const t0 = Date.now();
+      try {
+        b.result = await compile(entry, { size: key ? at : size });
+        b.error = null;
+        if (!key) {
+          sizes = b.result.sizes;
+          for (const x of sizes) if (!builds.has(sizeFolder(x))) builds.set(sizeFolder(x), { result: null, error: null, fresh: false });
+        }
+        for (const w of b.result.warnings) log(`warning: ${w}`);
+        log(`built ${path.basename(entry)}${key ? ` at ${sizeLabel(at!)}` : ''} in ${Date.now() - t0} ms`);
+        return null;
+      } catch (e: any) {
+        b.error = e instanceof IvaError ? e : new IvaError(String(e?.stack ?? e));
+        const text = b.error.format(path.dirname(entry));
+        log(`build failed${key ? ` at ${sizeLabel(at!)}` : ''}:\n${text}`);
+        return text;
+      } finally {
+        b.fresh = true;
+      }
+    };
+    const p = queue.then(run, run);
+    queue = p;
+    return p;
   };
-  await build();
+  await build('');
+  const name = () => slug(builds.get('')!.result?.name ?? path.basename(entry));
+  /** a picker entry's size folder ('' the main one), if it's one of this project's */
+  const keyOf = (gui: string) => {
+    const m = /^(\d+w\d+h)\//.exec(gui);
+    return m && builds.has(m[1]) ? m[1] : m ? null : '';
+  };
   return {
     dir: path.dirname(entry),
-    guis: () => [{ rel: `${slug(result?.name ?? path.basename(entry))}.gui`, name: path.basename(entry) }],
-    manifest: () => {
-      if (error || !result) throw Object.assign(new Error(error?.format(path.dirname(entry)) ?? 'not built'), { status: 422 });
-      const r: CompileResult = result;
+    guis: () => [
+      { rel: `${name()}.gui`, name: path.basename(entry) },
+      ...sizes.map((x) => ({ rel: `${sizeFolder(x)}/${name()}.gui`, name: `${path.basename(entry)} · ${sizeLabel(x).replace('x', '×')}` })),
+    ],
+    manifest: async (gui) => {
+      const key = keyOf(gui);
+      if (key === null) throw Object.assign(new Error(`no ${gui} in this project`), { status: 404 });
+      const b = builds.get(key)!;
+      if (!b.fresh) await build(key);
+      shown = key;
+      if (b.error || !b.result) throw Object.assign(new Error(b.error?.format(path.dirname(entry)) ?? 'not built'), { status: 422 });
+      const r: CompileResult = b.result;
+      const base = `/__iva/files/${key ? `${key}/` : ''}`;
       const imageMap: Record<string, string> = {};
-      for (const a of r.assets) if (IMAGE_RE.test(a.name)) imageMap[a.name] = `/__iva/files/${encodeURIComponent(a.name)}`;
+      for (const a of r.assets) if (IMAGE_RE.test(a.name)) imageMap[a.name] = `${base}${encodeURIComponent(a.name)}`;
       const scriptMap: Record<string, string> = {};
       for (const sc of r.scripts) scriptMap[sc.name] = sc.code ?? fs.readFileSync(sc.file!, 'utf8');
-      return { gui: `${slug(r.name)}.gui`, title: r.name, guiXml: r.xml, imageMap, scriptMap, missingScripts: [], fileBase: '/__iva/files/' };
+      return { gui: `${key ? `${key}/` : ''}${slug(r.name)}.gui`, title: r.name, guiXml: r.xml, imageMap, scriptMap, missingScripts: [], fileBase: base };
     },
     file: (rel) => {
-      const r = result as CompileResult | null;
+      const m = /^(\d+w\d+h)\/(.*)$/.exec(rel);
+      const r = (m && builds.has(m[1]) ? builds.get(m[1]) : builds.get(''))!.result;
+      if (m && builds.has(m[1])) rel = m[2];
       // a web view's page of the project: images/page.html, as the .gui names it
-      const name = r?.layout.images && rel.startsWith(`${r.layout.images}/`) ? rel.slice(r.layout.images.length + 1) : rel;
-      const a = r?.assets.find((x) => x.name === name || x.name === rel);
+      const file = r?.layout.images && rel.startsWith(`${r.layout.images}/`) ? rel.slice(r.layout.images.length + 1) : rel;
+      const a = r?.assets.find((x) => x.name === file || x.name === rel);
       return a ? (a.data ?? a.file ?? null) : null;
     },
-    refresh: build,
-    inputs: () => (result as CompileResult | null)?.inputs ?? null,
+    refresh: async () => {
+      for (const b of builds.values()) b.fresh = false;
+      const error = await build('');
+      if (!shown || !builds.has(shown)) return error;
+      return (await build(shown)) ?? error;
+    },
+    inputs: () => builds.get('')!.result?.inputs ?? null,
   };
 }
 
@@ -169,7 +217,7 @@ export async function startDev(opts: DevOptions) {
   const log = (msg: string) => console.log(`[iva] ${msg}`);
   const debug = opts.verbose ? log : () => {};
   const zips = new ZipStore();
-  const source = remoteTarget ? urlSource(target) : isEntry(target) ? await jsxSource(target, log) : guiSource(target, zips);
+  const source = remoteTarget ? urlSource(target) : isEntry(target) ? await jsxSource(target, log, opts.size) : guiSource(target, zips);
 
   // ── GUIs on web servers (CF.loadGUI, cf:// links, iva dev <url>) ──
   /** the folders of the remote GUIs loaded: their files go through /__iva/remote/ */
@@ -237,7 +285,10 @@ export async function startDev(opts: DevOptions) {
           remoteManifest(gui).then(done, (e) => send(res, 502, `can't load ${gui}: ${e?.cause?.message ?? e?.message ?? e}`));
           return;
         }
-        return done(source.manifest(gui));
+        Promise.resolve()
+          .then(() => source.manifest(gui))
+          .then(done, (e) => send(res, e?.status ?? 500, String(e?.message ?? e)));
+        return;
       }
       if (url.pathname === '/__iva/resolve') {
         const link = resolveGuiLink(source.guis(), url.searchParams.get('from') ?? '', url.searchParams.get('url') ?? '');

@@ -6,7 +6,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Builder, CompileError, flat, type Asset, type BuildResult, type ScriptOut } from './build.js';
+import { Builder, CompileError, flat, projectSize, type Asset, type BuildResult, type ScriptOut } from './build.js';
+import { parseSize, sizeFolder, type ScreenSize } from './components.js';
 import { evaluate, LoadError } from './load.js';
 import { JsxError, type Child, type VNode } from './runtime.js';
 import { mergeThemes } from './themes.js';
@@ -29,6 +30,15 @@ export interface CompileResult {
   inputs: { files: string[]; dirs: string[] };
   /** the folders beside the .gui: images (iViewer's image folder) and scripts; '' = beside it (<Project folders={false}>) */
   layout: { images: string; scripts: string };
+  /** the panel size it was built for (the main orientation's) */
+  size: ScreenSize;
+  /** the other sizes the project asks to be built for (<Project sizes>): compile(entry, { size }) each */
+  sizes: ScreenSize[];
+}
+
+export interface CompileOptions {
+  /** build it at this size instead of the <Project>'s own ('1400x1400'): screen() gives it */
+  size?: string | ScreenSize;
 }
 
 /** A build error with where it happened, ready to print. */
@@ -71,10 +81,11 @@ function located(e: unknown, baseDir: string): IvaError {
   return new IvaError(err?.message ?? String(e), s ? path.resolve(baseDir, s.fileName) : undefined, s?.lineNumber, s?.columnNumber);
 }
 
+const projectOf = (tree: Child) => flat([tree]).find((c): c is VNode => typeof c !== 'string' && c.type === 'Project');
+
 /** <Project themes>: the looks, the one it starts in first; null without. */
 function themesOf(tree: Child): string[] | null {
-  const project = flat([tree]).find((c): c is VNode => typeof c !== 'string' && c.type === 'Project');
-  const p = project?.props;
+  const p = projectOf(tree)?.props;
   if (!p || p.themes === undefined) return null;
   const names: unknown = p.themes;
   if (!Array.isArray(names) || names.length < 2 || names.some((n) => typeof n !== 'string' || !/^[A-Za-z][\w-]*$/.test(n)) || new Set(names).size !== names.length) {
@@ -85,26 +96,57 @@ function themesOf(tree: Child): string[] | null {
   return [start, ...names.filter((n) => n !== start)];
 }
 
-export async function compile(entry: string): Promise<CompileResult> {
+type BuildGlobals = { __ivaVariant?: string; __ivaScreen?: ScreenSize; __ivaScreenUsed?: boolean };
+
+/** The project evaluated with screen() giving `size` (none: iva doesn't know it yet); whether it asked. */
+async function evaluateAt(file: string, size: ScreenSize | undefined) {
+  const g = globalThis as BuildGlobals;
+  if (size) g.__ivaScreen = size;
+  g.__ivaScreenUsed = false;
+  try {
+    const ev = await evaluate(file);
+    return { ...ev, usedScreen: !!g.__ivaScreenUsed };
+  } finally {
+    delete g.__ivaScreen;
+    delete g.__ivaScreenUsed;
+  }
+}
+
+export async function compile(entry: string, opts: CompileOptions = {}): Promise<CompileResult> {
   const file = path.resolve(entry);
   const baseDir = path.dirname(file);
+  const asked = typeof opts.size === 'string' ? parseSize(opts.size) : opts.size;
+  if (opts.size !== undefined && !asked) throw new IvaError(`size: "${opts.size}" isn't one - WIDTHxHEIGHT in pixels, like 1400x1400`);
   try {
-    const first = await evaluate(file);
+    // a first look: the <Project> - its size, its looks
+    const first = await evaluateAt(file, asked ?? undefined);
     let { files } = first;
+    const project = projectOf(first.tree);
+    const own = project ? projectSize(project.props) : null;
+    // what screen() gives: the size asked for, else the project's own
+    const size = asked ?? (own && typeof own !== 'string' ? own : undefined);
     const looks = themesOf(first.tree);
     let result: BuildResult;
-    if (!looks) result = new Builder(baseDir).build(first.tree);
-    else {
+    if (!looks) {
+      let tree = first.tree;
+      if (first.usedScreen && !asked && size) {
+        // it laid itself out from screen() before iva knew the size: again, now that it does
+        const ev = await evaluateAt(file, size);
+        files = [...new Set([...files, ...ev.files])];
+        tree = ev.tree;
+      }
+      result = new Builder(baseDir, { size: asked ?? undefined }).build(tree);
+    } else {
       // once per look (the one it starts in first), merged into one .gui
       const builds: BuildResult[] = [];
       for (const look of looks) {
-        (globalThis as { __ivaVariant?: string }).__ivaVariant = look;
+        (globalThis as BuildGlobals).__ivaVariant = look;
         try {
-          const ev = await evaluate(file);
+          const ev = await evaluateAt(file, size);
           files = [...new Set([...files, ...ev.files])];
-          builds.push(new Builder(baseDir, { themed: true, start: looks[0] }).build(ev.tree));
+          builds.push(new Builder(baseDir, { themed: true, start: looks[0], size: asked ?? undefined }).build(ev.tree));
         } finally {
-          delete (globalThis as { __ivaVariant?: string }).__ivaVariant;
+          delete (globalThis as BuildGlobals).__ivaVariant;
         }
       }
       result = mergeThemes(builds, looks);
@@ -114,7 +156,7 @@ export async function compile(entry: string): Promise<CompileResult> {
     const inputs = { files: [...new Set(used.map((f) => path.resolve(f)))], dirs: result.assetDir ? [result.assetDir] : [] };
     return {
       name, xml: serialize(result.root), assets: result.assets, scripts: result.scripts, joins: result.joins, warnings: result.warnings, files, inputs,
-      layout: result.layout,
+      layout: result.layout, size: result.size, sizes: result.sizes,
     };
   } catch (e) {
     throw located(e, baseDir);
@@ -152,6 +194,23 @@ export function writeBuild(result: CompileResult, outDir: string): string {
   }
   fs.writeFileSync(path.join(outDir, 'joins.json'), JSON.stringify(result.joins, null, 2) + '\n');
   return gui;
+}
+
+/**
+ * A build at several sizes (<Project sizes>): the first one's into outDir, each
+ * other's into outDir/<W>w<H>h/ - a folder named the way iViewer matches a
+ * device's screen in an archive of several GUIs. The .gui paths.
+ */
+export function writeBuilds(results: CompileResult[], outDir: string): string[] {
+  const [main, ...others] = results;
+  const guis = [writeBuild(main, outDir)];
+  for (const r of others) guis.push(writeBuild(r, path.join(outDir, sizeFolder(r.size))));
+  return guis;
+}
+
+/** Every size's files as one archive's: the first build's .gui first (iViewer falls back to the first it finds), the others in their size's folder. */
+export function buildFilesAll(results: CompileResult[]): [string, Buffer][] {
+  return results.flatMap((r, i) => buildFiles(r).map(([p, d]): [string, Buffer] => [i ? `${sizeFolder(r.size)}/${p}` : p, d]));
 }
 
 /** The build's files as one archive's: the .gui, images/..., scripts/... (a zipped GUI, as iViewer loads one from a URL). */

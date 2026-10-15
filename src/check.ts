@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 import { compile, IvaError } from './compiler/index.js';
+import { sizeLabel } from './compiler/components.js';
 import { VERSION } from './create.js';
 import { JSCONFIG, writeTypes } from './types.js';
 
@@ -41,11 +42,21 @@ export async function check(entry: string): Promise<CheckResult> {
     }
   }
 
+  // a test build at each size it's built for (<Project sizes>)
   let warnings: string[] = [];
   try {
-    warnings = (await compile(file)).warnings;
+    const main = await compile(file);
+    warnings = main.warnings;
+    for (const size of main.sizes) {
+      const at = sizeLabel(size);
+      try {
+        warnings.push(...(await compile(file, { size })).warnings.map((w) => `${at}: ${w}`));
+      } catch (e) {
+        problems.push(`${at}: ${e instanceof IvaError ? e.format() : String((e as Error)?.stack ?? e)}`);
+      }
+    }
   } catch (e) {
     problems.push(e instanceof IvaError ? e.format() : String((e as Error)?.stack ?? e));
   }
-  return { problems, warnings, notes };
+  return { problems, warnings: [...new Set(warnings)], notes };
 }

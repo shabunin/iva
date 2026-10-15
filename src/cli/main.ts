@@ -5,13 +5,13 @@ import { parseArgs } from 'node:util';
 import fs from 'node:fs';
 import path from 'node:path';
 import { startDev } from '../server/dev.js';
-import { buildFiles, compile, IvaError, slug, writeBuild } from '../compiler/index.js';
+import { buildFilesAll, compile, IvaError, slug, writeBuild, writeBuilds, type CompileResult } from '../compiler/index.js';
 import { writeZip } from '../server/zip.js';
 import { decompile } from '../decompiler/index.js';
 import { create, templates, VERSION } from '../create.js';
 import { check } from '../check.js';
 import { writeTypes } from '../types.js';
-import { DEVICES } from '../compiler/components.js';
+import { DEVICES, sizeLabel } from '../compiler/components.js';
 import { openInDesigner } from '../designer.js';
 import { startDeviceServer } from '../server/device.js';
 import QRCode from 'qrcode';
@@ -24,7 +24,8 @@ Usage:
   iva check [entry]    what the editor underlines + a test build
   iva types [dir]      (re)write iva.d.ts and jsconfig.json for editors
   iva build [entry]    compile a JSX project (default: app.jsx) into dist/:
-                       the .gui, its images and scripts, joins.json
+                       the .gui, its images and scripts, joins.json; with
+                       <Project sizes>, a GUI per size in dist/<W>w<H>h/
   iva dev [target]     live preview of a JSX project (app.jsx), a .gui, or a
                        folder of .gui files, backed by a Node runtime: real
                        TCP/UDP/HTTP from this machine; reloads on save
@@ -43,7 +44,13 @@ Usage:
 
 Options (build):
   -o, --out <dir>      output folder (default: dist/ next to the entry)
-      --zip            also <name>.gui.zip: the build in one file (a zipped GUI)
+      --zip            also <name>.gui.zip: the build in one file (a zipped GUI;
+                       every size in it - iViewer loads the one for its screen)
+
+Options (build, dev, serve, designer):
+      --size <WxH>     build it for that screen (1400x1400) instead of the
+                       <Project>'s own: screen() gives it; a phone's dense
+                       screen: 1400x1400@3x (laid out at 467x467, scaled up)
 
 Options (dev):
   -p, --port <n>       port (default 5180)
@@ -85,11 +92,14 @@ async function main(argv: string[]) {
     const { values, positionals } = parseArgs({
       args: rest,
       allowPositionals: true,
-      options: { port: { type: 'string', short: 'p', default: '8019' }, host: { type: 'string', default: '0.0.0.0' }, 'no-live': { type: 'boolean', default: false } },
+      options: {
+        port: { type: 'string', short: 'p', default: '8019' }, host: { type: 'string', default: '0.0.0.0' }, 'no-live': { type: 'boolean', default: false },
+        size: { type: 'string' },
+      },
     });
     const target = positionals[0] ?? (fs.existsSync('app.jsx') ? 'app.jsx' : undefined);
     if (!target || !fs.existsSync(target)) throw new Error('serve what? iva serve app.jsx | iva serve project.gui');
-    const server = await startDeviceServer({ target, port: Number(values.port), host: values.host!, live: !values['no-live'] });
+    const server = await startDeviceServer({ target, port: Number(values.port), host: values.host!, live: !values['no-live'], size: values.size });
     if (!server.addresses.length) process.stdout.write('no network address found: is this machine on a network?\n');
     process.stdout.write(`\nServing ${server.name} for iViewer. On the device, set iViewer's GUI File URL to:\n\n`);
     for (const a of server.addresses) process.stdout.write(`    ${a.url.padEnd(28)} ${a.iface}${a.kind ? ` (${a.kind})` : ''}\n`);
@@ -110,11 +120,12 @@ async function main(argv: string[]) {
     return;
   }
   if (cmd === 'designer') {
-    let target = path.resolve(rest[0] ?? 'app.jsx');
+    const { values, positionals } = parseArgs({ args: rest, allowPositionals: true, options: { size: { type: 'string' } } });
+    let target = path.resolve(positionals[0] ?? 'app.jsx');
     if (!fs.existsSync(target)) throw new Error(`no ${path.relative(process.cwd(), target)}`);
     if (!target.toLowerCase().endsWith('.gui')) {
       try {
-        const result = await compile(target);
+        const result = await compile(target, { size: values.size });
         for (const w of result.warnings) process.stderr.write(`warning: ${w}\n`);
         target = writeBuild(result, path.join(path.dirname(target), 'dist'));
       } catch (e) {
@@ -139,7 +150,7 @@ async function main(argv: string[]) {
     const { values, positionals } = parseArgs({
       args: rest,
       allowPositionals: true,
-      options: { out: { type: 'string', short: 'o' }, zip: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } },
+      options: { out: { type: 'string', short: 'o' }, zip: { type: 'boolean' }, size: { type: 'string' }, help: { type: 'boolean', short: 'h' } },
     });
     if (values.help) {
       process.stdout.write(HELP);
@@ -147,17 +158,31 @@ async function main(argv: string[]) {
     }
     const entry = path.resolve(positionals[0] ?? 'app.jsx');
     if (!fs.existsSync(entry)) throw new Error(`no ${path.relative(process.cwd(), entry) || entry} (pass the entry file: iva build app.jsx)`);
-    const t0 = Date.now();
     try {
-      const result = await compile(entry);
-      for (const w of result.warnings) process.stderr.write(`warning: ${w}\n`);
-      const gui = writeBuild(result, path.resolve(values.out ?? path.join(path.dirname(entry), 'dist')));
-      const counts = `${result.assets.length} files, ${result.scripts.length} scripts`;
-      process.stdout.write(`${path.relative(process.cwd(), gui)} (${counts}) in ${Date.now() - t0} ms\n`);
+      // --size: that one; else the project's own size, then each of <Project sizes>
+      const results: CompileResult[] = [];
+      const built = (r: CompileResult, t0: number) => {
+        for (const w of r.warnings) process.stderr.write(`warning: ${results.length ? `${sizeLabel(r.size)}: ` : ''}${w}\n`);
+        results.push(r);
+        return Date.now() - t0;
+      };
+      const times: number[] = [];
+      let t0 = Date.now();
+      times.push(built(await compile(entry, { size: values.size }), t0));
+      for (const size of values.size ? [] : results[0].sizes) {
+        t0 = Date.now();
+        times.push(built(await compile(entry, { size }), t0));
+      }
+      const guis = writeBuilds(results, path.resolve(values.out ?? path.join(path.dirname(entry), 'dist')));
+      results.forEach((r, i) => {
+        const at = r.size.scale ? `${sizeLabel(r.size)}: laid out at ${r.size.width}x${r.size.height}` : sizeLabel(r.size);
+        const counts = `${at}, ${r.assets.length} files, ${r.scripts.length} scripts`;
+        process.stdout.write(`${path.relative(process.cwd(), guis[i])} (${counts}) in ${times[i]} ms\n`);
+      });
       if (values.zip) {
         // the same files in one archive: iViewer loads it from a URL (GUI File URL .../name.gui.zip)
-        const zip = `${gui}.zip`;
-        fs.writeFileSync(zip, writeZip(buildFiles(result)));
+        const zip = `${guis[0]}.zip`;
+        fs.writeFileSync(zip, writeZip(buildFilesAll(results)));
         process.stdout.write(`${path.relative(process.cwd(), zip)} (${Math.round(fs.statSync(zip).size / 1024)} KiB)\n`);
       }
     } catch (e) {
@@ -197,6 +222,7 @@ async function main(argv: string[]) {
         port: { type: 'string', short: 'p', default: '5180' },
         host: { type: 'string', default: '127.0.0.1' },
         verbose: { type: 'boolean', short: 'v', default: false },
+        size: { type: 'string' },
         help: { type: 'boolean', short: 'h' },
       },
     });
@@ -209,6 +235,7 @@ async function main(argv: string[]) {
       port: Number(values.port),
       host: values.host!,
       verbose: values.verbose,
+      size: values.size,
     });
     const stop = async () => {
       await server.close();

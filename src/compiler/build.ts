@@ -6,7 +6,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { DEVICES, PROPS, REQUIRED, STYLE_PROPS, type StyleProps, type Transition } from './components.js';
+import { DEVICES, parseSize, PROPS, REQUIRED, sizeFolder, sizeLabel, STYLE_PROPS, type ScreenSize, type StyleProps, type Transition } from './components.js';
 import { fixedJoin, JoinAllocator, JoinSlot, typedJoin } from './joins.js';
 import { isVNode, type Child, type Source, type VNode } from './runtime.js';
 import { styleCss, Themes, type ThemeType } from './style.js';
@@ -75,6 +75,23 @@ export interface BuildResult {
   apps: Record<string, { options: unknown; bg: string }>;
   /** where the build puts files next to the .gui: assets (iViewer's image folder), scripts; '' = beside it */
   layout: { images: string; scripts: string };
+  /** the panel size it was built for (the main orientation's) */
+  size: ScreenSize;
+  /** the other sizes the project asks to be built for (<Project sizes>) */
+  sizes: ScreenSize[];
+}
+
+/** The <Project>'s own panel size (its main orientation's), or why it has none. */
+export function projectSize(p: Record<string, any>): ScreenSize | string {
+  if (p.device !== undefined) {
+    const size = (DEVICES as Record<string, readonly [number, number]>)[p.device];
+    if (!size) return `device: no "${p.device}"${didYouMean(p.device, Object.keys(DEVICES))} (or give width and height)`;
+    if (p.width !== undefined || p.height !== undefined) return 'device or width / height, not both';
+    return p.orientation === 'portrait' ? { width: size[1], height: size[0] } : { width: size[0], height: size[1] };
+  }
+  if (p.orientation !== undefined) return 'orientation goes with device (with width / height, the larger one decides)';
+  if (p.width === undefined || p.height === undefined) return `give device="iPad" (${Object.keys(DEVICES).join(', ')}) or width and height`;
+  return { width: p.width, height: p.height };
 }
 
 type Attrs = Record<string, string | number | boolean | null | undefined | JoinSlot>;
@@ -137,6 +154,9 @@ export class Builder {
 
   /** the panel's size per orientation */
   private sizes: Record<'landscape' | 'portrait', [number, number]> = { landscape: [1024, 768], portrait: [768, 1024] };
+  /** the size built (the main orientation's), and the other sizes <Project sizes> asks for */
+  private size: ScreenSize = { width: 1024, height: 768 };
+  private sizesAsked: ScreenSize[] = [];
 
   /**
    * themed: built as one look of several (<Project themes>). What CF.setProperties
@@ -144,7 +164,7 @@ export class Builder {
    * page and subpage colours are drawn images (swapped through a join), a
    * button's drawn icon is drawn into its state's background (its theme).
    */
-  constructor(private baseDir: string, private opts: { themed?: boolean; start?: string } = {}) {}
+  constructor(private baseDir: string, private opts: { themed?: boolean; start?: string; size?: ScreenSize } = {}) {}
 
   build(tree: Child): BuildResult {
     const top = flat([tree]).filter((c) => typeof c !== 'string' || c.trim());
@@ -160,19 +180,14 @@ export class Builder {
     }
     this.httpPort = p.httpPort;
     this.joins = new JoinAllocator(p.joinBase ?? 1000);
-    let [w, h] = [p.width, p.height];
-    if (p.device !== undefined) {
-      const size = (DEVICES as Record<string, readonly [number, number]>)[p.device];
-      if (!size) throw this.err(project, `device: no "${p.device}"${didYouMean(p.device, Object.keys(DEVICES))} (or give width and height)`);
-      if (w !== undefined || h !== undefined) throw this.err(project, 'device or width / height, not both');
-      [w, h] = p.orientation === 'portrait' ? [size[1], size[0]] : [size[0], size[1]];
-    } else if (p.orientation !== undefined) {
-      throw this.err(project, 'orientation goes with device (with width / height, the larger one decides)');
-    } else if (w === undefined || h === undefined) {
-      throw this.err(project, `give device="iPad" (${Object.keys(DEVICES).join(', ')}) or width and height`);
-    }
+    const own = projectSize(p);
+    if (typeof own === 'string') throw this.err(project, own);
+    this.sizesAsked = this.sizeList(project);
+    // built at another size (iva build --size, <Project sizes>): its other orientation is that one turned
+    const { width: w, height: h } = this.opts.size ?? own;
+    this.size = this.opts.size ?? { width: w, height: h };
     this.primary = w >= h ? 'landscape' : 'portrait';
-    const other = p.otherSize ?? [h, w];
+    const other = this.opts.size ? [h, w] : p.otherSize ?? [h, w];
     const land = this.primary === 'landscape' ? [w, h] : other;
     const port = this.primary === 'portrait' ? [w, h] : other;
     this.sizes = { landscape: [land[0], land[1]], portrait: [port[0], port[1]] };
@@ -278,10 +293,27 @@ export class Builder {
     return {
       root, assets: [...this.assets.values()], scripts: this.scripts, joins: this.joins.map(), warnings: this.warnings, assetDir: this.assetDir,
       inputs: [...this.inputs], apps: this.appOptions, layout: this.folders ? { images: IMAGES_DIR, scripts: SCRIPTS_DIR } : { images: '', scripts: '' },
+      size: this.size, sizes: this.sizesAsked,
     };
   }
 
   // ── checks & helpers ─────────────────────────────────────────────
+
+  /** <Project sizes={['1400x1400']}>: the other sizes, checked. */
+  private sizeList(project: VNode): ScreenSize[] {
+    const list: unknown = project.props.sizes;
+    if (list === undefined) return [];
+    if (!Array.isArray(list)) throw this.err(project, "sizes: a list of 'WIDTHxHEIGHT' (sizes={['1400x1400']})");
+    const own = projectSize(project.props) as ScreenSize;
+    const seen = new Set([sizeFolder(own)]);
+    return list.map((x) => {
+      const size = parseSize(x);
+      if (!size) throw this.err(project, `sizes: "${x}" isn't a size - 'WIDTHxHEIGHT' in pixels, like '1400x1400' (a phone's: '1400x1400@3x', 1 to 4)`);
+      if (seen.has(sizeFolder(size))) throw this.err(project, `sizes: ${sizeLabel(size)} - a screen of that size is there twice (or is the project's own)`);
+      seen.add(sizeFolder(size));
+      return size;
+    });
+  }
 
   private err(node: VNode | undefined, msg: string) {
     return new CompileError(node ? `<${node.type}>: ${msg}` : msg, node?.source);
@@ -431,13 +463,19 @@ export class Builder {
     return name;
   }
 
-  /** An image iva drew, at 1x and 2x (name@2x.png: iViewer's retina version), named after its content. */
+  /**
+   * An image iva drew, at 1x and 2x (name@2x.png: iViewer's retina version),
+   * named after its content. A build for a dense screen (size@3x, scaled up by
+   * iViewer) draws the image itself that sharp, and no @2x one when it's at
+   * least that.
+   */
   private generated(node: VNode, kind: string, draw: (scale: number) => Buffer, fixedName?: string): string {
+    const sc = this.opts.size?.scale ?? 1;
     let data: Buffer;
-    let data2: Buffer;
+    let data2: Buffer | null;
     try {
-      data = draw(1);
-      data2 = draw(2);
+      data = draw(sc);
+      data2 = sc < 2 ? draw(2) : null;
     } catch (e: any) {
       throw this.err(node, e.message);
     }
@@ -447,7 +485,7 @@ export class Builder {
     if (fixedName && prev && !(prev.data ?? Buffer.alloc(0)).equals(data)) throw this.err(node, `two different drawings named ${name}`);
     if (!prev) {
       this.assets.set(name.toLowerCase(), { name, data });
-      this.assets.set(name2.toLowerCase(), { name: name2, data: data2 });
+      if (data2) this.assets.set(name2.toLowerCase(), { name: name2, data: data2 });
     }
     return name;
   }

@@ -73,6 +73,50 @@ export const fa: (name: string, opts?: IconOptions) => IconRef = (name, opts = {
  */
 export const variant = (): string => (globalThis as { __ivaVariant?: string }).__ivaVariant ?? '';
 
+/** A panel size in pixels. */
+export interface ScreenSize {
+  width: number;
+  height: number;
+  /**
+   * device pixels per pixel (a size given as '1400x1400@3x'): the GUI is laid
+   * out at the size divided by it (467x467), iViewer scales it up to fill the
+   * screen and iva draws its images that sharp
+   */
+  scale?: number;
+  /** the screen in device pixels, when there's a scale */
+  device?: { width: number; height: number };
+}
+
+/**
+ * The panel size being built: the <Project>'s own, or the one asked for
+ * (`iva build --size 1400x1400`, one of <Project sizes>). Lay out from it and
+ * one project fits every screen: `<ui.Card w={screen().width - 32} ...>`.
+ */
+export const screen = (): ScreenSize => {
+  const g = globalThis as { __ivaScreen?: ScreenSize; __ivaScreenUsed?: boolean };
+  if (g.__ivaScreen) return { ...g.__ivaScreen };
+  // before iva knows the size (a first look at the project, to read its <Project>)
+  g.__ivaScreenUsed = true;
+  return { width: 1280, height: 800 };
+};
+
+/** '1400x1400' -> { width, height }; '1400x1400@3x' -> laid out at 467x467, scale 3; null if it isn't one. @internal */
+export function parseSize(size: unknown): ScreenSize | null {
+  const m = typeof size === 'string' ? /^(\d{2,5})x(\d{2,5})(?:@(\d+(?:\.\d+)?)x)?$/.exec(size.trim()) : null;
+  if (!m) return null;
+  const [width, height] = [Number(m[1]), Number(m[2])];
+  const scale = m[3] === undefined ? 1 : Number(m[3]);
+  if (!(scale >= 1 && scale <= 4)) return null;
+  if (scale === 1) return { width, height };
+  return { width: Math.round(width / scale), height: Math.round(height / scale), scale, device: { width, height } };
+}
+
+/** A size's folder in a build of several (iViewer matches it against a device's screen: 1400w1400h). @internal */
+export const sizeFolder = (s: ScreenSize): string => `${(s.device ?? s).width}w${(s.device ?? s).height}h`;
+
+/** How a size reads: 1400x1400, 1400x1400@3x. @internal */
+export const sizeLabel = (s: ScreenSize): string => `${(s.device ?? s).width}x${(s.device ?? s).height}${s.scale && s.scale !== 1 ? `@${s.scale}x` : ''}`;
+
 /** Something iva draws into an image (draw.arc(), ...); angles: degrees clockwise from 12 o'clock. */
 export type DrawRef = { $$draw: 1; name?: string } & (
   | { kind: 'arc'; size: number; thickness: number; from: number; to: number; color: string }
@@ -257,6 +301,15 @@ export interface ProjectProps extends XmlProp {
   /** the other orientation's size (default: width and height swapped) */
   otherSize?: [number, number];
   autoposition?: 'scale' | 'none' | null;
+  /**
+   * other screens to build it for: sizes={['1920x1080', '1400x1400@3x']}. iva
+   * build writes a GUI per size (dist/1920w1080h/, a folder named the way
+   * iViewer matches a device's screen) and --zip puts them all in one archive:
+   * each device loads its own. screen() says which size is being built. @3x:
+   * a phone's dense screen - laid out at a third of it (467x467) and scaled up
+   * by iViewer, so everything is as big as on a tablet.
+   */
+  sizes?: (`${number}x${number}` | `${number}x${number}@${number}x`)[];
   /** first number given to named joins (default 1000) */
   joinBase?: number;
   /** a folder whose files all ship with the project; images are also found
@@ -699,7 +752,7 @@ const PLACEMENT = ['x', 'y', 'join', 'visible', 'in', 'out', 'topmost', 'fixed',
 /** The props each element takes (children aside).
  * @internal */
 export const PROPS: Record<string, string[]> = {
-  Project: ['name', 'device', 'orientation', 'width', 'height', 'otherSize', 'autoposition', 'joinBase', 'assets', 'properties', 'themes', 'theme', 'folders', 'httpPort'],
+  Project: ['name', 'device', 'orientation', 'width', 'height', 'otherSize', 'autoposition', 'sizes', 'joinBase', 'assets', 'properties', 'themes', 'theme', 'folders', 'httpPort'],
   Page: ['name', 'start', 'bg', 'image', 'theme', 'tags'],
   Landscape: ['bg', 'image', 'theme'],
   Portrait: ['bg', 'image', 'theme'],

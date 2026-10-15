@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DOMParser } from 'linkedom';
-import { compile, IvaError, writeBuild } from '../src/compiler/index.ts';
+import { buildFilesAll, compile, IvaError, writeBuild, writeBuilds } from '../src/compiler/index.ts';
 import { circle } from '../src/compiler/images.ts';
 import { parseGUI } from '../src/runtime/cf/parser.ts';
 
@@ -16,7 +16,10 @@ const HELLO = path.resolve(import.meta.dirname, '../examples/hello/app.jsx');
 async function build(jsx: string, files: Record<string, string | Buffer> = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-test-'));
   fs.writeFileSync(path.join(dir, 'app.jsx'), jsx);
-  for (const [name, data] of Object.entries(files)) fs.writeFileSync(path.join(dir, name), data);
+  for (const [name, data] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(dir, name)), { recursive: true });
+    fs.writeFileSync(path.join(dir, name), data);
+  }
   return compile(path.join(dir, 'app.jsx'));
 }
 
@@ -392,4 +395,73 @@ test('the build: the .gui, images/ (its image folder: drawings by kind, sounds, 
   const out2 = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-dist-'));
   writeBuild(flat, out2);
   assert.ok(tree(out2).includes('backgrounds/iva_box_#.png') && tree(out2).includes('main.js') && tree(out2).includes('beep.mp3'));
+});
+
+test('screen sizes: screen() is the <Project>\'s size or the one asked for; <Project sizes> each in its own folder', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-sizes-'));
+  const entry = path.join(dir, 'app.jsx');
+  fs.writeFileSync(entry, `const { width, height } = screen();
+export default (
+  <Project name="T" width={1024} height={768} sizes={['1400x1400', '768x1024']}>
+    <Page name="Main"><Image x={16} y={16} w={width - 32} h={height - 32} src="bg.png" /></Page>
+  </Project>
+);`);
+  fs.writeFileSync(path.join(dir, 'bg.png'), circle(8, '#336699'));
+  // laid out from screen() before iva knew the size: built again with it
+  const main = await compile(entry);
+  assert.deepEqual([main.size, main.sizes], [{ width: 1024, height: 768 }, [{ width: 1400, height: 1400 }, { width: 768, height: 1024 }]]);
+  assert.match(main.xml, /<portrait width="768" height="1024" \/>\s*<landscape width="1024" height="768" \/>/);
+  assert.match(main.xml, /<img x="16" y="16" w="992" h="736"/);
+  const square = await compile(entry, { size: '1400x1400' });
+  assert.match(square.xml, /<portrait width="1400" height="1400" \/>\s*<landscape width="1400" height="1400" \/>/);
+  assert.match(square.xml, /<img x="16" y="16" w="1368" h="1368"/);
+  // taller than wide: portrait is the main orientation
+  const tall = await compile(entry, { size: { width: 768, height: 1024 } });
+  assert.match(tall.xml, /<portrait>\s*<img x="16" y="16" w="736" h="992"/);
+  await assert.rejects(compile(entry, { size: 'big' }), /size: "big" isn't one/);
+  // dist/: the project's own size, each other in its folder (as iViewer matches a screen); the archive: the main .gui first
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-sizes-dist-'));
+  const guis = writeBuilds([main, square, tall], out);
+  assert.deepEqual(guis.map((g) => path.relative(out, g).split(path.sep).join('/')), ['T.gui', '1400w1400h/T.gui', '768w1024h/T.gui']);
+  assert.ok(fs.existsSync(path.join(out, '1400w1400h', 'images', 'bg.png')));
+  const files = buildFilesAll([main, square, tall]).map(([f]) => f);
+  assert.equal(files[0], 'T.gui');
+  assert.ok(files.includes('1400w1400h/T.gui') && files.includes('768w1024h/images/bg.png'));
+});
+
+test('screen sizes: with runtime themes each look is built at the size; sizes are checked', async () => {
+  const themed = await build(`const { width } = screen();
+export default (
+  <Project name="T" width={1024} height={768} themes={['dark', 'light']}>
+    <Page name="Main"><Text w={width} h={30} text="Hi" color={variant() === 'light' ? '#000000' : '#FFFFFF'} /></Page>
+  </Project>
+);`);
+  assert.match(themed.xml, /<txt [^>]*w="1024"/);
+  await fails(`export default (<Project name="T" width={1024} height={768} sizes={['big']}><Page name="P" /></Project>);`, /sizes: "big" isn't a size/);
+  await fails(`export default (<Project name="T" width={1024} height={768} sizes={['1024x768']}><Page name="P" /></Project>);`, /sizes: 1024x768 - a screen of that size is there twice/);
+});
+
+test('a phone\'s dense screen: 1400x1400@3x is laid out at 467x467 for iViewer to scale up, its drawings that sharp, in the screen\'s folder', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-dense-'));
+  const entry = path.join(dir, 'app.jsx');
+  fs.writeFileSync(entry, `const { width, scale } = screen();
+export default (
+  <Project name="T" width={1280} height={800} sizes={['1400x1400@3x']}>
+    <Page name="Main"><Box x={16} y={16} w={width - 32} h={100} bg="#336699" radius={8} /><Text y={200} w={300} h={30} text={'x' + (scale ?? 1)} /></Page>
+  </Project>
+);`);
+  const main = await compile(entry);
+  assert.deepEqual(main.sizes, [{ width: 467, height: 467, scale: 3, device: { width: 1400, height: 1400 } }]);
+  const phone = await compile(entry, { size: main.sizes[0] });
+  assert.match(phone.xml, /<portrait width="467" height="467" \/>\s*<landscape width="467" height="467" \/>/);
+  assert.match(phone.xml, /<size autoposition="scale">/);
+  assert.match(phone.xml, />x3<\/txt>/);
+  // the box drawn at 3x (435 wide -> 1305 px), no @2x besides
+  const box = phone.assets.find((a) => /iva_box_/.test(a.name))!;
+  assert.equal(box.data!.readUInt32BE(16), 435 * 3);
+  assert.ok(!phone.assets.some((a) => a.name.includes('@2x')));
+  assert.ok(main.assets.some((a) => a.name.includes('@2x')));
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-dense-dist-'));
+  assert.deepEqual(writeBuilds([main, phone], out).map((g) => path.relative(out, g).split(path.sep).join('/')), ['T.gui', '1400w1400h/T.gui']);
+  await assert.rejects(compile(entry, { size: '1400x1400@9x' }), /size: "1400x1400@9x" isn't one/);
 });

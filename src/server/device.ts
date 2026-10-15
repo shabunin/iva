@@ -24,6 +24,8 @@ export interface DeviceServerOptions {
   host: string;
   /** reload the panel on the device after each build (default true) */
   live: boolean;
+  /** build a JSX project for this screen instead of its own size ('1400x1400') */
+  size?: string;
   log?: (msg: string) => void;
 }
 
@@ -126,7 +128,7 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
     } else {
       let r: CompileResult;
       try {
-        r = await compile(target);
+        r = await compile(target, { size: opts.size });
       } catch (e) {
         state.error = e instanceof IvaError ? e.format(path.dirname(target)) : String((e as Error)?.stack ?? e);
         log(`build failed (the device keeps the last good build):\n${state.error}`);
