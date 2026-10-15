@@ -362,16 +362,22 @@ export class CFRenderer {
   /** A URL as the GUI gives it, made loadable here: project files by name, anything with a scheme as is. */
   /** A loaded image by the name the .gui gives it: a path in its image folder (icons/x.png), else its file name. */
   texture(ref: string): Texture | undefined {
+    const key = this.assetKey(ref);
+    return key ? Assets.get(key) : undefined;
+  }
+
+  /**
+   * The key an image the .gui names is loaded under: as named (a path in its
+   * image folder, GUI Designer's backslashes or not), else by file name, in
+   * any case. Undefined if it isn't loaded.
+   */
+  assetKey(ref: string): string | undefined {
     if (!ref) return undefined;
     const name = ref.replace(/\\/g, '/');
     const leaf = name.split('/').pop() || name;
     const keys = Object.keys(this.imageMap);
     const tries = [name, keys.find((k) => k.toLowerCase() === name.toLowerCase()), leaf, keys.find((k) => k.toLowerCase() === leaf.toLowerCase())];
-    for (const k of tries) {
-      const t = k ? Assets.get(k) : undefined;
-      if (t) return t;
-    }
-    return undefined;
+    return tries.find((k): k is string => !!k && Assets.cache.has(k));
   }
 
   /** What a web view loads for a URL: the host's way to it, else the URL (a project file by name). */

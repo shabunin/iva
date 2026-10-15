@@ -37,13 +37,7 @@ export function renderSliderOrGauge(
     const ind1 = node.children ? node.children.find(c => c.type === "indicator" && c.attributes.state === "1") : undefined;
 
     const resolveIndicatorImage = (ind: CFNode | undefined) => {
-        if (ind && ind.text) {
-            const fileName = ind.text;
-            if (Assets.get(fileName)) return fileName;
-            const keys = Object.keys(renderer.imageMap);
-            const foundKey = keys.find(k => k.toLowerCase() === fileName.toLowerCase());
-            return foundKey || fileName;
-        }
+        if (ind && ind.text) return renderer.assetKey(ind.text) ?? ind.text.replace(/\\/g, '/');
         return null;
     };
 

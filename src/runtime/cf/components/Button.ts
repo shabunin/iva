@@ -94,15 +94,7 @@ export function renderButton(
     const inactiveImgNode = inactiveNode?.children?.find(c => c.type === "img");
     const activeImgNode = activeNode?.children?.find(c => c.type === "img");
 
-    const getTex = (name: string) => {
-        let t = Assets.get(name);
-        if (!t) {
-            const possibleKeys = Object.keys(renderer.imageMap);
-            const foundKey = possibleKeys.find(k => k.toLowerCase() === name.toLowerCase());
-            if (foundKey) t = Assets.get(foundKey);
-        }
-        return t;
-    };
+    const getTex = (name: string) => renderer.texture(name);
 
     let inactiveImgSprite: Sprite | null = null;
     let activeImgSprite: Sprite | null = null;
