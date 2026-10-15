@@ -529,3 +529,15 @@ test('joins only scripts use get a hidden element each (iViewer knows no other);
   assert.match(r.scripts.find((x) => x.name === 'iva-start.js')!.code!, /IvaHttp\.view\(Joins\.s\["iva_web_[0-9a-f]{8}"\], "iva-file\/page\.html"\);/);
   assert.match(r.xml, /<system name="IvaWeb"/);
 });
+
+test('setProps(): a button animates an element by its join; a join no element has is a warning', async () => {
+  const r = await build(wrap(`
+    <Button w={96} h={96} join="cube" feedback="none" />
+    <Button y={120} w={200} h={60} text="Bigger" onPress={setProps(d('cube'), { scale: 1.5 }, { duration: 0.3, curve: 'easeOut' })} />`));
+  assert.match(r.xml, /js="CF\.setProperties\(\{ join: Joins\.d\[&quot;cube&quot;\], scale: 1\.5 \}, 0, 0\.3, CF\.AnimationCurveEaseOut\);"/);
+  assert.deepEqual(r.warnings, []);
+  const typo = await build(wrap(`
+    <Button w={96} h={96} join="cube" />
+    <Button y={120} w={200} h={60} onPress={setProps(d('cub'), { opacity: 0 })} />`));
+  assert.deepEqual(typo.warnings.map((w) => w.replace(/^.*?<Button>: /, '')), [`setProps: no element has the join d('cub') (did you mean "cube"?)`]);
+});

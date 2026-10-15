@@ -199,6 +199,49 @@ script, loaded first, so project scripts write `CF.setJoin(Joins.s.title, …)`.
 | `onRelease={[js('stop()', { delay: 100 })]}` | `<release delay="100" js="stop()"/>` |
 | `page="Settings"` | `flip="Settings"` |
 | `href="cf://192.168.0.10:8019/other.gui"` | `href="…"`: on release, iViewer loads that GUI (GUI linking); another URL opens outside |
+| `onPress={setProps(d('cube'), { scale: 1.5 }, { duration: 0.3 })}` | `<btn js="CF.setProperties({ join: Joins.d[&quot;cube&quot;], scale: 1.5 }, 0, 0.3, …);">` |
+
+## Animations: setProps()
+
+`setProps(element, properties, options)` changes an element's properties
+with `CF.setProperties` - moved, scaled, turned, faded, flipped - at once or
+animated, then the next thing. It's an action: a button's `onPress`, or code
+in a script (`` js={`${setProps(...)}`} ``, `<OnStart js={...}>`).
+
+```jsx
+<ui.IconButton icon="cube" join="cube" feedback="none" />
+
+// bigger, then back: the second in the first one's callback
+<Button text="Bounce" onPress={setProps(d('cube'), { scale: 1.3 }, { duration: 0.15, curve: 'easeOut',
+  then: setProps(d('cube'), { scale: 1 }, { duration: 0.25, curve: 'easeIn' }) })} />
+
+// by how much, from where it is (CF.getProperties first)
+<Button text="Right" onPress={setProps(d('cube'), { x: '+200' }, { duration: 0.6, curve: 'easeInOut' })} />
+
+// several elements in one call: joins and tags (elements' `tags`)
+<Button text="Hide" onPress={setProps([d('cube'), 'controls'], { opacity: 0 }, { duration: 0.4 })} />
+```
+
+- **element**: a join - `d('cube')`, `s(12)`, `a('level')` (the element's
+  `join`: a button's digital, an image's or a text's serial, a slider's
+  analog) - a tag, or a list of them. A named join no element has is a
+  build warning (with the nearest name).
+- **properties**: `x`, `y`, `w`, `h`, `opacity` (0..1; at 0 not tapped
+  either), `scale`, `xscale`, `yscale`, `zrotation` (degrees clockwise),
+  `xrotation` / `yrotation` (3D: `yrotation` 0 → 90 shows the edge - a card
+  flip), `theme` (a `<Theme>` by name, switched at the end of the delay).
+  A number, or `'+n'` / `'-n'`: by how much (joins only).
+- **options**: `delay` and `duration` in seconds; `curve` - `'linear'`
+  (default), `'easeIn'`, `'easeOut'`, `'easeInOut'`; `then` - another
+  `setProps()`, a `cmd()` / `macro()` / `js()`, or a list of them, run once
+  it's done.
+
+A turn of more than 180° at once may go either way: split it (`zrotation`
+179, then 358, then 0 at once, as CommandFusion's docs do). What isn't one
+call - a toggle (there and back), a value from the panel - is a script's: the
+gallery's Animations page (`examples/gallery/pages/Animations.jsx`) has both.
+Subpages animate on their own: `in` / `out` on `<Subpage>` / `<SubpageRef>`
+(fade, moveIn / push / reveal from a side, a time, an ease).
 
 ## GUI linking
 

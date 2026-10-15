@@ -5,6 +5,8 @@
  */
 
 import { intrinsic, type Child, type VNode } from './runtime.js';
+import * as names from './names.js';
+import { didYouMean } from './suggest.js';
 
 /** An iva element: used as <Name ...props />. */
 export type Component<P> = (props: P) => VNode;
@@ -48,7 +50,12 @@ export const DRAWN_FOLDERS: Record<string, string> = {
 /** A drawing's file (no extension) by its kind and an id, in its folder: drawnName('fa', 'a1b2c3d4') -> 'icons/fa-a1b2c3d4'. @internal */
 export const drawnName = (kind: string, id: string): string => `${DRAWN_FOLDERS[kind] ?? 'drawn'}/${kind}-${id}`;
 
-export { drawnFile, drawnSet, fileName as drawnFileName } from './names.js';
+/** @internal */
+export const drawnFile = names.drawnFile;
+/** @internal */
+export const drawnSet = names.drawnSet;
+/** @internal */
+export const drawnFileName = names.fileName;
 
 /** A Font Awesome icon, drawn into an image at build time: fa('lightbulb'). */
 export interface IconRef {
@@ -174,13 +181,15 @@ export interface ImageRef {
   xml?: Record<string, string | number | null>;
 }
 
-/** What a button does: a command name (string), or cmd()/macro()/js(). */
+/** What a button does: a command name (string), or cmd()/macro()/js()/setProps(). */
 export interface Action {
   $$action: 1;
   kind: 'command' | 'macro' | 'js';
   value: string;
   delay?: number;
   repeat?: number;
+  /** the named joins its script uses (setProps()): the build checks some element has each */
+  joins?: JoinRef[];
 }
 export interface ActionOptions {
   /** ms after the press (release) before it runs */
@@ -197,6 +206,104 @@ export const macro: ActionHelper = action('macro');
 /** run JavaScript */
 export const js: ActionHelper = action('js');
 export type ActionList = (string | Action)[] | string | Action;
+
+/** by how much, from what CF.getProperties says then: '+100', '-0.5' */
+export type Relative = `+${number}` | `-${number}`;
+
+/** What CF.setProperties changes on an element (setProps()). */
+export interface Properties {
+  x?: number | Relative;
+  y?: number | Relative;
+  w?: number | Relative;
+  h?: number | Relative;
+  /** 0 (gone: not tapped either) .. 1 */
+  opacity?: number | Relative;
+  /** 1: as drawn */
+  scale?: number | Relative;
+  xscale?: number | Relative;
+  yscale?: number | Relative;
+  /** degrees, clockwise (more than 180 at once may turn either way: split it, then: ...) */
+  zrotation?: number | Relative;
+  /** degrees about the X / Y axis: 3D (yrotation 0 -> 90 shows its edge - a card flip) */
+  xrotation?: number | Relative;
+  yrotation?: number | Relative;
+  /** a <Theme> by name: at the end of the delay, not animated */
+  theme?: string;
+}
+
+export interface SetPropsOptions {
+  /** seconds before it starts (default 0) */
+  delay?: number;
+  /** seconds it takes (default 0: at once) */
+  duration?: number;
+  /** how it speeds up and slows down (default 'linear') */
+  curve?: 'linear' | 'easeIn' | 'easeOut' | 'easeInOut';
+  /** once it's done: another setProps(), a cmd() / macro() / js(), or a list of them (in turn) */
+  then?: Action | Action[];
+}
+
+/** An element (or more): its join - d('cube'), s(12) - a tag of elements, or a list of them. */
+export type PropsTarget = JoinRef | string | (JoinRef | string)[];
+
+const PROPERTIES = ['x', 'y', 'w', 'h', 'opacity', 'scale', 'xscale', 'yscale', 'zrotation', 'xrotation', 'yrotation', 'theme'];
+const CURVES: Record<string, string> = {
+  linear: 'CF.AnimationCurveLinear', easeIn: 'CF.AnimationCurveEaseIn', easeOut: 'CF.AnimationCurveEaseOut', easeInOut: 'CF.AnimationCurveEaseInOut',
+};
+const isJoinRef = (v: unknown): v is JoinRef => !!v && typeof v === 'object' && (v as JoinRef).$$join === 1;
+/** a join as the panel's script has it: Joins.d["cube"] (iva-joins.js), "d12"; a tag as it is */
+const joinCode = (t: JoinRef | string) =>
+  typeof t === 'string' ? JSON.stringify(t) : typeof t.id === 'number' ? JSON.stringify(`${t.type}${t.id}`) : `Joins.${t.type}[${JSON.stringify(t.id)}]`;
+/** an action as a script's statement (a callback's) */
+const actionCode = (a: Action): string =>
+  a.kind === 'js' ? a.value : a.kind === 'macro' ? `CF.runMacro(${JSON.stringify(a.value)});` : `CF.runCommand(null, ${JSON.stringify(a.value)});`;
+
+/**
+ * Change elements' properties - move, scale, turn, fade - with CF.setProperties,
+ * animated over `duration` with a `curve`, then (`then`) the next thing: a
+ * button's action (onPress={setProps(...)}), a script's code (`${setProps(...)}`).
+ *
+ *   setProps(d('cube'), { scale: 1.5 }, { duration: 0.3, curve: 'easeOut',
+ *     then: setProps(d('cube'), { scale: 1 }, { duration: 0.3 }) })
+ *   setProps(d('cube'), { x: '+200' })        // from where it is (CF.getProperties)
+ *   setProps([d('a'), d('b'), 'menuItems'], { opacity: 0 }, { duration: 0.4 })
+ */
+export function setProps(target: PropsTarget, props: Properties, opts: SetPropsOptions = {}): Action {
+  const targets = Array.isArray(target) ? target : [target];
+  if (!targets.length || targets.some((t) => !isJoinRef(t) && (typeof t !== 'string' || !t))) {
+    throw new Error('setProps: an element - its join (d(\'cube\'), s(12)) or a tag - or a list of them');
+  }
+  const keys = Object.keys(props) as (keyof Properties)[];
+  if (!keys.length) throw new Error('setProps: no property to change (x, y, w, h, opacity, scale, zrotation ...)');
+  for (const k of keys) {
+    if (!PROPERTIES.includes(k)) throw new Error(`setProps: no property "${k}"${didYouMean(k, PROPERTIES)}`);
+    const v = props[k];
+    if (k === 'theme' ? typeof v !== 'string' : !(typeof v === 'number' && Number.isFinite(v)) && !(typeof v === 'string' && /^[+-]\d*\.?\d+$/.test(v))) {
+      throw new Error(`setProps: ${k}: ${k === 'theme' ? 'a theme\'s name' : `a number, or '+n' / '-n' (by how much)`} (got ${JSON.stringify(v)})`);
+    }
+  }
+  if (opts.curve !== undefined && !CURVES[opts.curve]) throw new Error(`setProps: curve: 'linear', 'easeIn', 'easeOut' or 'easeInOut'${didYouMean(opts.curve, Object.keys(CURVES))}`);
+  const relative = keys.some((k) => k !== 'theme' && typeof props[k] === 'string');
+  if (relative && targets.some((t) => !isJoinRef(t))) throw new Error('setProps: \'+n\' / \'-n\' need joins (CF.getProperties reads a join, not a tag)');
+  const value = (k: keyof Properties, i: number) => {
+    const v = props[k]!;
+    if (k === 'theme' || typeof v === 'number') return JSON.stringify(v);
+    return `(p[${i}].${k} ${v[0]} ${v.slice(1)})`;
+  };
+  const change = (t: JoinRef | string, i: number) => `{ join: ${joinCode(t)}${keys.map((k) => `, ${k}: ${value(k, i)}`).join('')} }`;
+  const changes = targets.length === 1 ? change(targets[0], 0) : `[${targets.map(change).join(', ')}]`;
+  const then = opts.then === undefined ? [] : Array.isArray(opts.then) ? opts.then : [opts.then];
+  for (const a of then) if (!a || (a as Action).$$action !== 1) throw new Error('setProps: then: setProps(), cmd(), macro(), js() - or a list of them');
+  const timed = opts.delay || opts.duration || opts.curve || then.length;
+  const args = timed ? `, ${opts.delay ?? 0}, ${opts.duration ?? 0}, ${CURVES[opts.curve ?? 'linear']}` : '';
+  const callback = then.length ? `, function () { ${then.map(actionCode).join(' ')} }` : '';
+  let code = `CF.setProperties(${changes}${args}${callback});`;
+  if (relative) code = `CF.getProperties([${targets.map(joinCode).join(', ')}], function (p) { ${code} });`;
+  const joins = [...targets.filter(isJoinRef), ...then.flatMap((a) => a.joins ?? [])].filter((j) => typeof j.id === 'string');
+  const out: Action = { $$action: 1, kind: 'js', value: code, ...(joins.length ? { joins } : {}) };
+  // in a script's code too: `${setProps(...)}`
+  Object.defineProperty(out, 'toString', { value: () => code });
+  return out;
+}
 
 // ── style ──────────────────────────────────────────────────────────
 

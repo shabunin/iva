@@ -13,7 +13,7 @@ import { isVNode, type Child, type Source, type VNode } from './runtime.js';
 import { styleCss, Themes, type ThemeType } from './style.js';
 import { didYouMean } from './suggest.js';
 import { arc, box, boxIcon, circle, cutout, dotOnRing, generatedName, icon, knob, ring, ticks, wheel, type PlacedIcon } from './images.js';
-import type { DrawRef, IconRef } from './components.js';
+import type { DrawRef, IconRef, JoinRef } from './components.js';
 
 const isIcon = (v: unknown): v is IconRef => !!v && typeof v === 'object' && (v as IconRef).$$icon === 1;
 
@@ -185,6 +185,8 @@ export class Builder {
   private tokens: XNode[] = [];
   private sounds: XNode[] = [];
   private warnings: string[] = [];
+  /** the named joins buttons' setProps() actions change: checked against the elements' once all are in */
+  private actionJoins: { node: VNode; joins: JoinRef[] }[] = [];
   private primary: 'landscape' | 'portrait' = 'landscape';
   /** <Project assets>: shipped whole; images found there by bare name */
   private assetDir: string | null = null;
@@ -334,6 +336,7 @@ export class Builder {
           .join('\n')}\n} });\n`,
       });
     }
+    this.checkActionJoins();
     this.holdJoins();
     this.joins.allocate();
     const named = this.joins.map();
@@ -1356,6 +1359,11 @@ export class Builder {
 
     const children: XNode[] = [];
     let { cmd, js } = p as { cmd?: string; js?: string };
+    for (const list of [p.onPress, p.onRelease, p.onHold]) {
+      for (const a of Array.isArray(list) ? list : list === undefined ? [] : [list]) {
+        if (a && typeof a === 'object' && Array.isArray(a.joins)) this.actionJoins.push({ node, joins: a.joins });
+      }
+    }
     // one plain command / script on press: GUI Designer's own form, btn cmd="" / js=""
     const only = Array.isArray(p.onPress) && p.onPress.length === 1 ? p.onPress[0] : p.onPress;
     const simple = typeof only === 'string' ? { kind: 'command', value: only } : only;
@@ -1389,6 +1397,18 @@ export class Builder {
       href: p.href, flip: p.page ?? 'None', sim: FEEDBACK[p.feedback ?? 'momentary'] ?? this.fail(node, `feedback: 'momentary', 'toggle' or 'none'`),
       l: 0, s: 1, js, cmd, repeatdelay: p.repeat, tags: tagsAttr(p.tags),
     }, children, undefined, node);
+  }
+
+  /** setProps() on a named join no element has changes nothing: said, with the nearest name */
+  private checkActionJoins() {
+    const names = this.joins.names();
+    for (const { node, joins } of this.actionJoins) {
+      for (const j of joins) {
+        if (names.some((n) => n.type === j.type && n.name === j.id)) continue;
+        const same = names.filter((n) => n.type === j.type).map((n) => n.name);
+        this.warnings.push(`${this.where(node)}<${node.type}>: setProps: no element has the join ${j.type}('${j.id}')${didYouMean(String(j.id), same)}`);
+      }
+    }
   }
 
   private fail(node: VNode, msg: string): never {
