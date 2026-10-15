@@ -172,6 +172,11 @@ export class TauriTcpSocket extends EventEmitter implements ITcpSocket {
 
         invoke<TcpConnectResult>('tcp_connect', { host, port })
             .then((result) => {
+                // given up while it connected (destroy() said close already): the connection goes too
+                if (this.destroyed) {
+                    invoke('tcp_destroy', { id: result.id }).catch(() => {});
+                    return;
+                }
                 this.socketId = result.id;
                 this.remoteAddress = result.remote_address;
                 this.remotePort = result.remote_port;
@@ -201,6 +206,7 @@ export class TauriTcpSocket extends EventEmitter implements ITcpSocket {
             .catch((err) => {
                 this.connecting = false;
                 this.readyState = 'closed';
+                if (this.destroyed) return;
                 this.emit(
                     'error',
                     mapHostError(err, { syscall: 'connect', address: host, port })
