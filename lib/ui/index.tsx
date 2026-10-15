@@ -1552,8 +1552,8 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
 
   /**
    * A section as screens a tab apart: a page each (the first named `name`,
-   * the others `name / title`), the tabs under the header, a swipe to the
-   * next or the previous. In iViewer a ScrollArea is a list, and a list's
+   * the others `name / title`), the tabs under the header - a tap on one
+   * flips to its page. In iViewer a ScrollArea is a list, and a list's
    * rows (its header too) hold no list, subpage or gesture: a DataList, a
    * Pager, a Dial in one stay empty or dead. Where a page of them doesn't fit
    * (a phone), they get screens of their own; content that goes further down
@@ -1561,20 +1561,12 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
    */
   function Screens({ name, screens, shell, bg = t.page }: ScreensProps): VNode {
     const W = t.panel.width;
-    const H = t.panel.height;
     const names = screens.map((sc, i) => (i ? `${name} / ${sc.title}` : name));
     const seg = (W - 32 - 8) / screens.length;
-    const flip = (i: number) => `CF.flipToPage(${JSON.stringify(names[i])})`;
-    const clear = draw.box({ w: 4, h: 4, fill: '#00000000', name: drawnName('clear', '4') });
     return (
       <>
         {screens.map((sc, i) => (
           <Page name={names[i]} bg={bg}>
-            {/* a swipe where the content doesn't take the touch: the next / previous screen */}
-            <Image y={tabs.y + tabs.h} w={W} h={H - tabs.y - tabs.h} src={clear}>
-              {i < screens.length - 1 && <Gesture type="swipe" direction="left" onBegin={flip(i + 1)} />}
-              {i > 0 && <Gesture type="swipe" direction="right" onBegin={flip(i - 1)} />}
-            </Image>
             <Box x={16} y={tabs.y} w={W - 32} h={tabs.h} bg={t.raised} radius={t.radius} />
             {screens.map((tab, k) => (
               <Button x={20 + Math.round(k * seg)} y={tabs.y + 4} w={Math.round((k + 1) * seg) - Math.round(k * seg)} h={tabs.h - 8} text={tab.title}

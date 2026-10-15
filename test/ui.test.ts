@@ -234,7 +234,7 @@ export default (
   assert.match(r.xml, /<page name="Q"[\s\S]*?<subpage [^>]*name="ui_select_pick"[\s\S]*?<\/page>/);
 });
 
-test('Screens: a page a tab, named after the section, tabs that flip to the others, a swipe, content that scrolls if it can', async () => {
+test('Screens: a page a tab, named after the section, tabs that flip to the others, content that scrolls if it can', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-screens-'));
   fs.writeFileSync(path.join(dir, 'app.jsx'), `import { ui } from 'iva/ui';
 const A = ui.screenArea;
@@ -251,12 +251,11 @@ export default (
   const r = await compile(path.join(dir, 'app.jsx'));
   assert.deepEqual([...r.xml.matchAll(/<page name="([^"]+)"/g)].map((m) => m[1]), ['Lists', 'Lists / Long', 'Lists / Pages']);
   const page = (name: string) => new RegExp(`<page name="${name}"[\\s\\S]*?</page>`).exec(r.xml)![0];
-  // the tabs: the others flip to their page; the swipe: to the next and the previous
+  // the tabs: the others flip to their page (a tap; no swipe - the gestures on a page are its content's)
   assert.match(page('Lists'), /<btn [^>]*flip="None"[^>]*>\s*<inactive s="0">Rows</);
   assert.match(page('Lists'), /<btn [^>]*flip="Lists \/ Long"[^>]*>\s*<inactive s="0">Long</);
   assert.match(page('Lists / Pages'), /<btn [^>]*flip="Lists"[^>]*>\s*<inactive s="0">Rows</);
-  assert.equal((page('Lists / Long').match(/<gesture [^>]*type="swipe"/g) ?? []).length, 2);
-  assert.equal((page('Lists').match(/<gesture [^>]*type="swipe"/g) ?? []).length, 1);
+  assert.ok(!/<gesture /.test(page('Lists')) && !/<gesture /.test(page('Lists / Long')));
   // the list on a page of its own, not in a list; the long one scrolls; no warnings
   assert.match(page('Lists'), /<list j="\d+"/);
   assert.match(page('Lists / Long'), /<list j="0" [^>]*headerSub="ui_scroll_\w+"/);

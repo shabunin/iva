@@ -78,8 +78,8 @@ export default narrow ? (
 ) : <Page name="Lists">…</Page>;
 ```
 
-A tab flips to its page, a swipe to the next / previous; the side menu
-lights the section's item on all of them.
+A tab flips to its page; the side menu lights the section's item on all
+of them.
 
 ## Joins
 
@@ -117,7 +117,7 @@ it as a value in min..max.
 | `DataList` | a CF list of headers, rows, alerts, spacers, filled at start | `join` (list), `items: [{ header } \| { icon, title, subtitle, value, alert } \| { spacer }]` |
 | `ScrollBox` | lines of text to drag through; or anything (children) scrolled as one: a list with no rows whose header subpage they are (iViewer scrolls lists only; everything in it works as anywhere, its joins the page's own) | `join` (list: lines need one), `lines`, or children + `contentH` (default: as far down as they go), `horizontal`, `w`, `h` |
 | `ScrollArea` | a page's content, scrolling when it goes further down than the panel (a ScrollBox below the header); else as it is. No lists, subpages, gestures in it (see Screen sizes) | `x`, `y` (default 72: below the header), `w`, `h`; children placed as on the page |
-| `Screens` | a section as screens a tab apart, a page each (`name`, `name / title`): tabs under the header, a swipe to the next / previous; the content in `ui.screenArea` | `name`, `screens: [{ title, content }]`, `shell` (on every screen: header, side menu), `bg` |
+| `Screens` | a section as screens a tab apart, a page each (`name`, `name / title`): tabs under the header (a tap flips to its page); the content in `ui.screenArea` | `name`, `screens: [{ title, content }]`, `shell` (on every screen: header, side menu), `bg` |
 | `WeekDays` | seven day toggles; the bitmask (Mon 1 … Sun 64) and a summary ("Weekdays", "Sun, Mon") | `join` (bitmask), `value`, `first` (`mon`·`sun`), `labels`, `textJoin`, `size` |
 | `AlarmCard` | a titled card: on / off, the time (a TimePicker: a tap opens the drums), the days | `title`, `on`, `hour` / `minute` (analog joins, as numbers), `value` ("06:45"), `minuteStep`, `ampm`, `timeTitle`, `days`, `daysValue` |
 | `TextField` | a label, a field (an icon, a placeholder while empty), the text in a serial join | `join`, `label`, `value`, `placeholder`, `password`, `icon`, `cmd` (sent on Return) |
