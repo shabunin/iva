@@ -50,7 +50,11 @@ jobs:
           cache: gradle
           cache-dependency-path: panel/src-tauri/gen/android/**/*.gradle*
 
+      # (its default packages name 'tools', which today's SDK command-line tools don't have)
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
 
       - run: npm ci
 
