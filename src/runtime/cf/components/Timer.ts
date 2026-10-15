@@ -49,6 +49,7 @@ export function renderTimer(node: CFNode, container: Container, renderer: CFRend
             clearInterval(tick);
             return;
         }
-        if (clock.tick(performance.now(), shown(), interval())) run();
+        // asleep (the app in the background): as not shown - it starts over on waking
+        if (clock.tick(performance.now(), shown() && !renderer.cfApi?.suspended, interval())) run();
     }, 50);
 }

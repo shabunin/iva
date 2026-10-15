@@ -209,21 +209,67 @@ export class CFAPI implements CFContext {
 
     /**
      * The page hidden - the app in the background, the screen off - and shown
-     * again: GUISuspendedEvent, GUIResumedEvent; on a resume the network as it
-     * is then, as NetworkStatusChangeEvent (iViewer sends one then too).
+     * again: the GUI asleep and awake, as iViewer's (suspend, resume).
      */
-    private suspended = false;
     private onVisibility = () => {
-        if (document.visibilityState === 'hidden') {
-            if (this.suspended) return;
-            this.suspended = true;
-            this.dispatchEvent(this.GUISuspendedEvent);
-        } else if (this.suspended) {
-            this.suspended = false;
-            this.dispatchEvent(this.GUIResumedEvent);
-            void this.loadDevice().then(() => this.dispatchEvent(this.NetworkStatusChangeEvent, this.networkStatus()));
-        }
+        if (document.visibilityState === 'hidden') this.suspend();
+        else this.resume();
     };
+
+    /** asleep (in the background): its page timers don't run */
+    suspended = false;
+    /** iViewer's "Disconnect on Exit/Sleep" (CF.loadGUI's disconnectOnSuspend): systems close while asleep */
+    disconnectOnSuspend = true;
+    /** the systems the sleep stopped: started again on waking */
+    private sleeping: ControlSystem[] = [];
+    /** the network as it was on going to sleep */
+    private networkBefore = '';
+
+    /** To sleep: GUISuspendedEvent, then (Disconnect on Exit/Sleep) its systems' connections closed. */
+    suspend() {
+        if (this.suspended) return;
+        this.suspended = true;
+        this.networkBefore = JSON.stringify(this.networkStatus());
+        this.dispatchEvent(this.GUISuspendedEvent);
+        if (!this.disconnectOnSuspend) return;
+        for (const sys of new Set(Object.values(this.controlSystems))) {
+            if (!sys?.enabled) continue;
+            this.sleeping.push(sys);
+            try {
+                sys.stop();
+            } catch (e) {
+                console.warn(`[CF] suspend: system ${sys.name}:`, e);
+            }
+        }
+    }
+
+    /**
+     * Awake again: GUIResumedEvent, its systems connecting again, and - if the
+     * network changed meanwhile (another address, none) - NetworkStatusChangeEvent,
+     * as iViewer checks it on a resume.
+     */
+    resume() {
+        if (!this.suspended) return;
+        this.suspended = false;
+        this.dispatchEvent(this.GUIResumedEvent);
+        const sleeping = this.sleeping;
+        this.sleeping = [];
+        for (const sys of sleeping) {
+            // (one a script started again meanwhile runs already)
+            if (sys.enabled) continue;
+            sys.enabled = true;
+            try {
+                sys.start();
+            } catch (e) {
+                console.warn(`[CF] resume: system ${sys.name}:`, e);
+            }
+        }
+        const before = this.networkBefore;
+        void this.loadDevice().then(() => {
+            const now = this.networkStatus();
+            if (JSON.stringify(now) !== before) this.dispatchEvent(this.NetworkStatusChangeEvent, now);
+        });
+    }
 
     init(renderer: CFRenderer) {
         this.renderer = renderer;

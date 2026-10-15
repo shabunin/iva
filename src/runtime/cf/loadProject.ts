@@ -63,6 +63,8 @@ export interface LoadProjectOptions {
   startPage?: string;
   /** Where the GUI came from (CF.guiURL). */
   guiUrl?: string;
+  /** iViewer's "Disconnect on Exit/Sleep": systems close while the page is hidden (default: yes). */
+  disconnectOnSuspend?: boolean;
   /** Previous renderer to tear down (stage children only). */
   previousRenderer?: CFRenderer | null;
   /** Destroy previous web menu when reloading a project. */
@@ -178,6 +180,7 @@ export async function loadProject(options: LoadProjectOptions): Promise<LoadProj
   const scriptBlobUrls: string[] = [];
   // the device and its network (CF.device, CF.ipv4address ...) before any script reads them
   globalCF.guiURL = options.guiUrl ?? '';
+  globalCF.disconnectOnSuspend = options.disconnectOnSuspend ?? true;
   await globalCF.loadDevice?.();
 
   if (project.scripts) {

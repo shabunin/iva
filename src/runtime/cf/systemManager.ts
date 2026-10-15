@@ -86,6 +86,8 @@ export class ControlSystem {
     private cfApi: CFAPI;
     public feedbackRules: CFNode[];
     private autoReconnect: boolean;
+    /** alwayson: reconnect when the connection drops - from each start() on (stop() pauses it) */
+    private readonly alwaysOn: boolean;
     private buffer: string = '';
 
     // Offline send queue
@@ -121,7 +123,8 @@ export class ControlSystem {
         // 'origin' = source/local port in CF GUI
         this.localPort = parseInt(a['origin'] || a['localPort'] || a['srcPort'] || '0', 10);
         this.eom = a['eom'] || '';
-        this.autoReconnect = a['alwayson'] !== '0';
+        this.alwaysOn = a['alwayson'] !== '0';
+        this.autoReconnect = this.alwaysOn;
         this.offlineQueue = a['offlinequeue'] === '1';
         this.enabled = true;
         this.accept = a['accept'] === '1';
@@ -165,6 +168,8 @@ export class ControlSystem {
 
     public start() {
         if (!this.enabled) return;
+        // started again (re-enabled, a new address, the GUI awake again): reconnecting as configured
+        this.autoReconnect = this.alwaysOn;
         if (this.type === 'http') return; // HTTP: no persistent connection
 
         if (this.isLoopback) {
@@ -303,6 +308,8 @@ export class ControlSystem {
         });
 
         socket.on('close', () => {
+            // a socket stopped and since replaced (the system started again): the new one tells
+            if (this.tcpSocket && this.tcpSocket !== socket) return;
             const remote = `${this.address}:${this.port}`;
             this.connections = this.connections.filter(c => c !== remote);
 
