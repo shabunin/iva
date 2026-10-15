@@ -1,4 +1,5 @@
-import { Container, Text, TextStyle } from 'pixi.js';
+import { Container, Text } from 'pixi.js';
+import { placeText, textLayout } from './textStyle';
 import { TokenEngine } from '../tokenEngine';
 import { CFNode } from '../parser';
 import { joinStore } from '../joinStore';
@@ -13,46 +14,9 @@ export function renderText(
 ) {
     const textJoin = (node.j && node.j !== "0") ? node.j : null;
     
-    // Convert cssState0 to Pixi TextStyle
-    const getTextStyle = (css: any) => {
-        let styleProps: any = { 
-            fill: '#ffffff', 
-            fontSize: 16,
-            wordWrap: true,
-            wordWrapWidth: node.w || 100,
-            align: 'left'
-        };
-        if (css?.["color"]) styleProps.fill = css["color"];
-        if (css?.["font-size"]) styleProps.fontSize = parseInt(css["font-size"]) || 16;
-        if (css?.["font-family"]) styleProps.fontFamily = css["font-family"].replace(/['"]/g, '');
-        if (css?.["text-align"]) styleProps.align = css["text-align"];
-
-        if (node.attributes?.overrideFontAlignmentH) {
-            styleProps.align = node.attributes.overrideFontAlignmentH;
-        }
-
-        if (css?.["text-shadow"]) {
-            try {
-                const shadowConf = css["text-shadow"].split(") ");
-                if (shadowConf.length === 2) {
-                    const color = shadowConf[0] + ")";
-                    const parts = shadowConf[1].trim().split(" ");
-                    styleProps.dropShadow = {
-                        color,
-                        alpha: 1,
-                        blur: parseInt(parts[2]) || 0,
-                        distance: Math.abs(parseInt(parts[1])) || Math.abs(parseInt(parts[0])) || 2,
-                        angle: parseInt(parts[1]) < 0 ? -Math.PI / 2 : Math.PI / 2
-                    };
-                }
-            } catch (e) {}
-        }
-        return new TextStyle(styleProps);
-    };
-
-    const style = getTextStyle(cssState0);
-
-    const txtObj = new Text({ text: "", style });
+    // wrap="True": lines break at the box; else one line
+    const layout = textLayout(cssState0, node.w || 100, node.attributes?.wrap === 'True', 'left', node.attributes?.overrideFontAlignmentH);
+    const txtObj = new Text({ text: "", style: layout.style });
 
     const reflectState = () => {
         let rawText = (textJoin && joinStore.has(textJoin, "s")) ? String(joinStore.get(textJoin, "s")) : (node.content || "");
@@ -64,20 +28,7 @@ export function renderText(
     };
 
     reflectState();
-
-    // Handle standard layouting inside container
-    // To match original behavior:
-    txtObj.x = 0;
-    txtObj.y = node.h / 2;
-    txtObj.anchor.y = 0.5;
-    
-    if (style.align === "center") {
-        txtObj.x = node.w / 2;
-        txtObj.anchor.x = 0.5;
-    } else if (style.align === "right") {
-        txtObj.x = node.w;
-        txtObj.anchor.x = 1;
-    }
+    placeText(txtObj, layout, node.w, node.h);
 
     container.addChild(txtObj);
     

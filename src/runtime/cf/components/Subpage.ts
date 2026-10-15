@@ -98,11 +98,18 @@ function applyTransition(target: Container, isEntry: boolean, transition: string
 
         const tLower = transition.toLowerCase();
         if (tLower === "movein" || tLower === "reveal" || tLower === "push") {
-            const maxW = Math.max(renderer.app.screen.width, 2000);
-            const maxH = Math.max(renderer.app.screen.height, 2000);
-            
-            const dx = (subtype === "fromLeft") ? -maxW : (subtype === "fromRight" ? maxW : 0);
-            const dy = (subtype === "fromTop") ? -maxH : (subtype === "fromBottom" ? maxH : 0);
+            // from just outside the panel's edge, as on a device (where the subpage sits on the panel)
+            const parent = target.parent;
+            const at = parent ? parent.toGlobal({ x: 0, y: 0 }) : { x: 0, y: 0 };
+            const scale = parent ? parent.worldTransform.a || 1 : 1;
+            const W = renderer.app.screen.width / scale;
+            const H = renderer.app.screen.height / scale;
+            const left = at.x / scale;
+            const top = at.y / scale;
+            const w = target.width || 0;
+            const h = target.height || 0;
+            const dx = subtype === "fromLeft" ? -(left + w) : subtype === "fromRight" ? W - left : 0;
+            const dy = subtype === "fromTop" ? -(top + h) : subtype === "fromBottom" ? H - top : 0;
             
             if (isEntry) {
                 fromProps = { x: dx, y: dy };

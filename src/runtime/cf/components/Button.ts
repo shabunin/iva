@@ -1,4 +1,5 @@
-import { Container, Sprite, Graphics, Text, TextStyle, NineSliceSprite, Assets } from "pixi.js";
+import { Container, Sprite, Graphics, Text, NineSliceSprite, Assets } from "pixi.js";
+import { placeText, textLayout } from './textStyle';
 import { TokenEngine } from "../tokenEngine";
 import { Button } from '@pixi/ui';
 import { CFNode } from '../parser';
@@ -15,41 +16,8 @@ export function renderButton(
     listPrefix?: string,
     listIndex?: number
 ) {
-    const getTextStyle = (css: any) => {
-        let styleProps: any = {
-            fill: '#ffffff',
-            fontSize: 16,
-            wordWrap: true,
-            wordWrapWidth: node.w || 100,
-            align: 'center'
-        };
-        if (css?.["color"]) styleProps.fill = css["color"];
-        if (css?.["font-size"]) styleProps.fontSize = parseInt(css["font-size"]) || 16;
-        if (css?.["font-family"]) styleProps.fontFamily = css["font-family"].replace(/['"]/g, '');
-        if (css?.["text-align"]) styleProps.align = css["text-align"];
-
-        if (node.attributes?.overrideFontAlignmentH) {
-            styleProps.align = node.attributes.overrideFontAlignmentH;
-        }
-
-        if (css?.["text-shadow"]) {
-            try {
-                const shadowConf = css["text-shadow"].split(") ");
-                if (shadowConf.length === 2) {
-                    const color = shadowConf[0] + ")";
-                    const parts = shadowConf[1].trim().split(" ");
-                    styleProps.dropShadow = {
-                        color,
-                        alpha: 1,
-                        blur: parseInt(parts[2]) || 0,
-                        distance: Math.abs(parseInt(parts[1])) || Math.abs(parseInt(parts[0])) || 2,
-                        angle: parseInt(parts[1]) < 0 ? -Math.PI / 2 : Math.PI / 2
-                    };
-                }
-            } catch (e) { }
-        }
-        return new TextStyle(styleProps);
-    };
+    // the text as each state's theme lays it out (centred unless it says otherwise)
+    const layoutOf = (css: any) => textLayout(css, node.w || 100, true, 'center', node.attributes?.overrideFontAlignmentH);
 
     const createView = (img: string | null, css: any) => {
         let v: Sprite | NineSliceSprite | Graphics;
@@ -117,8 +85,8 @@ export function renderButton(
 
     const defaultView = createView(bgImg0, cssState0);
     const pressedView = cssState1 ? createView(bgImg1, cssState1) : undefined;
-    const style0 = getTextStyle(cssState0);
-    const style1 = cssState1 ? getTextStyle(cssState1) : style0;
+    const layout0 = layoutOf(cssState0);
+    const layout1 = cssState1 ? layoutOf(cssState1) : layout0;
 
     const inactiveNode = node.children?.find(c => c.type === "inactive");
     const activeNode = node.children?.find(c => c.type === "active");
@@ -163,11 +131,9 @@ export function renderButton(
 
     const txtObj = new Text({
         text: node.inactiveText || "",
-        style: style0
+        style: layout0.style
     });
-    txtObj.x = node.w / 2;
-    txtObj.y = node.h / 2;
-    txtObj.anchor.set(0.5);
+    placeText(txtObj, layout0, node.w, node.h);
 
     const btnContainer = new Container();
     btnContainer.addChild(defaultView);
@@ -208,7 +174,10 @@ export function renderButton(
             if (activeImgSprite) activeImgSprite.visible = true;
             if (inactiveImgSprite && activeImgSprite) inactiveImgSprite.visible = false;
             
-            if (txtObj) txtObj.style = style1;
+            if (txtObj) {
+                txtObj.style = layout1.style;
+                placeText(txtObj, layout1, node.w, node.h);
+            }
         } else {
             if (pressedView) pressedView.visible = false;
             defaultView.visible = true;
@@ -216,7 +185,10 @@ export function renderButton(
             if (activeImgSprite) activeImgSprite.visible = false;
             if (inactiveImgSprite) inactiveImgSprite.visible = true;
             
-            if (txtObj) txtObj.style = style0;
+            if (txtObj) {
+                txtObj.style = layout0.style;
+                placeText(txtObj, layout0, node.w, node.h);
+            }
         }
 
         if (txtObj) {
@@ -320,8 +292,13 @@ export function renderButton(
                 console.error("Error executing advanced action JS: ", e);
             }
         }
-        if (actionNode.attributes.cmd && renderer.cfApi?.runCommand) {
-            renderer.cfApi.runCommand("", actionNode.attributes.cmd);
+        // GUI Designer writes command= / macro= on <press> / <release>
+        const command = actionNode.attributes.command || actionNode.attributes.cmd;
+        if (command && renderer.cfApi?.runCommand) {
+            renderer.cfApi.runCommand("", command);
+        }
+        if (actionNode.attributes.macro && renderer.cfApi?.runMacro) {
+            renderer.cfApi.runMacro(actionNode.attributes.macro);
         }
     };
 
