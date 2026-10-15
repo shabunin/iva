@@ -489,3 +489,46 @@ test('ColorPicker on the device (its own joins told back, later): a touch, the s
     assert.equal(changes.at(-1), '#FF3B30');
   }
 });
+
+test('Dial on the device: a finger\'s moves - a value at most every 40 ms and the last always, nothing shown twice, no animation under it', () => {
+  const d = device();
+  d.IvaUI.dial('level', { prefix: 'f_', steps: 50, sweep: 270, size: 200, min: 0, max: 100, step: 1, decimals: 0, unit: '%', join: 'a1', arc: 's1', thumb: 's2', text: 's3' });
+  d.IvaUI.set('a1', 65, 0, 100);
+  d.run();
+  assert.deepEqual([d.joins.s1, d.joins.s3], ['f_33.png', '65 %']);
+  // a finger round the ring, a move every 4 ms for 400 ms
+  const at = (deg: number): [number, number] => [100 + 80 * Math.sin(deg * Math.PI / 180), 100 - 80 * Math.cos(deg * Math.PI / 180)];
+  let from = d.sets.length;
+  const p0 = d.props.length;
+  for (let i = 0; i <= 100; i++) {
+    d.IvaUI.dialTouch('level', ...at(-135 + 2.7 * i));
+    d.run(4);
+  }
+  d.run();
+  assert.equal(d.pending(), 0);
+  const puts = d.sets.slice(from).filter((x) => x.join === 'a1');
+  assert.ok(puts.length >= 5 && puts.length <= 12, `${puts.length} values put in 400 ms`);
+  assert.deepEqual([d.joins.a1, d.joins.s1, d.joins.s3], [65535, 'f_50.png', '100 %']);
+  assert.ok(d.props.slice(p0).every((p) => p.duration === 0), 'no animation under a finger');
+  const frames = d.sets.slice(from).filter((x) => x.join === 's1').map((x) => x.value);
+  assert.ok(frames.every((f, i) => !i || f !== frames[i - 1]), 'no frame twice in a row');
+  // the finger still: nothing more
+  from = d.sets.length;
+  for (let i = 0; i < 10; i++) {
+    d.IvaUI.dialTouch('level', ...at(135));
+    d.run(10);
+  }
+  d.run();
+  assert.equal(d.sets.length, from);
+  // a step (a button) a while later: turned smoothly
+  d.run(1000);
+  const p1 = d.props.length;
+  d.IvaUI.dialStep('level', -1);
+  d.run();
+  assert.deepEqual([d.joins.a1, d.joins.s3], [Math.round(0.99 * 65535), '99 %']);
+  assert.equal(d.props[p1].duration, 0.12);
+  // and the finger back where it was: put again
+  d.IvaUI.dialTouch('level', ...at(135));
+  d.run();
+  assert.equal(d.joins.a1, 65535);
+});

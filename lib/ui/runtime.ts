@@ -188,7 +188,10 @@ var IvaUI = (function () {
     /**
      * a dial: the value in an analog join (min..max as 0..65535); shown as an
      * arc (one of steps + 1 drawn frames, named prefix + i + '.png', in a
-     * serial join), a rotating thumb / knob (zrotation), and a serial join text
+     * serial join), a rotating thumb / knob (zrotation), and a serial join text.
+     * Under a finger: a value at most every 40 ms, the thumb following it
+     * straight (an animation a move piled up on the device); what's shown
+     * already isn't again (an image a frame loads, a move or not).
      */
     dial: function (id, o) {
       dials[id] = o;
@@ -196,9 +199,21 @@ var IvaUI = (function () {
     },
     dialShow: function (id, v) {
       var o = dials[id], f = clamp((Number(v) || 0) / 65535, 0, 1);
-      if (o.arc) CF.setJoin(o.arc, file(o.prefix + Math.round(f * o.steps) + '.png'));
-      if (o.thumb) CF.setProperties({ join: o.thumb, zrotation: f * o.sweep }, 0, o.fast ? 0 : 0.12);
-      if (o.text) CF.setJoin(o.text, fmt(fromJoin(v, o.min, o.max), o.decimals, o.unit));
+      // another value than a finger put: the next touch puts its own, even the same
+      if (Number(v) !== o.put) o.put = undefined;
+      var img = o.arc && file(o.prefix + Math.round(f * o.steps) + '.png'), turn = f * o.sweep, text = fmt(fromJoin(v, o.min, o.max), o.decimals, o.unit);
+      if (o.arc && img !== o.img) {
+        o.img = img;
+        CF.setJoin(o.arc, img);
+      }
+      if (o.thumb && turn !== o.turn) {
+        o.turn = turn;
+        CF.setProperties({ join: o.thumb, zrotation: turn }, 0, Date.now() - (o.touched || 0) < 400 ? 0 : 0.12);
+      }
+      if (o.text && text !== o.shown) {
+        o.shown = text;
+        CF.setJoin(o.text, text);
+      }
     },
     /** a touch at (x, y) in the dial's square: the value there, snapped to the step */
     dialTouch: function (id, x, y) {
@@ -211,9 +226,18 @@ var IvaUI = (function () {
       var f = clamp((a + o.sweep / 2) / o.sweep, 0, 1);
       var v = o.min + f * (o.max - o.min);
       if (o.step) v = Math.round(v / o.step) * o.step;
-      o.fast = true;
-      CF.setJoin(o.join, toJoin(v, o.min, o.max));
-      o.fast = false;
+      o.touched = Date.now();
+      o.want = toJoin(v, o.min, o.max);
+      if (!o.timer) IvaUI.dialPut(id);
+    },
+    /** the value a finger asks for, if it's another; the next no sooner than 40 ms on */
+    dialPut: function (id) {
+      var o = dials[id];
+      o.timer = null;
+      if (o.want === o.put) return;
+      o.put = o.want;
+      CF.setJoin(o.join, o.put);
+      o.timer = setTimeout(function () { IvaUI.dialPut(id); }, 40);
     },
     /** a dial a step up (1) or down (-1) */
     dialStep: function (id, dir) {

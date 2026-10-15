@@ -1260,8 +1260,9 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
         {(label || labelJoin) && (
           <Text y={Math.round(size * 0.58)} w={size} h={Math.round(size * 0.12)} text={label} join={labelJoin} align="center" color={t.muted} font={font} fontSize={Math.round(size * 0.075)} />
         )}
-        {/* every frame in the project (iViewer ships / caches what the .gui names), out of sight */}
-        <Subpage name={`ui_frames_${prefix.replace(/\W/g, '_')}`} w={1} h={1} visible={false}>
+        {/* every frame in the .gui, so iViewer ships / caches them: in a subpage only defined - one on the page,
+            hidden or not, had the device load all 51 at full size each time the page showed */}
+        <Subpage name={`ui_frames_${prefix.replace(/\W/g, '_')}`} define w={1} h={1}>
           {frames.map((f) => <Image w={1} h={1} src={f} />)}
         </Subpage>
         {runtime}

@@ -59,8 +59,10 @@ export default (
   assert.equal(r.assets.filter((x) => /^controls\/iva_dial_\w+_\d+@2x\.png$/.test(x.name)).length, 11);
   assert.equal((r.xml.match(/<gesture /g) ?? []).length, 6); // tap + pan on each control's ring
   assert.match(r.xml, /js="IvaUI\.dialTouch\(&quot;level&quot;, gesture\.x, gesture\.y\)"/);
-  // every frame named in the .gui (in a hidden subpage), so it ships with the project
+  // every frame named in the .gui, so it ships with the project: in a subpage only defined - not on the page,
+  // where the device would load them all each time it shows
   assert.equal((r.xml.match(/<subpage name="ui_frames_controls_iva_dial_\w+_" w=/g) ?? []).length, 1);
+  assert.equal((r.xml.match(/name="ui_frames_/g) ?? []).length, 1);
   const start = r.scripts.find((x) => x.name === 'iva-start.js')!.code!;
   assert.equal(start.match(/IvaUI\.dial\(/g)!.length, 3);
   assert.match(start, /IvaUI\.set\(Joins\.a\["level"\], 65, 0, 100\)/);
