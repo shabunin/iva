@@ -56,9 +56,30 @@ slider `w={L.lights.w - 56}`).
 `<ui.ScrollArea>` around a page's content scrolls it when it goes further
 down than the panel - on a phone, about every page: the content (placed as
 on the page) becomes a list's header subpage below the header, as GUI
-Designer projects scroll a panel of controls, so everything in it works as
-anywhere, joins and all. Sheets go on the page; on a phone give pickers
-`mode="sheet"` (a dropdown would scroll with the page).
+Designer projects scroll a panel of controls - buttons, text, images,
+sliders, inputs, web views work in it as anywhere, joins and all. Sheets go
+on the page; on a phone give pickers `mode="sheet"` (a dropdown would scroll
+with the page).
+
+What a list's cell can't hold, a ScrollArea can't scroll: iViewer shows no
+list, subpage or gesture in a list's header, footer or rows - a `DataList`,
+`DataTable`, `AlarmTable`, `ScrollBox`, `Pager`, `ColorPicker`, `Dial`,
+`Knob`, `Thermostat` (the ring), `DragDrop` in one stays empty or dead on the
+device (the build warns). On a phone, give them screens of their own with
+`<ui.Screens>`: a page a tab, under the header; each screen's content goes in
+`ui.screenArea`, and still scrolls if it goes further down and can.
+
+```jsx
+export default narrow ? (
+  <ui.Screens name="Lists" shell={<Shell section="Lists" />} screens={[
+    { title: 'DataList', content: <ui.Card {...ui.screenArea}>…</ui.Card> },   // the page "Lists"
+    { title: 'Rows', content: … },                                              // the page "Lists / Rows"
+  ]} />
+) : <Page name="Lists">…</Page>;
+```
+
+A tab flips to its page, a swipe to the next / previous; the side menu
+lights the section's item on all of them.
 
 ## Joins
 
@@ -95,7 +116,8 @@ it as a value in min..max.
 | `ListRow` | a row: icon, title, subtitle; a value, a toggle or a chevron on the right | `icon`, `title`, `subtitle`, `value` / `valueJoin`, `toggle`, `chevron` + `page` / `js` / `cmd`, `divider` |
 | `DataList` | a CF list of headers, rows, alerts, spacers, filled at start | `join` (list), `items: [{ header } \| { icon, title, subtitle, value, alert } \| { spacer }]` |
 | `ScrollBox` | lines of text to drag through; or anything (children) scrolled as one: a list with no rows whose header subpage they are (iViewer scrolls lists only; everything in it works as anywhere, its joins the page's own) | `join` (list: lines need one), `lines`, or children + `contentH` (default: as far down as they go), `horizontal`, `w`, `h` |
-| `ScrollArea` | a page's content, scrolling when it goes further down than the panel (a ScrollBox below the header); else as it is | `x`, `y` (default 72: below the header), `w`, `h`; children placed as on the page |
+| `ScrollArea` | a page's content, scrolling when it goes further down than the panel (a ScrollBox below the header); else as it is. No lists, subpages, gestures in it (see Screen sizes) | `x`, `y` (default 72: below the header), `w`, `h`; children placed as on the page |
+| `Screens` | a section as screens a tab apart, a page each (`name`, `name / title`): tabs under the header, a swipe to the next / previous; the content in `ui.screenArea` | `name`, `screens: [{ title, content }]`, `shell` (on every screen: header, side menu), `bg` |
 | `WeekDays` | seven day toggles; the bitmask (Mon 1 … Sun 64) and a summary ("Weekdays", "Sun, Mon") | `join` (bitmask), `value`, `first` (`mon`·`sun`), `labels`, `textJoin`, `size` |
 | `AlarmCard` | a titled card: on / off, the time (a TimePicker: a tap opens the drums), the days | `title`, `on`, `hour` / `minute` (analog joins, as numbers), `value` ("06:45"), `minuteStep`, `ampm`, `timeTitle`, `days`, `daysValue` |
 | `TextField` | a label, a field (an icon, a placeholder while empty), the text in a serial join | `join`, `label`, `value`, `placeholder`, `password`, `icon`, `cmd` (sent on Return) |

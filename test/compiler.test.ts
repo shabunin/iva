@@ -226,6 +226,23 @@ test('<Script> and <OnStart> go anywhere: lifted to the project, once', async ()
   await fails(wrap(`<Script name="lib.js" code="a" /><Script name="lib.js" code="b" />`), /two different scripts named lib\.js/);
 });
 
+test('a list, a subpage or a gesture in a list\'s cell (header, rows) is a warning: iViewer shows / fires none there', async () => {
+  const r = await build(wrap(`
+    <Subpage name="Head" define w={300} h={600}>
+      <Button w={100} h={40} text="fine" />
+      <List y={50} w={300} h={200} join="inner" item="Row" />
+      <Image y={260} w={100} h={100} src="#ff0000"><Gesture type="pan" onChange="x()" /></Image>
+      <Subpage name="Shown" y={400} w={100} h={50} join="shown"><Text w={100} h={50} text="a" /></Subpage>
+      <Subpage name="Hidden" y={460} w={1} h={1} visible={false}><Text w={1} h={1} text="b" /></Subpage>
+    </Subpage>
+    <Subpage name="Row" define w={300} h={40}><Text w={300} h={40} join={1} /></Subpage>
+    <List w={300} h={400} header="Head" />
+    <List x={400} w={300} h={400} item="Row" />`));
+  const warned = r.warnings.filter((w) => /inside a list/.test(w));
+  assert.equal(warned.length, 1, warned.join('\n'));
+  assert.match(warned[0], /page "Main": a list's header \(subpage "Head"\) holds 1 list, 1 subpage \(Shown\), 1 gesture/);
+});
+
 test('a subpage defined again the same way is fine; differently, an error', async () => {
   const sub = (text: string) => `<Subpage name="Pop" w={100} h={50} join="pop"><Text w={100} h={50} text="${text}" /></Subpage>`;
   const r = await build(`export default (

@@ -78,6 +78,15 @@ test('TimePicker: 12 hours and AM / PM', () => {
   assert.deepEqual([joins.a1, joins.a2, joins.s1], [23, 45, '11:45 PM']);
 });
 
+test('SideMenu: a section\'s other screens (ui.Screens) light its item', () => {
+  const { IvaUI, joins, fire } = panel();
+  IvaUI.menu({ Overview: 'd1', Lists: 'd2' });
+  fire('page', 'Overview', 'Lists / ScrollBox');
+  assert.deepEqual([joins.d1, joins.d2], [0, 1]);
+  fire('page', 'Lists / ScrollBox', 'Overview');
+  assert.deepEqual([joins.d1, joins.d2], [1, 0]);
+});
+
 test('DatePicker: drums in its order, a day the month lacks becomes its last, the format', () => {
   const { IvaUI, joins } = panel();
   const drums = ['y', 'm', 'd'].map((k, i) => ({ list: `l${i}`, values: k === 'd' ? Array(31).fill('') : k === 'm' ? Array(12).fill('') : Array(11).fill('') }));

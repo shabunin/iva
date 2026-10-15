@@ -163,10 +163,12 @@ var IvaUI = (function () {
       CF.setJoin(g.value, i);
       for (var k = 0; k < g.joins.length; k++) CF.setJoin(g.joins[k], k == i ? 1 : 0);
     },
-    /** a side menu: each page's item lit while it's shown */
+    /** a side menu: each page's item lit while it's shown (a section's other screens, 'Page / Tab': its item) */
     menu: function (pages) {
       function show(page) {
-        for (var p in pages) CF.setJoin(pages[p], p === page ? 1 : 0);
+        var on = pages[page];
+        for (var p in pages) if (on === undefined && String(page).indexOf(p + ' / ') === 0) on = pages[p];
+        for (var q in pages) CF.setJoin(pages[q], pages[q] === on ? 1 : 0);
       }
       // iViewer passes (from, to, orientation); some runtimes just (to)
       CF.watch(CF.PageFlipEvent, function (a, b) { show(typeof b === 'string' ? b : a); });

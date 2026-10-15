@@ -161,7 +161,8 @@ const { width, height } = screen();   // the size being built
 - `screen()` is the size being built: the `<Project>`'s own, or the one
   asked for. A project that lays itself out from it fits every size (iva/ui
   does: its header, menu and dialogs follow it; `ui.grid()` places cards,
-  `ui.ScrollArea` scrolls what doesn't fit - [docs/ui.md](ui.md)).
+  `ui.ScrollArea` scrolls what doesn't fit, `ui.Screens` puts what can't
+  scroll on screens a tab apart - [docs/ui.md](ui.md)).
 - `sizes`: the other screens. `iva build` writes the project's own size to
   `dist/` and each other in `dist/<W>w<H>h/` (`1920w1080h/`); `--zip` puts
   them all in one archive - iViewer (4.1 on) loads the GUI whose path names

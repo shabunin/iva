@@ -56,6 +56,14 @@ iva serve          # to iViewer on a real device (GUI File URL http://<this mach
   iva) runs in a web view the panel serves itself; `import { panel } from
   'iva/web'` to read and set joins. Keep that code in web/. See iva's
   docs/web.md.
+- Several screens: `<Project sizes={['1920x1080', '1400x1400@3x']}>` builds
+  the project for each (`@3x`: a phone, laid out at a third of its pixels and
+  scaled up by iViewer). Lay pages out from `screen()` (the size being
+  built): iva/ui's `ui.grid()` places cards for the size, `<ui.ScrollArea>`
+  scrolls a page that doesn't fit. A ScrollArea is a list: iViewer shows no
+  list, subpage or gesture in one (DataList, DataTable, Pager, Dial,
+  DragDrop... - the build warns); on a phone give those `<ui.Screens>` (a
+  page a tab). See iva's docs/components.md and docs/ui.md, Screen sizes.
 - Devices: `<System host port>` with `<Command>` and `<Feedback>`; button
   `cmd="Name"` sends a command.
 - Keep it valid for the real iViewer: prefer iva's props; `xml={{...}}` and

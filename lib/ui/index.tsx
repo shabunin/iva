@@ -15,7 +15,7 @@
  */
 
 import {
-  Box, Button as IvaButton, Gesture, Group, Image, Input, List, OnStart, Script, Slider as IvaSlider, Subpage, Text as IvaText, Web, WebApp,
+  Box, Button as IvaButton, Gesture, Group, Image, Input, List, OnStart, Page, Script, Slider as IvaSlider, Subpage, Text as IvaText, Web, WebApp,
   a, d, draw, drawnName, fa, js as jsAction, l, s, screen, variant,
   type ButtonProps, type Child, type IconRef, type Join, type JoinRef, type TextProps, type VNode,
 } from 'iva';
@@ -396,6 +396,16 @@ export interface ScrollAreaProps {
   h?: number;
   /** placed as on the page; they scroll when they go further down than the area */
   children?: Child;
+}
+export interface ScreensProps {
+  /** the section's page: its first screen (a menu, a NavCard flips to it); the others are pages named `name / title` */
+  name: string;
+  /** a tab each: its title, and what's on it - placed as on a page, in ui.screenArea (under the tabs); it scrolls when it goes further down */
+  screens: { title: string; content: Child }[];
+  /** on every screen, over its content: the header, the side menu */
+  shell?: Child;
+  /** the pages' background (default: the theme's page colour) */
+  bg?: string;
 }
 export interface WeekDaysProps {
   /** analog join: the bitmask (Mon 1, Tue 2, Wed 4 ... Sun 64) */
@@ -875,6 +885,14 @@ export interface Ui {
   DataList: (p: DataListProps) => VNode;
   ScrollBox: (p: ScrollBoxProps) => VNode;
   ScrollArea: (p: ScrollAreaProps) => VNode;
+  /**
+   * A section as screens a tab apart, a page each: what a ScrollArea can't
+   * scroll (lists, subpages, gestures - in iViewer a list's rows hold none)
+   * gets a screen of its own on a phone.
+   */
+  Screens: (p: ScreensProps) => VNode;
+  /** Where a screen's content goes (ui.Screens: under its tabs): grid(items, rows, ui.screenArea), <Card {...ui.screenArea}>. */
+  screenArea: { x: number; y: number; w: number; h: number };
   WeekDays: (p: WeekDaysProps) => VNode;
   PinPad: (p: PinPadProps) => VNode;
   ColorPicker: (p: ColorPickerProps) => VNode;
@@ -952,12 +970,16 @@ function liftFixed(children: Child): { content: Child; lifted: VNode[] } {
   return { content: walk(children), lifted };
 }
 
-/** How far down elements go (y + h), groups' offsets added: a ScrollBox's content height. */
+/**
+ * How far down elements go (y + h), groups' offsets added: a ScrollBox's
+ * content height. What's over it doesn't count: a sheet over the panel
+ * (fixed), a dropdown (a topmost subpage).
+ */
 function bottomOf(c: Child, dy = 0): number {
   if (Array.isArray(c)) return c.reduce<number>((m, k) => Math.max(m, bottomOf(k, dy)), 0);
   if (!c || typeof c !== 'object') return 0;
   const n = c as VNode;
-  if (n.type === 'Subpage' && n.props.define) return 0;
+  if (n.type === 'Subpage' && (n.props.define || n.props.fixed || n.props.topmost)) return 0;
   const y = dy + (Number(n.props?.y) || 0);
   if (n.type === 'Group') return bottomOf(n.children, y);
   return n.props?.h !== undefined ? y + Number(n.props.h) : 0;
@@ -1523,6 +1545,49 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     );
   }
 
+  /** ui.Screens' tabs: under the header */
+  const tabs = { y: 80, h: 40 };
+  const screenArea = { x: 16, y: tabs.y + tabs.h + 12, w: t.panel.width - 32, h: t.panel.height - (tabs.y + tabs.h + 12) - 16 };
+
+  /**
+   * A section as screens a tab apart: a page each (the first named `name`,
+   * the others `name / title`), the tabs under the header, a swipe to the
+   * next or the previous. In iViewer a ScrollArea is a list, and a list's
+   * rows (its header too) hold no list, subpage or gesture: a DataList, a
+   * Pager, a Dial in one stay empty or dead. Where a page of them doesn't fit
+   * (a phone), they get screens of their own; content that goes further down
+   * than the screen scrolls, if it can.
+   */
+  function Screens({ name, screens, shell, bg = t.page }: ScreensProps): VNode {
+    const W = t.panel.width;
+    const H = t.panel.height;
+    const names = screens.map((sc, i) => (i ? `${name} / ${sc.title}` : name));
+    const seg = (W - 32 - 8) / screens.length;
+    const flip = (i: number) => `CF.flipToPage(${JSON.stringify(names[i])})`;
+    const clear = draw.box({ w: 4, h: 4, fill: '#00000000', name: drawnName('clear', '4') });
+    return (
+      <>
+        {screens.map((sc, i) => (
+          <Page name={names[i]} bg={bg}>
+            {/* a swipe where the content doesn't take the touch: the next / previous screen */}
+            <Image y={tabs.y + tabs.h} w={W} h={H - tabs.y - tabs.h} src={clear}>
+              {i < screens.length - 1 && <Gesture type="swipe" direction="left" onBegin={flip(i + 1)} />}
+              {i > 0 && <Gesture type="swipe" direction="right" onBegin={flip(i - 1)} />}
+            </Image>
+            <Box x={16} y={tabs.y} w={W - 32} h={tabs.h} bg={t.raised} radius={t.radius} />
+            {screens.map((tab, k) => (
+              <Button x={20 + Math.round(k * seg)} y={tabs.y + 4} w={Math.round((k + 1) * seg) - Math.round(k * seg)} h={tabs.h - 8} text={tab.title}
+                      radius={t.radius - 3} font={font} fontSize={16}
+                      {...(k === i ? { bg: t.accent, color: t.text } : { bg: t.raised, color: t.muted, active: { bg: shade(t.raised, 0.12), color: t.text }, page: names[k] })} />
+            ))}
+            <ScrollArea y={tabs.y + tabs.h + 4}>{sc.content}</ScrollArea>
+            {shell}
+          </Page>
+        ))}
+      </>
+    );
+  }
+
   // ── schedule & security ─────────────────────────────────────────
 
   function WeekDays({ join, value = 31, first = 'mon', labels = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'], textJoin, size = 48, gap = 8, x = 0, y = 0 }: WeekDaysProps): VNode {
@@ -1675,7 +1740,7 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     const bw = Math.min(140, Math.floor((w - 80) / 2));
     return (
       <Group>
-        <Subpage name={name} w={W} h={H} join={join} bg="#000000a0" in={{ type: 'fade', time: 0.2 }} out={{ type: 'fade', time: 0.2 }}>
+        <Subpage name={name} fixed w={W} h={H} join={join} bg="#000000a0" in={{ type: 'fade', time: 0.2 }} out={{ type: 'fade', time: 0.2 }}>
           <Box x={(W - w) / 2} y={(H - h) / 2} w={w} h={h} bg={t.surface} radius={t.radius + 6} />
           <Group x={(W - w) / 2} y={(H - h) / 2}>
             <Text x={32} y={28} w={w - 64} h={40} text={title} font={font} fontSize={26} />
@@ -2494,7 +2559,7 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
 
   return {
     theme: t, grid, Card, Icon, IconButton, Tile, Badge, Stat, Toggle, Slider, Stepper, Segmented, SceneBar, Dimmer, Dial, Knob, Thermostat, Blinds,
-    RadioGroup, CheckBox, CheckBoxGroup, SelectBox, ListRow, DataList, ScrollBox, ScrollArea, WeekDays, PinPad, AlarmCard, NavCard, Header, SideMenu, ConfirmDialog,
+    RadioGroup, CheckBox, CheckBoxGroup, SelectBox, ListRow, DataList, ScrollBox, ScrollArea, Screens, screenArea, WeekDays, PinPad, AlarmCard, NavCard, Header, SideMenu, ConfirmDialog,
     ColorPicker, TextField, SearchSelect, TimePicker, DatePicker, NumberField, DataTable, AlarmTable, AlarmBanner, Breadcrumbs, Loader, Pager,
     Trend, Chart, DragDrop,
   };
@@ -2651,6 +2716,7 @@ export const ListRow: Ui['ListRow'] = ui.ListRow;
 export const DataList: Ui['DataList'] = ui.DataList;
 export const ScrollBox: Ui['ScrollBox'] = ui.ScrollBox;
 export const ScrollArea: Ui['ScrollArea'] = ui.ScrollArea;
+export const Screens: Ui['Screens'] = ui.Screens;
 export const grid: Ui['grid'] = ui.grid;
 export const WeekDays: Ui['WeekDays'] = ui.WeekDays;
 export const PinPad: Ui['PinPad'] = ui.PinPad;

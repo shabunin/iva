@@ -132,6 +132,10 @@ export class Builder {
   private scripts: ScriptOut[] = [];
   private subpages = new Map<string, { node: XNode; source?: Source }>();
   private subpageUses: { name: string; source?: Source }[] = [];
+  /** lists' cells (header, footer, row subpages), checked once every subpage is in */
+  private listCells: { page: string; cells: [string, string][] }[] = [];
+  /** the page being built */
+  private pageName = '';
   private pages: XNode[] = [];
   private systems: XNode[] = [];
   private macros: XNode[] = [];
@@ -275,6 +279,7 @@ export class Builder {
         throw new CompileError(`no subpage "${use.name}"${didYouMean(use.name, this.subpages.keys())}`, use.source);
       }
     }
+    this.checkListCells();
     if (this.start.length) {
       this.scripts.push({
         name: 'iva-start.js',
@@ -703,9 +708,52 @@ export class Builder {
     return top ? [...out.filter((x) => !this.topmost.has(x)), ...out.filter((x) => this.topmost.has(x))] : out;
   }
 
+  /**
+   * A list's cells - its header, footer, rows (subpages iViewer copies into
+   * the list) - hold buttons, text, images, sliders: a list, a subpage or a
+   * gesture in one isn't shown / doesn't fire on the device (iViewer 5).
+   */
+  private checkListCells() {
+    const said = new Set<string>();
+    for (const { page, cells } of this.listCells) {
+      for (const [role, name] of cells) {
+        const sp = this.subpages.get(name)?.node;
+        if (!sp || said.has(name)) continue;
+        let lists = 0;
+        let gestures = 0;
+        const subs: string[] = [];
+        const walk = (n: XNode) => {
+          for (const c of n.children) {
+            if (c.tag === 'list') lists++;
+            else if (c.tag === 'gesture') gestures++;
+            else if (c.tag === 'subpage') {
+              const at = (k: string) => c.attrs.find(([a]) => a === k)?.[1];
+              // one never shown (hidden, no join: it names images so they ship) doesn't matter
+              if (!(at('v') === '0' && (at('j') ?? '0') === '0')) subs.push(at('name') ?? '?');
+            }
+            walk(c);
+          }
+        };
+        walk(sp);
+        if (!lists && !gestures && !subs.length) continue;
+        said.add(name);
+        const what = [
+          lists && `${lists} list${lists > 1 ? 's' : ''}`,
+          subs.length && `${subs.length} subpage${subs.length > 1 ? 's' : ''} (${[...new Set(subs)].join(', ')})`,
+          gestures && `${gestures} gesture${gestures > 1 ? 's' : ''}`,
+        ].filter(Boolean).join(', ');
+        const kind = name.startsWith('ui_scroll_') ? ', a ScrollArea' : '';
+        const text = `${page ? `page "${page}": ` : ''}a list's ${role} (subpage "${name}"${kind}) holds ${what} - iViewer shows no list, subpage or gesture ` +
+          'inside a list (its header, footer or rows): empty / dead on the device. Put them on the page or a subpage on it (a phone: ui.Screens)';
+        if (!this.warnings.includes(text)) this.warnings.push(text);
+      }
+    }
+  }
+
   private page(node: VNode) {
     const p = node.props;
     if (this.pages.some((pg) => pg.attrs[0][1] === p.name)) throw this.err(node, `page "${p.name}" is defined twice`);
+    this.pageName = p.name;
     const all = this.elements(node);
     this.items(all.filter((k) => HOISTED.has(k.type)));
     const kids = all.filter((k) => !HOISTED.has(k.type));
@@ -736,6 +784,7 @@ export class Builder {
     this.pages.push(this.withXml(this.E('page', {
       name: p.name, j: 0, tags: tagsAttr(p.tags), transition: '', subtype: '', time: 0, ease: '', start: p.start ? 1 : undefined,
     }, orients), node));
+    this.pageName = '';
   }
 
   private defineSubpage(node: VNode, inline: boolean): string {
@@ -1096,8 +1145,10 @@ export class Builder {
           }
           throw this.err(node, `${prop}: a subpage name or a <Subpage>`);
         };
+        const cells: Record<string, string> = { header: sub('header'), title: sub('title'), row: sub('item'), footer: sub('footer') };
+        this.listCells.push({ page: this.pageName, cells: Object.entries(cells).filter(([, v]) => v) });
         return this.E('list', {
-          j: this.join(node, 'join', 'l'), ...geom, headerSub: sub('header'), titleSub: sub('title'), contentSub: sub('item'), footerSub: sub('footer'),
+          j: this.join(node, 'join', 'l'), ...geom, headerSub: cells.header, titleSub: cells.title, contentSub: cells.row, footerSub: cells.footer,
           orientation: p.orientation === 'horizontal' ? 'h' : 'v', l: 0, swipedelete: bool(p.swipeDelete), t: this.styleTheme(node, 'list') || undefined,
           scrollCmd: p.scrollCmd, scrollInterval: p.scrollInterval, listEndCmd: p.listEndCmd, listEndOffset: p.listEndOffset, tags: tagsAttr(p.tags),
         }, [], undefined, node);
