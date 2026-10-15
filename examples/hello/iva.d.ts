@@ -31,6 +31,12 @@ declare module 'iva/jsx-runtime' {
       interface ElementChildrenAttribute {
           children: {};
       }
+      /** props typed `any` (a plain-JS component's untyped props) */
+      type UntypedKeys<P> = {
+          [K in keyof P]-?: 0 extends 1 & P[K] ? K : never;
+      }[keyof P];
+      /** A component's untyped props are optional; typed ones (iva's, JSDoc'd) are checked as declared. */
+      type LibraryManagedAttributes<C, P> = [UntypedKeys<P>] extends [never] ? P : Omit<P, UntypedKeys<P>> & Partial<Pick<P, UntypedKeys<P>>>;
   }
 }
 
@@ -67,8 +73,133 @@ declare module 'iva' {
   export declare const l: JoinHelper;
   /** A join prop whose type the element fixes: `join={12}`, `join="power"` (named) or `d(12)`. */
   export type Join = number | string | JoinRef;
+  /** A Font Awesome icon, drawn into an image at build time: fa('lightbulb'). */
+  export interface IconRef {
+      $$icon: 1;
+      name: string;
+      style?: 'solid' | 'regular' | 'brands';
+      color?: string;
+      size?: number;
+      /** the image's file name (else: from the content) */
+      file?: string;
+  }
+  export interface IconOptions {
+      /** default: the button's text colour (active: its active colour); white on <Image> */
+      color?: string;
+      /** px (default: half the button's height; the whole <Image>) */
+      size?: number;
+      /** 'solid' (default), 'regular' or 'brands' (also 'brands:github' as the name) */
+      style?: 'solid' | 'regular' | 'brands';
+      /** the image's file name (for scripts / list rows that name it) */
+      file?: string;
+  }
+  /** A Font Awesome (free) icon: fa('lightbulb'), fa('bell', { style: 'regular' }), fa('brands:spotify'). Names: fontawesome.com/search?m=free */
+  export declare const fa: (name: string, opts?: IconOptions) => IconRef;
+  /**
+   * The look being built, with <Project themes={['dark', 'light']}>: the project
+   * is built once per look, and colours can depend on it:
+   * `bg={variant() === 'light' ? '#FFFFFF' : '#14171A'}`. '' without themes.
+   */
+  export declare const variant: () => string;
+  /** A panel size in pixels. */
+  export interface ScreenSize {
+      width: number;
+      height: number;
+      /**
+       * device pixels per pixel (a size given as '1400x1400@3x'): the GUI is laid
+       * out at the size divided by it (467x467), iViewer scales it up to fill the
+       * screen and iva draws its images that sharp
+       */
+      scale?: number;
+      /** the screen in device pixels, when there's a scale */
+      device?: {
+          width: number;
+          height: number;
+      };
+  }
+  /**
+   * The panel size being built: the <Project>'s own, or the one asked for
+   * (`iva build --size 1400x1400`, one of <Project sizes>). Lay out from it and
+   * one project fits every screen: `<ui.Card w={screen().width - 32} ...>`.
+   */
+  export declare const screen: () => ScreenSize;
+  /** Something iva draws into an image (draw.arc(), ...); angles: degrees clockwise from 12 o'clock. */
+  export type DrawRef = {
+      $$draw: 1;
+      name?: string;
+  } & ({
+      kind: 'arc';
+      size: number;
+      thickness: number;
+      from: number;
+      to: number;
+      color: string;
+  } | {
+      kind: 'dot';
+      size: number;
+      ring: number;
+      at: number;
+      diameter: number;
+      color: string;
+  } | {
+      kind: 'knob';
+      size: number;
+      color: string;
+      pointer: string;
+      at: number;
+  } | {
+      kind: 'ticks';
+      size: number;
+      count: number;
+      from: number;
+      to: number;
+      length: number;
+      width: number;
+      color: string;
+  } | {
+      kind: 'box';
+      w: number;
+      h: number;
+      radius?: number;
+      fill?: string;
+      borderWidth?: number;
+      borderColor?: string;
+  } | {
+      kind: 'wheel';
+      size: number;
+  } | {
+      kind: 'ring';
+      size: number;
+      thickness: number;
+      color: string;
+      outline?: string;
+  } | {
+      kind: 'cutout';
+      w: number;
+      h: number;
+      radius: number;
+      color: string;
+  });
+  type Drawing<K extends DrawRef['kind']> = Omit<Extract<DrawRef, {
+      kind: K;
+  }>, '$$draw' | 'kind'>;
+  /** Images iva draws, for <Image src>: draw.arc({ size, thickness, from, to, color }), draw.dot(...),
+   * draw.knob(...), draw.ticks(...), draw.box({ w, h, radius, fill, borderWidth, borderColor }), draw.wheel({ size }) (hue round, white in the middle),
+   * draw.ring({ size, thickness, color, outline }), draw.cutout({ w, h, radius, color }) (a frame
+   * with a rounded hole, to round a web view's corners). `name` fixes the file name (else: from the content). */
+  export declare const draw: {
+      arc: (o: Drawing<'arc'>) => DrawRef;
+      dot: (o: Drawing<'dot'>) => DrawRef;
+      knob: (o: Drawing<'knob'>) => DrawRef;
+      ticks: (o: Drawing<'ticks'>) => DrawRef;
+      box: (o: Drawing<'box'>) => DrawRef;
+      wheel: (o: Drawing<'wheel'>) => DrawRef;
+      ring: (o: Drawing<'ring'>) => DrawRef;
+      cutout: (o: Drawing<'cutout'>) => DrawRef;
+  };
   export interface ImageRef {
-      src: string;
+      /** a file, or fa('icon') */
+      src: string | IconRef;
       x?: number;
       y?: number;
       w?: number;
@@ -79,13 +210,15 @@ declare module 'iva' {
       /** raw attributes for the element (null removes one) */
       xml?: Record<string, string | number | null>;
   }
-  /** What a button does: a command name (string), or cmd()/macro()/js(). */
+  /** What a button does: a command name (string), or cmd()/macro()/js()/setProps(). */
   export interface Action {
       $$action: 1;
       kind: 'command' | 'macro' | 'js';
       value: string;
       delay?: number;
       repeat?: number;
+      /** the named joins its script uses (setProps()): the build checks some element has each */
+      joins?: JoinRef[];
   }
   export interface ActionOptions {
       /** ms after the press (release) before it runs */
@@ -101,6 +234,51 @@ declare module 'iva' {
   /** run JavaScript */
   export declare const js: ActionHelper;
   export type ActionList = (string | Action)[] | string | Action;
+  /** by how much, from what CF.getProperties says then: '+100', '-0.5' */
+  export type Relative = `+${number}` | `-${number}`;
+  /** What CF.setProperties changes on an element (setProps()). */
+  export interface Properties {
+      x?: number | Relative;
+      y?: number | Relative;
+      w?: number | Relative;
+      h?: number | Relative;
+      /** 0 (gone: not tapped either) .. 1 */
+      opacity?: number | Relative;
+      /** 1: as drawn */
+      scale?: number | Relative;
+      xscale?: number | Relative;
+      yscale?: number | Relative;
+      /** degrees, clockwise (more than 180 at once may turn either way: split it, then: ...) */
+      zrotation?: number | Relative;
+      /** degrees about the X / Y axis: 3D (yrotation 0 -> 90 shows its edge - a card flip) */
+      xrotation?: number | Relative;
+      yrotation?: number | Relative;
+      /** a <Theme> by name: at the end of the delay, not animated */
+      theme?: string;
+  }
+  export interface SetPropsOptions {
+      /** seconds before it starts (default 0) */
+      delay?: number;
+      /** seconds it takes (default 0: at once) */
+      duration?: number;
+      /** how it speeds up and slows down (default 'linear') */
+      curve?: 'linear' | 'easeIn' | 'easeOut' | 'easeInOut';
+      /** once it's done: another setProps(), a cmd() / macro() / js(), or a list of them (in turn) */
+      then?: Action | Action[];
+  }
+  /** An element (or more): its join - d('cube'), s(12) - a tag of elements, or a list of them. */
+  export type PropsTarget = JoinRef | string | (JoinRef | string)[];
+  /**
+   * Change elements' properties - move, scale, turn, fade - with CF.setProperties,
+   * animated over `duration` with a `curve`, then (`then`) the next thing: a
+   * button's action (onPress={setProps(...)}), a script's code (`${setProps(...)}`).
+   *
+   *   setProps(d('cube'), { scale: 1.5 }, { duration: 0.3, curve: 'easeOut',
+   *     then: setProps(d('cube'), { scale: 1 }, { duration: 0.3 }) })
+   *   setProps(d('cube'), { x: '+200' })        // from where it is (CF.getProperties)
+   *   setProps([d('a'), d('b'), 'menuItems'], { opacity: 0 }, { duration: 0.4 })
+   */
+  export declare function setProps(target: PropsTarget, props: Properties, opts?: SetPropsOptions): Action;
   /** Turned into a theme (.gui CSS), shared by every element with the same style. */
   export interface StyleProps extends XmlProp {
       /** background colour: '#203040', 'rgba(0,0,0,0.5)', '#20304080' */
@@ -130,6 +308,9 @@ declare module 'iva' {
       };
       opacity?: number;
       padding?: number | [number, number, number, number];
+      /** corner radius (<Button>, <Subpage>): iva draws the background */
+      radius?: number;
+      /** a border (<Button>, <Subpage>: drawn; <Input>: CSS) */
       borderWidth?: number;
       borderColor?: string;
       /** extra CSS, appended as is */
@@ -161,7 +342,10 @@ declare module 'iva' {
       visible?: boolean;
       in?: Transition;
       out?: Transition;
+      /** above everything else on the page (iva places it last) */
       topmost?: boolean;
+      /** at x / y on the page, whatever <Group> it is in (a sheet centred on the screen) */
+      fixed?: boolean;
       clickthrough?: boolean;
       tags?: string | string[];
   }
@@ -170,14 +354,30 @@ declare module 'iva' {
   interface XmlProp {
       xml?: Record<string, string | number | null>;
   }
+  /** Panel sizes of the devices GUI Designer lists (landscape: width x height). */
+  export declare const DEVICES: Record<string, readonly [number, number]>;
+  export type Device = keyof typeof DEVICES;
   export interface ProjectProps extends XmlProp {
       name: string;
+      /** a device's panel size (instead of width / height) */
+      device?: Device;
+      /** with device: the main orientation (default 'landscape') */
+      orientation?: 'landscape' | 'portrait';
       /** the panel size; width > height makes landscape the main orientation */
-      width: number;
-      height: number;
+      width?: number;
+      height?: number;
       /** the other orientation's size (default: width and height swapped) */
       otherSize?: [number, number];
       autoposition?: 'scale' | 'none' | null;
+      /**
+       * other screens to build it for: sizes={['1920x1080', '1400x1400@3x']}. iva
+       * build writes a GUI per size (dist/1920w1080h/, a folder named the way
+       * iViewer matches a device's screen) and --zip puts them all in one archive:
+       * each device loads its own. screen() says which size is being built. @3x:
+       * a phone's dense screen - laid out at a third of it (467x467) and scaled up
+       * by iViewer, so everything is as big as on a tablet.
+       */
+      sizes?: (`${number}x${number}` | `${number}x${number}@${number}x`)[];
       /** first number given to named joins (default 1000) */
       joinBase?: number;
       /** a folder whose files all ship with the project; images are also found
@@ -185,6 +385,33 @@ declare module 'iva' {
       assets?: string;
       /** raw XML for <properties> after <size> (default: iva's) */
       properties?: string;
+      /**
+       * the devices licensed to run it: iViewer's registration data, a name and
+       * the code iViewer shows in its unlicensed-mode message for that device:
+       * licenses={{ 'Living room iPad': '8437F51DCCD3F92EA6898A980ACA0259' }}
+       */
+      licenses?: Record<string, string>;
+      /**
+       * looks the panel switches between at runtime: the project is built once per
+       * name (variant() tells which), and IvaTheme.set(name) switches (CF.setProperties
+       * with a theme, by tag). The first is the one it starts in, unless `theme` says.
+       */
+      themes?: string[];
+      /** the look it starts in (default: the first of `themes`) */
+      theme?: string;
+      /**
+       * the build's folders (default true): the .gui with images/ next to it
+       * (iViewer's asset folder: <imagefolder>), iva's drawings in
+       * images/backgrounds, icons, controls, the scripts in images/scripts (iViewer
+       * looks for a .gui's scripts in its image folder). false: everything next to
+       * the .gui (as GUI Designer saves a project without an image folder)
+       */
+      folders?: boolean;
+      /**
+       * the port of the panel's own web server: every <WebApp> and the
+       * ColorPicker's swatch (default: the first free from 8900)
+       */
+      httpPort?: number;
       children?: Child;
   }
   export interface PageProps extends Pick<StyleProps, 'bg' | 'image' | 'theme'>, XmlProp {
@@ -197,8 +424,10 @@ declare module 'iva' {
   export interface OrientationProps extends Pick<StyleProps, 'bg' | 'image' | 'theme'>, XmlProp {
       children?: Child;
   }
-  export interface SubpageProps extends Placement, Pick<StyleProps, 'bg' | 'image' | 'theme'>, XmlProp {
+  export interface SubpageProps extends Placement, Pick<StyleProps, 'bg' | 'image' | 'radius' | 'borderWidth' | 'borderColor' | 'theme'>, XmlProp {
       name: string;
+      /** inside a page: only define it (list rows, ...), don't place it */
+      define?: boolean;
       w: number;
       h: number;
       /** clip children to the subpage (default true) */
@@ -219,12 +448,17 @@ declare module 'iva' {
       /** serial join for the text */
       textJoin?: Join;
       activeTextJoin?: Join;
-      icon?: string | ImageRef;
-      activeIcon?: string | ImageRef;
+      /** an image file, fa('icon'), or { src, x, y, w, h } */
+      icon?: string | ImageRef | IconRef;
+      activeIcon?: string | ImageRef | IconRef;
+      /** where an fa() icon goes: 'center' (default), 'left' of the text, or 'top' above it */
+      iconAlign?: 'center' | 'left' | 'top';
       /** style when active (pressed / on), over the normal style */
       active?: StyleProps;
       /** go to this page on release ('Return' = previous page) */
       page?: string;
+      /** open this on release: "cf://host:port/other.gui" loads that GUI (GUI linking), another URL opens outside */
+      href?: string;
       /** run this command on press */
       cmd?: string;
       /** JavaScript run on press (gets join, value, tokens, list, listIndex) */
@@ -245,8 +479,8 @@ declare module 'iva' {
       children?: Child;
   }
   export interface ImageProps extends Geom, XmlProp {
-      /** a file (relative to the .jsx) or a URL */
-      src?: string;
+      /** a file (relative to the .jsx, or in assets/), a URL, fa('icon'), or draw.arc(...) etc. */
+      src?: string | IconRef | DrawRef;
       /** serial join holding the image file / URL */
       join?: Join;
       clickthrough?: boolean;
@@ -320,15 +554,66 @@ declare module 'iva' {
       text?: string | number;
       password?: boolean;
       autoFocus?: boolean;
+      /** a command sent when the user is done (Return): `[inputval]` in it is the text */
+      cmd?: string;
+      /** a macro run when the user is done (Return) */
+      macro?: string;
+      /** a command sent on each change (`[inputval]`: the text so far) */
+      changeCmd?: string;
+      /** a macro run on each change */
+      changeMacro?: string;
   }
   export interface WebProps extends Geom, XmlProp {
+      /** what it loads first: a URL, a file of the project (`page.html`), or `panel:/path` (a page of the panel's own web server) */
       url: string;
-      join?: number;
-      titleJoin?: number;
-      backJoin?: number;
-      forwardJoin?: number;
-      refreshJoin?: number;
-      stopJoin?: number;
+      /** serial join: the URL (setting it loads it) */
+      join?: Join;
+      /** serial join: the page's title */
+      titleJoin?: Join;
+      /** digital joins: back, forward, reload, stop (on a press) */
+      backJoin?: Join;
+      forwardJoin?: Join;
+      refreshJoin?: Join;
+      stopJoin?: Join;
+  }
+  /**
+   * A web page the panel serves itself: iva bundles `entry` (a JavaScript /
+   * TypeScript module, with the npm packages it imports - uplot, chart.js and
+   * three come with iva - and `iva/web` to talk to the panel) into one script
+   * shipped with the .gui; the panel's own web server (one TCP system for all
+   * of them, <Project httpPort>) sends it to the web view, at /<name>/.
+   */
+  export interface WebAppProps extends Geom, XmlProp {
+      /** the app's module ('./web/house.js'), or one iva brings ('iva:trend', 'iva:chart') */
+      entry: string;
+      /** names it: its path on the panel's web server (/<name>/) and its file in the build (default: from the entry's file name) */
+      name?: string;
+      /** joins the app sees and sets, by the names it uses: { kitchen: d('kitchenLight'), temp: a('temp') } */
+      joins?: Record<string, Join>;
+      /** settings for the app, as JSON (panel.options) */
+      options?: Record<string, unknown>;
+      /** panel functions it may call (panel.call(name, ...args)), by name: { history: 'plantHistory' } */
+      handlers?: Record<string, string>;
+      /** the panel keeps the joins' numbers every `every` seconds, the last `keep` (panel.history) */
+      record?: {
+          every?: number;
+          keep?: number;
+          names?: string[];
+      };
+      /** the page's colour until it draws (default black) */
+      bg?: string;
+      title?: string;
+      tags?: string | string[];
+  }
+  /**
+   * An HTTP server on the panel: a TCP system accepting connections on `port`
+   * and `handler(req, res)` (a panel function: its name, or a function as
+   * text) answering each request - see IvaHttp.serve.
+   */
+  export interface HttpServerProps {
+      name: string;
+      port: number;
+      handler: string;
   }
   export interface VideoProps extends Geom, XmlProp {
       url: string;
@@ -496,11 +781,33 @@ declare module 'iva' {
       /** style when active (buttons) */
       active?: StyleProps;
   }
+  /** A drawn rounded rectangle (an image that lets touches through): card / bar / track backgrounds. */
+  export interface BoxProps extends Geom, XmlProp {
+      bg?: string;
+      radius?: number;
+      borderWidth?: number;
+      borderColor?: string;
+  }
+  /** Its children, moved by x / y: lay a card's content out relative to the card. */
+  export interface GroupProps {
+      x?: number;
+      y?: number;
+      children?: Child;
+  }
+  /** JavaScript run once the panel has started (all OnStart code: one CF.modules setup, in order). */
+  export interface OnStartProps {
+      js: string;
+      /** joins the code uses that no element does (so named ones get numbers): d('x'), 's12', ... */
+      joins?: (string | JoinRef)[];
+  }
   /** A .gui element written as is: `<Raw xml='<timer j="1" interval="0" />' />` */
   export interface RawProps {
       xml: string;
   }
   export declare const Raw: Component<RawProps>;
+  export declare const Box: Component<BoxProps>;
+  export declare const Group: Component<GroupProps>;
+  export declare const OnStart: Component<OnStartProps>;
   export declare const Project: Component<ProjectProps>;
   export declare const Page: Component<PageProps>;
   export declare const Landscape: Component<OrientationProps>;
@@ -516,6 +823,8 @@ declare module 'iva' {
   export declare const Input: Component<InputProps>;
   export declare const Web: Component<WebProps>;
   export declare const Video: Component<VideoProps>;
+  export declare const WebApp: Component<WebAppProps>;
+  export declare const HttpServer: Component<HttpServerProps>;
   export declare const Gesture: Component<GestureProps>;
   export declare const System: Component<SystemProps>;
   export declare const Command: Component<CommandProps>;
@@ -528,6 +837,1038 @@ declare module 'iva' {
   export declare const Script: Component<ScriptProps>;
   export declare const Sound: Component<SoundProps>;
   export declare const Theme: Component<ThemeProps>;
+}
+
+declare module 'iva/ui' {
+  /**
+   * iva/ui - components for iViewer panels, in a theme.
+   *
+   *   import { createUi } from 'iva/ui';
+   *   export const ui = createUi({ accent: '#0A84FF' });   // components/ui.js
+   *   const { Card, Tile, Toggle } = ui;
+   *
+   * or with the default look:  import { Card, Tile } from 'iva/ui';
+   *
+   * Every component returns ordinary iva elements (Button, Text, Box, Slider,
+   * Subpage...), so what it makes is what the .gui holds. Rounded shapes and
+   * icons are drawn by iva (Font Awesome names: icon="lightbulb"). What has to
+   * happen on the panel (value labels, steppers, one-of-several, the clock,
+   * the side menu) is a small script, iva-ui.js, that comes with them.
+   */
+  import { type ButtonProps, type Child, type Join, type VNode } from 'iva';
+  export interface UiTheme {
+      /** page background */
+      page: string;
+      /** header / side menu */
+      bar: string;
+      /** cards, tiles */
+      surface: string;
+      /** buttons, tracks, rows on a surface */
+      raised: string;
+      /** on / active / progress */
+      accent: string;
+      text: string;
+      /** secondary text, inactive icons */
+      muted: string;
+      danger: string;
+      warning: string;
+      /** font family (iOS / Android name) */
+      font: string;
+      /** corner radius of rounded shapes */
+      radius: number;
+      /** the panel size: Header, SideMenu, dialogs use it (default: screen(), the size being built) */
+      panel: {
+          width: number;
+          height: number;
+      };
+  }
+  export declare const defaultTheme: UiTheme;
+  /** The light look, the same keys: <Project themes={['dark', 'light']}> builds the panel in both. */
+  export declare const lightTheme: UiTheme;
+  type Tone = 'accent' | 'danger' | 'warning' | 'muted';
+  /** Button props a component passes through: what it does when pressed. */
+  type Actions = Pick<ButtonProps, 'cmd' | 'js' | 'page' | 'onPress' | 'onRelease' | 'onHold' | 'holdTime' | 'repeat'>;
+  export interface CardProps {
+      title?: string;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+      /** how far down the content sits (grid(): centred in a card taller than it's laid out for) */
+      dy?: number;
+      /** placed relative to the card */
+      children?: Child;
+  }
+  export interface IconProps {
+      icon: string;
+      size?: number;
+      color?: string;
+      x?: number;
+      y?: number;
+  }
+  export interface IconButtonProps extends Actions {
+      icon?: string;
+      text?: string;
+      /** 'raised' (default), 'accent', 'danger', or 'flat' (no background) */
+      tone?: 'raised' | 'accent' | 'danger' | 'flat';
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+      /** icon size (default: 40 % of the height) */
+      size?: number;
+      join?: Join;
+      feedback?: ButtonProps['feedback'];
+  }
+  export interface TileProps extends Actions {
+      icon: string;
+      title: string;
+      status?: string;
+      /** serial join for the status line */
+      statusJoin?: Join;
+      /** digital join: on = the tile lit */
+      join?: Join;
+      feedback?: ButtonProps['feedback'];
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  export interface BadgeProps {
+      text?: string;
+      tone?: Tone;
+      /** a dot before the text */
+      dot?: boolean;
+      /** digital join: shows `on` (in the tone) / `off` (muted) */
+      join?: Join;
+      on?: string;
+      off?: string;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  export interface StatProps {
+      icon: string;
+      label: string;
+      value?: string;
+      /** serial join with the value */
+      valueJoin?: Join;
+      color?: string;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  export interface ToggleProps extends Actions {
+      label?: string;
+      /** digital join */
+      join: Join;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  export interface SliderProps {
+      label?: string;
+      /** analog join (0..65535, standing for min..max) */
+      join: Join;
+      min?: number;
+      max?: number;
+      /** where it starts, in min..max */
+      value?: number;
+      /** the value next to the bar ('%' default; '' none) */
+      unit?: string;
+      decimals?: number;
+      showValue?: boolean;
+      /** command run while dragging ([sliderval] = the value) */
+      dragCmd?: string;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  export interface StepperProps {
+      /** analog join (0..65535, standing for min..max) */
+      join: Join;
+      value?: number;
+      min?: number;
+      max?: number;
+      step?: number;
+      decimals?: number;
+      unit?: string;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  export interface SegmentedProps {
+      options: string[];
+      /** analog join: the index chosen */
+      join: Join;
+      value?: number;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  export interface SceneBarProps {
+      scenes: {
+          icon: string;
+          title: string;
+          cmd?: string;
+      }[];
+      /** analog join: the index of the scene on */
+      join: Join;
+      value?: number;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+      gap?: number;
+  }
+  export interface DimmerProps {
+      label: string;
+      icon?: string;
+      /** digital join: on / off */
+      on: Join;
+      /** analog join: the level, 0..100 */
+      level: Join;
+      x?: number;
+      y?: number;
+      w?: number;
+  }
+  export interface BlindsProps {
+      label: string;
+      /** analog join: the position, 0..100 */
+      position: Join;
+      /** commands for the buttons */
+      onOpen?: string;
+      onStop?: string;
+      onClose?: string;
+      x?: number;
+      y?: number;
+      w?: number;
+  }
+  export interface DialProps {
+      /** analog join (0..65535, standing for min..max) */
+      join: Join;
+      min?: number;
+      max?: number;
+      /** where it starts, in min..max */
+      value?: number;
+      /** a touch / the -+ buttons snap to this */
+      step?: number;
+      decimals?: number;
+      unit?: string;
+      /** under the value */
+      label?: string;
+      /** serial join for the label */
+      labelJoin?: Join;
+      size?: number;
+      /** ring thickness (default: 7.5 % of the size) */
+      thickness?: number;
+      color?: string;
+      /** degrees of the ring (default 270, the gap at the bottom) */
+      sweep?: number;
+      /** arc frames drawn (default 50: every 2 %) */
+      steps?: number;
+      x?: number;
+      y?: number;
+  }
+  export interface KnobProps {
+      /** analog join (0..65535, standing for min..max) */
+      join: Join;
+      min?: number;
+      max?: number;
+      value?: number;
+      step?: number;
+      decimals?: number;
+      unit?: string;
+      label?: string;
+      size?: number;
+      /** the knob */
+      color?: string;
+      /** its pointer */
+      pointer?: string;
+      sweep?: number;
+      x?: number;
+      y?: number;
+  }
+  export interface ThermostatProps {
+      /** analog join: the setpoint (0..65535, standing for min..max) */
+      setpoint: Join;
+      value?: number;
+      /** the room temperature: text, or a serial join */
+      current?: string;
+      currentJoin?: Join;
+      min?: number;
+      max?: number;
+      step?: number;
+      unit?: string;
+      size?: number;
+      /** modes under it (Segmented), the index in `mode` */
+      modes?: string[];
+      mode?: Join;
+      modeValue?: number;
+      x?: number;
+      y?: number;
+  }
+  export interface RadioGroupProps {
+      options: string[];
+      /** analog join: the index chosen */
+      join: Join;
+      value?: number;
+      x?: number;
+      y?: number;
+      w?: number;
+      /** a row's height */
+      rowH?: number;
+  }
+  export interface CheckBoxProps {
+      label: string;
+      /** digital join */
+      join: Join;
+      value?: boolean;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  export interface CheckBoxGroupProps {
+      options: {
+          label: string;
+          join: Join;
+          value?: boolean;
+      }[];
+      x?: number;
+      y?: number;
+      w?: number;
+      rowH?: number;
+  }
+  export interface SelectBoxProps {
+      options: string[];
+      /** analog join: the index chosen */
+      join: Join;
+      value?: number;
+      /** the sheet's title */
+      title?: string;
+      /** 'sheet' (default: a dialog over the page) or 'dropdown' (a list under the field) */
+      mode?: 'sheet' | 'dropdown';
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  export interface ListRowProps extends Actions {
+      icon?: string;
+      title: string;
+      subtitle?: string;
+      /** on the right: a value (text, or a serial join) */
+      value?: string;
+      valueJoin?: Join;
+      /** on the right: an ON / OFF toggle on this digital join */
+      toggle?: Join;
+      /** on the right: a chevron (the row goes somewhere: page / js / cmd) */
+      chevron?: boolean;
+      divider?: boolean;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  export type DataListItem = {
+      header: string;
+  } | {
+      spacer: true;
+  } | {
+      icon?: string;
+      title: string;
+      subtitle?: string;
+      value?: string;
+      alert?: boolean;
+  };
+  export interface DataListProps {
+      /** list join */
+      join: Join;
+      items: DataListItem[];
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  export interface ScrollBoxProps {
+      /** list join: lines need one (a script fills them); children don't */
+      join?: Join;
+      /** lines of text, a row each; or children: anything, scrolled as one */
+      lines?: string[];
+      children?: Child;
+      /** the children's height (default: as far down as they go); horizontal: their width */
+      contentH?: number;
+      /** children scrolled sideways */
+      horizontal?: boolean;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+      rowH?: number;
+  }
+  export interface ScrollAreaProps {
+      /** the area: default the panel below the header (y 72) */
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+      /** placed as on the page; they scroll when they go further down than the area */
+      children?: Child;
+  }
+  export interface ScreensProps {
+      /** the section's page: its first screen (a menu, a NavCard flips to it); the others are pages named `name / title` */
+      name: string;
+      /** a tab each: its title, and what's on it - placed as on a page, in ui.screenArea (under the tabs); it scrolls when it goes further down */
+      screens: {
+          title: string;
+          content: Child;
+      }[];
+      /** on every screen, over its content: the header, the side menu */
+      shell?: Child;
+      /** the pages' background (default: the theme's page colour) */
+      bg?: string;
+  }
+  export interface WeekDaysProps {
+      /** analog join: the bitmask (Mon 1, Tue 2, Wed 4 ... Sun 64) */
+      join: Join;
+      value?: number;
+      /** 'mon' (default) or 'sun' first */
+      first?: 'mon' | 'sun';
+      /** seven labels, Monday first (default Mo Tu We Th Fr Sa Su) */
+      labels?: string[];
+      /** a serial join that gets the summary ("Weekdays", "Sun, Mon", ...) */
+      textJoin?: Join;
+      size?: number;
+      gap?: number;
+      x?: number;
+      y?: number;
+  }
+  export interface PinPadProps {
+      /** serial join: OK writes the code here */
+      code?: Join;
+      /** JavaScript run on OK, with `code` (a string) */
+      onEnter?: string;
+      length?: number;
+      /** show dots, not the digits (default true) */
+      mask?: boolean;
+      placeholder?: string;
+      /** a key's size */
+      size?: number;
+      gap?: number;
+      x?: number;
+      y?: number;
+  }
+  export interface ColorPickerProps {
+      /** analog joins: red, green, blue, 0..255 - written as you pick, followed when they change elsewhere */
+      r: Join;
+      g: Join;
+      b: Join;
+      /** serial join: the colour as #RRGGBB */
+      hex?: Join;
+      /** the colour at start ('#FFB000'); default: what r / g / b hold */
+      value?: string;
+      /** the wheel's diameter */
+      size?: number;
+      /** colours one tap away (false: none) */
+      swatches?: string[] | false;
+      /** JavaScript run on each pick, with r, g, b (numbers) and hex */
+      onChange?: string;
+      /** what's behind it (the swatch's corners are drawn in it): default the card colour */
+      bg?: string;
+      x?: number;
+      y?: number;
+  }
+  export interface TextFieldProps {
+      /** serial join: the text (typing writes it) */
+      join: Join;
+      label?: string;
+      /** the text at start */
+      value?: string;
+      /** shown while it's empty */
+      placeholder?: string;
+      password?: boolean;
+      /** a Font Awesome icon on the left */
+      icon?: string;
+      /** a command sent on Return ([inputval]: the text) */
+      cmd?: string;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  /** Where a picker opens: 'sheet' (a dialog in the middle of the panel) or 'dropdown' (under the field). */
+  type PopupMode = 'sheet' | 'dropdown';
+  interface FieldProps {
+      mode?: PopupMode;
+      /** the sheet's title */
+      title?: string;
+      /** the field's text size */
+      fontSize?: number;
+      /** the icon at the field's right (default true) */
+      showIcon?: boolean;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  export interface SearchSelectProps extends FieldProps {
+      /** the options; or `source` */
+      options?: string[];
+      /** serial join with the options as a JSON array (strings, or { label }): a script or a feedback fills it */
+      source?: Join;
+      /** analog join: the index of the option picked */
+      join: Join;
+      /** the option picked at start */
+      value?: number;
+      /** the field's text while nothing is picked */
+      placeholder?: string;
+      /** shown in the list when nothing matches */
+      empty?: string;
+      /** rows shown at once */
+      rows?: number;
+      rowH?: number;
+  }
+  export interface TimePickerProps extends FieldProps {
+      /** analog joins: the hour (0-23) and the minute (0-59), as numbers */
+      hour: Join;
+      minute: Join;
+      /** the time at start ('07:30') */
+      value?: string;
+      /** the minutes drum in steps (5: 00, 05, 10 ...) */
+      minuteStep?: number;
+      /** 12 hours and AM / PM */
+      ampm?: boolean;
+      /** a button turning the drums to the panel's time: its text ('Now') */
+      now?: string;
+      ok?: string;
+      cancel?: string;
+  }
+  export interface DatePickerProps extends FieldProps {
+      /** analog joins: the day (1-31), month (1-12) and year, as numbers */
+      day: Join;
+      month: Join;
+      year: Join;
+      /** the date at start ('2026-10-08') */
+      value?: string;
+      /** the field's text: D DD M MM MMM MMMM YYYY (default 'DD.MM.YYYY') */
+      format?: string;
+      /** the drums' order */
+      order?: 'dmy' | 'mdy' | 'ymd';
+      /** the years on the drum (default: 10 years either side of this one) */
+      minYear?: number;
+      maxYear?: number;
+      /** the 12 months' names, January first (another language) */
+      months?: string[];
+      /** a button turning the drums to today: its text (default 'Today'; false: none) */
+      today?: string | false;
+      /** the field's text while no date is set */
+      placeholder?: string;
+      ok?: string;
+      cancel?: string;
+  }
+  export interface NumberFieldProps extends FieldProps {
+      /** analog join: the value, min..max as 0..65535 (as Slider, Stepper) */
+      join: Join;
+      /** the value at start */
+      value?: number;
+      min?: number;
+      max?: number;
+      /** digits after the point */
+      decimals?: number;
+      /** digits at most */
+      digits?: number;
+      /** after the number ('%', '\u00B0C') */
+      unit?: string;
+      ok?: string;
+      cancel?: string;
+      /** the messages for a bad number: invalid ('Not a number'), range ('From {min} to {max}') */
+      words?: {
+          invalid?: string;
+          range?: string;
+      };
+  }
+  export interface TrendCurve {
+      /** an analog join (0..65535 stands for `scale`), or a serial one with the number as text: s('supply') */
+      join: Join;
+      label: string;
+      color?: string;
+      scale?: [number, number];
+      decimals?: number;
+      unit?: string;
+      /** an axis of its own, on the right */
+      side?: 'left' | 'right';
+      width?: number;
+  }
+  export interface TrendProps {
+      curves: TrendCurve[];
+      title?: string;
+      /** the range buttons, in seconds (default 5 min, 15 min, 1 h) */
+      ranges?: number[];
+      /** the range shown first */
+      range?: number;
+      /** the left axis (default: to fit) and the right one */
+      min?: number;
+      max?: number;
+      rightMin?: number;
+      rightMax?: number;
+      /** the panel samples the joins every so many seconds (default 1) */
+      every?: number;
+      /** a panel function answering history(from, to) (ms) with { names, rows } - a database, say; default: what the panel recorded */
+      history?: string;
+      /** names its web app (default: from the curves) */
+      name?: string;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  export interface ChartDataset {
+      label?: string;
+      data?: number[];
+      /** a join per label, live: analog (0..65535 stands for `scale`) or serial with a number */
+      joins?: Join[];
+      scale?: [number, number];
+      color?: string;
+      /** a colour per value (pie, doughnut) */
+      colors?: string[];
+      fill?: boolean;
+  }
+  export interface ChartProps {
+      type?: 'bar' | 'line' | 'doughnut' | 'pie' | 'radar' | 'polarArea';
+      labels?: string[];
+      datasets?: ChartDataset[];
+      /** serial join: the data as JSON - { labels, datasets: [{ data }] } or [numbers] - redrawn when it changes */
+      source?: Join;
+      /** bars across */
+      horizontal?: boolean;
+      stacked?: boolean;
+      min?: number;
+      max?: number;
+      unit?: string;
+      legend?: boolean;
+      title?: string;
+      /** names its web app (default: from what it shows) */
+      name?: string;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  /** A row tone (DataTable, AlarmTable): a tint behind the row, and its badge. */
+  export type RowTone = 'alarm' | 'warning' | 'ok' | 'muted' | 'running' | 'heating' | 'cooling' | 'offline' | 'alarmAck' | 'warningAck';
+  export interface TableColumn {
+      /** the row field it shows */
+      key: string;
+      title: string;
+      /** width (default: an equal share of what's left) */
+      w?: number;
+      align?: 'left' | 'center' | 'right';
+      /** digits after the point, for numbers */
+      decimals?: number;
+      /** shown as a badge in the row's tone */
+      badge?: boolean;
+  }
+  export interface DataTableProps {
+      columns: TableColumn[];
+      /** the rows; or `source` */
+      data?: Record<string, unknown>[];
+      /** serial join with the rows as a JSON array (a script or a feedback fills it) */
+      source?: Join;
+      /** the field that names a row: a tap selects it, `selected` gets it */
+      keyField?: string;
+      /** serial join: the selected row's key (both ways) */
+      selected?: Join;
+      /** the field naming the row's tone (alarm, warning, ok, muted, running, heating, cooling, offline) */
+      toneKey?: string;
+      /** a search field over the table (default true) */
+      search?: boolean;
+      placeholder?: string;
+      /** JavaScript run on a tap, with `row` (the row's object) */
+      onSelect?: string;
+      words?: {
+          rows?: string;
+          of?: string;
+          empty?: string;
+      };
+      rowH?: number;
+      fontSize?: number;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  export interface AlarmCondition {
+      /** the alarm's id */
+      id: string;
+      text: string;
+      source?: string;
+      severity?: 'alarm' | 'warning';
+      /** the join watched ('d12', d('door'), a('temp')) */
+      join: Join;
+      /** active while the join's value is above / below / equal to */
+      above?: number;
+      below?: number;
+      equals?: number | string;
+  }
+  export interface AlarmTableProps {
+      /** names it for AlarmBanner and IvaAlarms (IvaAlarms.raise('plant', {...})) */
+      name: string;
+      /** alarms raised and cleared on the panel, from joins */
+      conditions?: AlarmCondition[];
+      /** serial join with alarms as a JSON array ({ id, text, source, severity, active, acked }) */
+      source?: Join;
+      /** serial join: the counts as text ("2 alarms · 1 warning · 3 unacked") */
+      summary?: Join;
+      rowH?: number;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  export interface AlarmBannerProps {
+      /** the AlarmTable's name */
+      alarms: string;
+      /** a tap: a page, or JavaScript */
+      page?: string;
+      js?: string;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  export interface BreadcrumbsProps {
+      /** where you are: strings or { label, page, js }; all but the last are links */
+      items: (string | {
+          label: string;
+          page?: string;
+          js?: string;
+      })[];
+      /** a back arrow first (to the previous page) */
+      back?: boolean;
+      separator?: string;
+      fontSize?: number;
+      x?: number;
+      y?: number;
+      h?: number;
+  }
+  export interface LoaderProps {
+      /** digital join: shown while on */
+      join: Join;
+      /** the text under the spinner, or a serial join's */
+      text?: string;
+      textJoin?: Join;
+      icon?: string;
+  }
+  export interface DragItem {
+      id: string;
+      label: string;
+      /** a Font Awesome icon's name */
+      icon?: string;
+      /** where it is (default: in a row, in order) */
+      x?: number;
+      y?: number;
+  }
+  export interface DropTarget {
+      id: string;
+      label: string;
+      icon?: string;
+      /** serial join: the label of the item dropped on it (shown on it) */
+      value?: Join;
+      /** the items it takes (default: all) */
+      accept?: string[];
+      x?: number;
+      y?: number;
+  }
+  export interface DragDropProps {
+      /** names its joins */
+      name: string;
+      /** what can be dragged: tiles of an icon and a label (they stay where they are: a palette) */
+      items: DragItem[];
+      /** where they go: cards that light up under a dragged item, showing the last one dropped */
+      targets: DropTarget[];
+      /** JavaScript run on a drop, with `item` and `target` (ids) */
+      onDrop?: string;
+      /** shown on a target with nothing on it */
+      placeholder?: string;
+      itemW?: number;
+      itemH?: number;
+      targetW?: number;
+      targetH?: number;
+      gap?: number;
+      x?: number;
+      y?: number;
+      w: number;
+      h: number;
+  }
+  export interface PagerProps {
+      /** analog join: the page shown (0, 1, ...), both ways */
+      join: Join;
+      /** the first page shown */
+      value?: number;
+      /** the dots under the pages (default true) */
+      dots?: boolean;
+      x?: number;
+      y?: number;
+      w: number;
+      h: number;
+      /** one page per child */
+      children?: Child;
+  }
+  export interface AlarmCardProps {
+      title: string;
+      /** digital join: the alarm on */
+      on: Join;
+      onValue?: boolean;
+      /** analog joins: the hour (0-23) and the minute (0-59), as numbers (a TimePicker) */
+      hour: Join;
+      minute: Join;
+      /** the time it starts at: "06:45" */
+      value?: string;
+      /** the minutes drum in steps (5: 00, 05, 10 ...) */
+      minuteStep?: number;
+      /** 12 h with AM / PM */
+      ampm?: boolean;
+      /** the time picker's title (default: the card's) */
+      timeTitle?: string;
+      /** analog join: the days (WeekDays bitmask) */
+      days: Join;
+      daysValue?: number;
+      x?: number;
+      y?: number;
+      w?: number;
+      /** default 210; taller: the time and the days in the middle of it */
+      h?: number;
+  }
+  export interface NavCardProps {
+      icon: string;
+      title: string;
+      text?: string;
+      page: string;
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+  }
+  export interface HeaderProps {
+      title: string;
+      /** the section shown: breadcrumbs "Home › section" */
+      section?: string;
+      /** the page "Home" goes to */
+      home?: string;
+      /** digital join opening the SideMenu (default 'menu'); false: no menu button */
+      menu?: Join | false;
+      clock?: boolean;
+      /** a button switching the look (with <Project themes>: IvaTheme.toggle()) */
+      themeToggle?: boolean;
+      w?: number;
+      h?: number;
+  }
+  export interface SideMenuProps {
+      title?: string;
+      subtitle?: string;
+      items: {
+          icon: string;
+          text: string;
+          page: string;
+      }[];
+      /** digital join: open (default 'menu') */
+      menu?: Join;
+      w?: number;
+      /** slide in from the left (default: fade in) */
+      slide?: boolean;
+  }
+  export interface ConfirmDialogProps {
+      /** digital join: shown while on */
+      join: Join;
+      title?: string;
+      message?: string;
+      confirmText?: string;
+      cancelText?: string;
+      danger?: boolean;
+      /** command run on confirm */
+      onConfirm?: string;
+      w?: number;
+      h?: number;
+  }
+  export interface Ui {
+      theme: UiTheme;
+      /**
+       * Cards on the panel, whatever its size: items by name (the size each is
+       * laid out at), rows of names stretched across, taller when there's room
+       * (lists, tables, charts take it: grow). A Cell per name: <Card {...cells.x}>.
+       */
+      grid: <K extends string>(items: Record<K, GridItem>, rows: GridRow<K>[], o?: GridOptions) => Record<K, Cell>;
+      Card: (p: CardProps) => VNode;
+      Icon: (p: IconProps) => VNode;
+      IconButton: (p: IconButtonProps) => VNode;
+      Tile: (p: TileProps) => VNode;
+      Badge: (p: BadgeProps) => VNode;
+      Stat: (p: StatProps) => VNode;
+      Toggle: (p: ToggleProps) => VNode;
+      Slider: (p: SliderProps) => VNode;
+      Stepper: (p: StepperProps) => VNode;
+      Segmented: (p: SegmentedProps) => VNode;
+      SceneBar: (p: SceneBarProps) => VNode;
+      Dimmer: (p: DimmerProps) => VNode;
+      Dial: (p: DialProps) => VNode;
+      RadioGroup: (p: RadioGroupProps) => VNode;
+      CheckBox: (p: CheckBoxProps) => VNode;
+      CheckBoxGroup: (p: CheckBoxGroupProps) => VNode;
+      SelectBox: (p: SelectBoxProps) => VNode;
+      ListRow: (p: ListRowProps) => VNode;
+      DataList: (p: DataListProps) => VNode;
+      ScrollBox: (p: ScrollBoxProps) => VNode;
+      ScrollArea: (p: ScrollAreaProps) => VNode;
+      /**
+       * A section as screens a tab apart, a page each: what a ScrollArea can't
+       * scroll (lists, subpages, gestures - in iViewer a list's rows hold none)
+       * gets a screen of its own on a phone.
+       */
+      Screens: (p: ScreensProps) => VNode;
+      /** Where a screen's content goes (ui.Screens: under its tabs): grid(items, rows, ui.screenArea), <Card {...ui.screenArea}>. */
+      screenArea: {
+          x: number;
+          y: number;
+          w: number;
+          h: number;
+      };
+      WeekDays: (p: WeekDaysProps) => VNode;
+      PinPad: (p: PinPadProps) => VNode;
+      ColorPicker: (p: ColorPickerProps) => VNode;
+      TextField: (p: TextFieldProps) => VNode;
+      SearchSelect: (p: SearchSelectProps) => VNode;
+      TimePicker: (p: TimePickerProps) => VNode;
+      DatePicker: (p: DatePickerProps) => VNode;
+      NumberField: (p: NumberFieldProps) => VNode;
+      DataTable: (p: DataTableProps) => VNode;
+      Trend: (p: TrendProps) => VNode;
+      Chart: (p: ChartProps) => VNode;
+      AlarmTable: (p: AlarmTableProps) => VNode;
+      AlarmBanner: (p: AlarmBannerProps) => VNode;
+      Breadcrumbs: (p: BreadcrumbsProps) => VNode;
+      Loader: (p: LoaderProps) => VNode;
+      Pager: (p: PagerProps) => VNode;
+      DragDrop: (p: DragDropProps) => VNode;
+      AlarmCard: (p: AlarmCardProps) => VNode;
+      Knob: (p: KnobProps) => VNode;
+      Thermostat: (p: ThermostatProps) => VNode;
+      Blinds: (p: BlindsProps) => VNode;
+      NavCard: (p: NavCardProps) => VNode;
+      Header: (p: HeaderProps) => VNode;
+      SideMenu: (p: SideMenuProps) => VNode;
+      ConfirmDialog: (p: ConfirmDialogProps) => VNode;
+  }
+  /** A join as a JavaScript expression ("d12", or Joins.d.name for a named one). */
+  export declare function jsJoin(type: 'd' | 'a' | 's' | 'l', j: Join): string;
+  /**
+   * Components in a theme: createUi({ accent: '#0A84FF' }); what isn't given
+   * comes from defaultTheme - or, with <Project themes={['dark', 'light']}>,
+   * from the look being built (lightTheme for 'light'), and `looks` changes a
+   * look's own colours: createUi({ accent: '#0A84FF' }, { light: { accent: '#0060DF' } }).
+   */
+  export declare function createUi(theme?: Partial<UiTheme>, looks?: Record<string, Partial<UiTheme>>): Ui;
+  /** Where grid() puts an item: its box, and how far down content laid out at its own size sits in it (centred; 0 for one that grows). */
+  export interface Cell {
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+      dy: number;
+  }
+  /**
+   * A grid() item: [w, h], the size its content is laid out at (the least it
+   * gets), or { w, h, grow: true } for content that takes the room it gets (a
+   * list, a table, a chart). h can be a function of the width it gets: a card
+   * that lays its content out another way when narrow, taller.
+   */
+  export type GridItem = [number, number | ((w: number) => number)] | {
+      w: number;
+      h: number | ((w: number) => number);
+      grow?: boolean;
+  };
+  /** A grid() row: items by name, left to right; [names]: those one above another. */
+  export type GridRow<K extends string = string> = (K | K[])[];
+  export interface GridOptions {
+      /** the area (default: the panel below the header: x 16, y 88, 16 from the edges) */
+      x?: number;
+      y?: number;
+      w?: number;
+      h?: number;
+      /** between items (default 16) */
+      gap?: number;
+  }
+  /**
+   * Items laid out in an area, row by row: each row stretched to the width
+   * (each item by its share), a row that doesn't fit going on in the next; the
+   * rows as high as their tallest item, the height left going to the rows with
+   * an item that grows - else to all of them, by their size - so the area is
+   * filled. Taller than the area: as tall as they are (a ScrollArea scrolls
+   * them). A stack's items share its height the same way.
+   */
+  export declare function layoutGrid<K extends string>(items: Record<K, GridItem>, rows: GridRow<K>[], area: {
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+  }, gap?: number): Record<K, Cell>;
+  /** The components in the default theme. */
+  export declare const ui: Ui;
+  export declare const Card: Ui['Card'];
+  export declare const Icon: Ui['Icon'];
+  export declare const IconButton: Ui['IconButton'];
+  export declare const Tile: Ui['Tile'];
+  export declare const Badge: Ui['Badge'];
+  export declare const Stat: Ui['Stat'];
+  export declare const Toggle: Ui['Toggle'];
+  export declare const Slider: Ui['Slider'];
+  export declare const Stepper: Ui['Stepper'];
+  export declare const Segmented: Ui['Segmented'];
+  export declare const SceneBar: Ui['SceneBar'];
+  export declare const Dimmer: Ui['Dimmer'];
+  export declare const Blinds: Ui['Blinds'];
+  export declare const Dial: Ui['Dial'];
+  export declare const Knob: Ui['Knob'];
+  export declare const Thermostat: Ui['Thermostat'];
+  export declare const RadioGroup: Ui['RadioGroup'];
+  export declare const CheckBox: Ui['CheckBox'];
+  export declare const CheckBoxGroup: Ui['CheckBoxGroup'];
+  export declare const SelectBox: Ui['SelectBox'];
+  export declare const ListRow: Ui['ListRow'];
+  export declare const DataList: Ui['DataList'];
+  export declare const ScrollBox: Ui['ScrollBox'];
+  export declare const ScrollArea: Ui['ScrollArea'];
+  export declare const Screens: Ui['Screens'];
+  export declare const grid: Ui['grid'];
+  export declare const WeekDays: Ui['WeekDays'];
+  export declare const PinPad: Ui['PinPad'];
+  export declare const AlarmCard: Ui['AlarmCard'];
+  export declare const ColorPicker: Ui['ColorPicker'];
+  export declare const TextField: Ui['TextField'];
+  export declare const SearchSelect: Ui['SearchSelect'];
+  export declare const TimePicker: Ui['TimePicker'];
+  export declare const DatePicker: Ui['DatePicker'];
+  export declare const NumberField: Ui['NumberField'];
+  export declare const DataTable: Ui['DataTable'];
+  export declare const Trend: Ui['Trend'];
+  export declare const Chart: Ui['Chart'];
+  export declare const AlarmTable: Ui['AlarmTable'];
+  export declare const AlarmBanner: Ui['AlarmBanner'];
+  export declare const Breadcrumbs: Ui['Breadcrumbs'];
+  export declare const Loader: Ui['Loader'];
+  export declare const Pager: Ui['Pager'];
+  export declare const DragDrop: Ui['DragDrop'];
+  export declare const NavCard: Ui['NavCard'];
+  export declare const Header: Ui['Header'];
+  export declare const SideMenu: Ui['SideMenu'];
+  export declare const ConfirmDialog: Ui['ConfirmDialog'];
+  export default ui;
 }
 
 declare const Project: typeof import('iva').Project;
@@ -544,6 +1885,8 @@ declare const Gauge: typeof import('iva').Gauge;
 declare const List: typeof import('iva').List;
 declare const Input: typeof import('iva').Input;
 declare const Web: typeof import('iva').Web;
+declare const WebApp: typeof import('iva').WebApp;
+declare const HttpServer: typeof import('iva').HttpServer;
 declare const Video: typeof import('iva').Video;
 declare const Gesture: typeof import('iva').Gesture;
 declare const System: typeof import('iva').System;
@@ -558,6 +1901,9 @@ declare const Script: typeof import('iva').Script;
 declare const Sound: typeof import('iva').Sound;
 declare const Theme: typeof import('iva').Theme;
 declare const Raw: typeof import('iva').Raw;
+declare const Box: typeof import('iva').Box;
+declare const Group: typeof import('iva').Group;
+declare const OnStart: typeof import('iva').OnStart;
 declare const d: typeof import('iva').d;
 declare const a: typeof import('iva').a;
 declare const s: typeof import('iva').s;
@@ -565,3 +1911,8 @@ declare const l: typeof import('iva').l;
 declare const cmd: typeof import('iva').cmd;
 declare const macro: typeof import('iva').macro;
 declare const js: typeof import('iva').js;
+declare const setProps: typeof import('iva').setProps;
+declare const fa: typeof import('iva').fa;
+declare const draw: typeof import('iva').draw;
+declare const variant: typeof import('iva').variant;
+declare const screen: typeof import('iva').screen;
