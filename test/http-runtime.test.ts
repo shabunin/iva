@@ -2,7 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { HTTP_RUNTIME } from '../src/compiler/web.ts';
 
-/** Just enough of iViewer's CF for iva-http.js: joins, feedback, sends, assets - and a clock to move. */
+/**
+ * Just enough of iViewer's CF for iva-http.js: joins, feedback, sends, assets
+ * - and a clock to move. The panel asking its own web server (CF.request to
+ * 127.0.0.1): the request goes to IvaWeb's feedback while `server.up`, else
+ * it's refused; CF.setSystemProperties recorded.
+ */
 function panel(assets: Record<string, string> = {}) {
   const joins: Record<string, unknown> = {};
   const feedback: { system: string; cb: (fb: string, raw: string) => void }[] = [];
@@ -26,8 +31,21 @@ function panel(assets: Record<string, string> = {}) {
     },
     send: (system: string, data: string) => sent.push([system, data]),
     loadAsset: (name: string, _enc: string, cb: (d: string | null) => void) => cb(assets[name] ?? null),
-    log() {},
+    request(url: string, cb: (status: number, headers: Record<string, string>, body: string) => void) {
+      asked.push(url);
+      const m = /^http:\/\/127\.0\.0\.1:\d+(\/.*)$/.exec(url);
+      if (!m || !server.up) return cb(0, {}, 'Failed to connect');
+      request('IvaWeb', m[1]);
+      const raw = sent[sent.length - 1][1];
+      cb(Number(/^HTTP\/1\.1 (\d+)/.exec(raw)![1]), {}, raw.slice(raw.indexOf('\r\n\r\n') + 4));
+    },
+    setSystemProperties: (name: string, props: Record<string, unknown>) => switched.push([name, props.enabled]),
+    log: (m: string) => logged.push(m),
   };
+  const asked: string[] = [];
+  const switched: [string, unknown][] = [];
+  const logged: string[] = [];
+  const server = { up: true };
   const setTimeout = (fn: () => void, ms: number) => (timers.set(++seq, { at: now + ms, fn }), seq);
   const setInterval = (fn: () => void, ms: number) => (timers.set(++seq, { at: now + ms, fn, every: ms }), seq);
   const clearTimeout = (id: number) => timers.delete(id);
@@ -51,7 +69,7 @@ function panel(assets: Record<string, string> = {}) {
   const request = (system: string, target: string) => {
     for (const f of feedback) if (f.system === system) f.cb('request', `GET ${target} HTTP/1.1\r\nHost: 127.0.0.1\r\nAccept: */*\r\n\r\n`);
   };
-  return { CF, IvaHttp, joins, sent, request, tick };
+  return { CF, IvaHttp, joins, sent, request, tick, server, asked, switched, logged };
 }
 
 /** an answer's status, headers and body (bytes as chars) */
@@ -109,6 +127,36 @@ test('the web server: one system for every web app (/<name>/) and swatch; every 
   assert.equal(dataOf(last(sent)), null);
   request('IvaWeb', '/nope/iva/poll?r=z');
   assert.deepEqual([parse(last(sent)).status, dataOf(last(sent))], ['HTTP/1.1 404 Not Found', { error: 'no web app "nope"' }]);
+});
+
+test('the web server checks itself: web views load once it answers; not answering, its system is switched off and on', () => {
+  const { CF, IvaHttp, joins, tick, server, asked, switched, logged } = panel();
+  server.up = false;
+  IvaHttp.web('IvaWeb', 8900);
+  IvaHttp.view('s5', 'iva-file/page.html');
+  let swatch = '';
+  IvaHttp.ready(() => (swatch = IvaHttp.url('iva-color/ffb000')));
+  // iViewer hasn't started it: no URL yet (a web view would show "failed" for good), asked again, switched off and on
+  tick(1600);
+  assert.equal(joins.s5, undefined);
+  assert.equal(swatch, '');
+  assert.ok(asked.length >= 3 && asked.every((u) => u.startsWith('http://127.0.0.1:8900/iva/ping')), asked.join(' '));
+  tick(400);
+  assert.deepEqual(switched, [['IvaWeb', false], ['IvaWeb', true]]);
+  assert.match(logged.join('\n'), /doesn't answer after 2 s - switching it off and on/);
+  // it answers: the views get their URLs, what waited runs - and no more asking
+  server.up = true;
+  tick(1200);
+  assert.equal(joins.s5, 'http://127.0.0.1:8900/iva-file/page.html');
+  assert.equal(swatch, 'http://127.0.0.1:8900/iva-color/ffb000');
+  const n = asked.length;
+  IvaHttp.view('s6', 'app/');
+  assert.equal(joins.s6, 'http://127.0.0.1:8900/app/');
+  tick(60000);
+  assert.equal(asked.length, n);
+  assert.equal(switched.length, 2);
+  // the ping is the server's own: no request number back, the text "ok"
+  CF.request('http://127.0.0.1:8900/iva/ping?n=9', (status: number, _h: unknown, body: string) => assert.deepEqual([status, body], [200, 'ok']));
 });
 
 test('the web server: polls held until a change; a new request of the app ends its poll held, not another app\'s', () => {

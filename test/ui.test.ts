@@ -99,11 +99,13 @@ export default (
   assert.equal((r.xml.match(/<system name="IvaWeb" [^>]*port="8900"/g) ?? []).length, 1);
   assert.match(r.xml, /<fb name="request" regex="\(\?msi\)\^\.\*\?\\r\\n\\r\\n"/);
   assert.match(r.xml, /<subpage name="ui_cp_r1" w="210" h="210"/);
-  assert.equal((r.xml.match(/<web [^>]*url="http:\/\/127\.0\.0\.1:8900\/iva-color\/000000"/g) ?? []).length, 2);
+  // the swatches' web views: their own URL joins, set once the server answers (the colour then)
+  assert.equal((r.xml.match(/<web [^>]*j="\d+"[^>]*url=""/g) ?? []).length, 2);
   assert.ok(r.assets.some((a) => /^controls\/iva_wheel_\w+\.png$/.test(a.name)));
   assert.equal((r.xml.match(/<input /g) ?? []).length, 2);
   const start = r.scripts.find((s) => s.name === 'iva-start.js')!.code!;
   for (const f of ['IvaHttp.web("IvaWeb", 8900);', 'IvaUI.color(', 'IvaUI.hint(', 'IvaUI.select(']) assert.ok(start.includes(f), f);
+  assert.equal(start.match(/IvaHttp\.view\(Joins\.s\["ui_\w+_cp_url"\], "iva-color\/000000"\);/g)!.length, 2);
   for (const sc of r.scripts) assert.doesNotThrow(() => new Function(sc.code!), sc.name);
   assert.deepEqual(r.warnings, []);
 });

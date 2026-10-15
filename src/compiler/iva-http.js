@@ -71,6 +71,18 @@ var IvaHttp = (() => {
   function boot() {
     if (window.__ivaBoot) return;
     window.__ivaBoot = true;
+    // iViewer's web views (Android) lay a page out as tall as nothing: height: 100% (html, body)
+    // comes out 0 - the window's height in pixels instead, now and on every resize
+    function fit(all) {
+      var h = innerHeight + 'px';
+      document.documentElement.style.height = h;
+      if (all && document.body) document.body.style.height = h;
+    }
+    function fitting(all) {
+      fit(all);
+      addEventListener('resize', function () { fit(all); });
+      if (!document.body) document.addEventListener('DOMContentLoaded', function () { fit(all); });
+    }
     var swatch = /\/iva-color\/([0-9a-f]{6})\/?$/i.exec(location.pathname);
     if (swatch) {
       var style = document.createElement('style');
@@ -78,6 +90,31 @@ var IvaHttp = (() => {
       document.head.appendChild(style);
       return;
     }
+    // what a page meets on the panel - its size, its errors - in the panel's log (iva serve shows it)
+    function report(m) {
+      try {
+        var x = new XMLHttpRequest();
+        x.open('GET', '/iva/log?m=' + encodeURIComponent(location.pathname + ': ' + m));
+        x.send();
+      } catch (e) {}
+    }
+    window.addEventListener('error', function (e) { report('error: ' + e.message + (e.filename ? ' (' + e.filename + ':' + e.lineno + ')' : '')); });
+    window.addEventListener('unhandledrejection', function (e) { report('error: ' + (e.reason && e.reason.message || e.reason)); });
+    // a canvas whose GPU went (a WebGL crash takes every web view's canvas with it): said, once each
+    window.addEventListener('webglcontextlost', function () { report('a WebGL context was lost'); }, true);
+    // what the page says is wrong (three.js: a shader that doesn't compile), the first few
+    var said = 0;
+    var cerror = console.error;
+    console.error = function () {
+      if (said++ < 5) report('console.error: ' + Array.prototype.map.call(arguments, String).join(' ').slice(0, 300));
+      return cerror.apply(console, arguments);
+    };
+    function size() {
+      return innerWidth + 'x' + innerHeight + ' dpr ' + devicePixelRatio + ', html ' + Math.round(document.documentElement.getBoundingClientRect().height) + 'px' +
+        (document.hidden ? ', hidden' : '');
+    }
+    report('loaded, ' + size());
+    setTimeout(function () { report('after 3 s, ' + size()); }, 3000);
     var name = location.pathname.replace(/\/+$/, '').split('/').pop();
     var tries = 0;
     // a page of the project (/iva-file/page.html): its HTML in the data, written over this page
@@ -91,6 +128,14 @@ var IvaHttp = (() => {
       document.open();
       document.write(data.file);
       document.close();
+      // the page's own height: its html as tall as the window (its body as it says)
+      fitting(false);
+      // how it's laid out where it is (the window, its timers stay)
+      setTimeout(function () {
+        var b = document.body, first = b && b.firstElementChild, r = first && first.getBoundingClientRect();
+        report('shown, ' + document.compatMode + ', body ' + (b ? getComputedStyle(b).display + ' ' + Math.round(b.getBoundingClientRect().height) + 'px' : 'none') +
+          (r ? ', first element at ' + Math.round(r.top) + ' (' + Math.round(r.height) + 'px)' : '') + ', ' + size());
+      }, 1000);
     }
     // the data is after this script, in the page's last script
     function unwrap(text) {
@@ -137,6 +182,8 @@ var IvaHttp = (() => {
       x.send();
     }
     function start() {
+      // this page (an app's): html and body as tall as the window
+      fitting(true);
       // the page's own data, when this answer is its own: the app's colour while it loads
       var own = null;
       try {
@@ -217,6 +264,10 @@ var IvaHttp = (() => {
   // ── the web server: web apps (/<name>/) and swatches (/iva-color/RRGGBB), one port ──
 
   let web = null;
+  // the server answers (its self-check passed): the web views get their URLs, what waited runs
+  let up = false;
+  const views = [];
+  const waiting = [];
   const apps = {};
   // the apps' scripts, read once, as JSON
   const kept = {};
@@ -337,6 +388,12 @@ var IvaHttp = (() => {
 
   /** The web server, on its TCP system: the first part of a path names the web app. */
   function webServe(req, res) {
+    // the server's self-check (IvaHttp.web); what a page reports (its size, its errors): the panel's log
+    if (req.path === '/iva/ping') return res.text('ok');
+    if (req.path === '/iva/log') {
+      CF.log(`web ${String(req.query.m || '').slice(0, 500)}`);
+      return res.text('ok');
+    }
     const parts = req.path.replace(/^\/+/, '').split('/');
     // a swatch: the boot page shows the colour its URL names
     if (parts[0] === 'iva-color') return res.page(null);
@@ -405,16 +462,72 @@ var IvaHttp = (() => {
     if (typeof IvaTheme !== 'undefined' && IvaTheme.onChange) IvaTheme.onChange(themeChanged);
   } });
 
+  /** the server answers: the web views load (their URLs set now - before, they'd show "failed"), then what waited */
+  function answered() {
+    if (up) return;
+    up = true;
+    for (const v of views) CF.setJoin(v.join, url(v.path));
+    for (const fn of waiting.splice(0)) {
+      try {
+        fn();
+      } catch (e) {
+        CF.log(`IvaHttp: ${e}`);
+      }
+    }
+  }
+
+  /**
+   * Asks the server itself until it answers. iViewer starts it a while after
+   * the page shows - on Android only once it's switched off and on (iva does
+   * so at start): not answering, it's switched off and on again now and then.
+   * A request iViewer leaves hanging doesn't hold the next one up.
+   */
+  function check(system, port) {
+    const at = [300, 700, 1200, 2000, 3000, 4500, 6500, 9000, 12000, 16000, 21000, 27000, 35000, 45000, 60000];
+    const restartAt = new Set([1500, 5000, 13000, 30000]);
+    const t0 = Date.now();
+    let n = 0;
+    const ask = () => {
+      if (up) return;
+      CF.request(`http://127.0.0.1:${port}/iva/ping?n=${++n}`, (status) => {
+        if (status === 200) answered();
+      });
+    };
+    for (const ms of at) setTimeout(ask, ms);
+    for (const ms of restartAt) {
+      setTimeout(() => {
+        if (up) return;
+        CF.log(`IvaHttp: the web server (${system}, port ${port}) doesn't answer after ${Math.round((Date.now() - t0) / 1000)} s - switching it off and on`);
+        CF.setSystemProperties(system, { enabled: false });
+        setTimeout(() => CF.setSystemProperties(system, { enabled: true }), 300);
+      }, ms);
+    }
+  }
+
+  const url = (path) => `http://127.0.0.1:${web ? web.port : 0}/${String(path).replace(/^\/+/, '')}`;
+
   return {
     serve,
-    /** the web server on its system and port (iva sets it up) */
+    /** the web server on its system and port (iva sets it up); it checks itself */
     web(system, port) {
       if (web) return;
       web = { system, port };
       serve(system, webServe);
+      check(system, port);
+    },
+    /** a web view on the web server: its URL join set to the page at `path` once the server answers */
+    view(join, path) {
+      if (views.some((v) => v.join === join)) return;
+      views.push({ join, path });
+      if (up) CF.setJoin(join, url(path));
+    },
+    /** fn() once the server answers (now, if it does): before, a web view would show "failed" */
+    ready(fn) {
+      if (up) fn();
+      else waiting.push(fn);
     },
     /** a page of the web server: http://127.0.0.1:<port>/<path> */
-    url: (path) => `http://127.0.0.1:${web ? web.port : 0}/${String(path).replace(/^\/+/, '')}`,
+    url,
     app,
     /** a function a web app can call (panel.call(name, ...args)): fn(...args, reply) returns the answer or replies later */
     handle(name, fnName, fn) {

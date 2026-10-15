@@ -127,13 +127,19 @@ Every request is logged, unknown ones in full (iViewer's cache-complete and
 debugger callbacks aren't documented).
 
 The same script brings the panel's log to the console - `CF.log`, script
-errors, what the panel's servers get and send, whether they answer - no
-remote debugger needed:
+errors, what the panel's servers get and send, whether they answer, and what
+its web pages meet (their size, their errors) - no remote debugger needed:
 
 ```
 [iva] panel 10.0.0.7: Javascript starting up. iViewer version: 5.0.7
 [iva] panel 10.0.0.7: IvaWeb on 127.0.0.1:8900 (5 s after start): 200 after 40 ms
+[iva] panel 10.0.0.7: web /trend_4a5f95be/: loaded, 495x355 dpr 2.5, html 355px
 ```
+
+On Android, iViewer (5.0.7) starts no system until it's switched off and on -
+a remote debugger does that, a plain start doesn't: no TCP client connects, no
+server listens. A project with iva's start code (iva/ui, web apps,
+`<OnStart>`) does it at start, for every system that hasn't connected.
 
 ## `iva decompile`
 

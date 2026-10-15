@@ -4,6 +4,7 @@
  * hoists subpages defined inline, and collects the files the .gui uses.
  */
 
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DEVICES, parseSize, PROPS, REQUIRED, sizeFolder, sizeLabel, STYLE_PROPS, type ScreenSize, type StyleProps, type Transition } from './components.js';
@@ -108,6 +109,28 @@ const PLACED = new Set([...ITEMS].filter((t) => t !== 'Gesture'));
 const HOISTED = new Set(['Script', 'OnStart']);
 const FEEDBACK: Record<string, string> = { none: '0', momentary: '1', toggle: '2' };
 
+/**
+ * iViewer 5 on Android (5.0.7 on Android 16, with or without a VPN) starts no
+ * system - no TCP client connects, no server listens - until it's switched
+ * off and on, as a remote debugger's connectToSystems does: so, once the
+ * scripts run, each one that hasn't connected by then. Not under a remote
+ * debugger (CF.debug), nor elsewhere (iOS, the preview).
+ */
+function restartSystems(names: string[]): string {
+  return `(function (names) {
+    if (CF.debug || !CF.device || CF.device.platform !== "Android") return;
+    var on = {};
+    names.forEach(function (n) { CF.watch(CF.ConnectionStatusChangeEvent, n, function (s, c) { if (c) on[n] = true; }, true); });
+    setTimeout(function () {
+      names.forEach(function (n) {
+        if (on[n]) return;
+        CF.setSystemProperties(n, { enabled: false });
+        setTimeout(function () { CF.setSystemProperties(n, { enabled: true }); }, 300);
+      });
+    }, 500);
+  })(${JSON.stringify(names)});`;
+}
+
 /** Children flattened: arrays and fragments opened, false/null/undefined dropped. */
 export function flat(children: Child[], out: (VNode | string)[] = []): (VNode | string)[] {
   for (const c of children) {
@@ -152,8 +175,8 @@ export class Builder {
   private topmost = new Set<XNode>();
   /** web apps by name: their code (one app per name), port, and what gets the port once it's known */
   private apps = new Map<string, string>();
-  /** the panel's web server (web apps, swatches): one system, one port; the web views on it, by path */
-  private web: { system: XNode; views: { x: XNode; path: string }[] } | null = null;
+  /** the panel's web server (web apps, swatches): one system, one port */
+  private web: { system: XNode } | null = null;
   /** <Project httpPort> */
   private httpPort: number | undefined;
   private appOptions: Record<string, { options: unknown; bg: string }> = {};
@@ -280,6 +303,8 @@ export class Builder {
       }
     }
     this.checkListCells();
+    // with iva's start code only: a .gui read back stays as it was
+    if (this.systems.length && this.start.length) this.start.push(restartSystems(this.systems.map((x) => x.attrs.find(([k]) => k === 'name')?.[1] ?? '')));
     if (this.start.length) {
       this.scripts.push({
         name: 'iva-start.js',
@@ -896,16 +921,23 @@ export class Builder {
   private webServer(node: VNode) {
     if (this.web) return this.web;
     this.httpRuntime(node);
-    this.web = { system: this.serverSystem(node, 'IvaWeb', 0), views: [] };
+    this.web = { system: this.serverSystem(node, 'IvaWeb', 0) };
     return this.web;
   }
 
-  /** A web view on the web server, `path` on it (http://127.0.0.1:<port>/<path>, once the port is known). */
+  /**
+   * A web view on the web server, `path` on it: its URL in a join (its own,
+   * or one of its path) that IvaHttp sets once the server answers - iViewer
+   * starts the server a while after the page shows (on Android only once
+   * it's switched off and on), and a web view that loads before shows
+   * "failed" for good.
+   */
   private webView(node: VNode, attrs: Attrs, path: string): XNode {
-    const web = this.webServer(node);
-    const view = this.E('web', { ...attrs, url: `http://127.0.0.1:0/${path}` });
-    web.views.push({ x: view, path });
-    return view;
+    this.webServer(node);
+    const join = attrs.j instanceof JoinSlot ? attrs.j : new JoinSlot('s', `iva_web_${createHash('md5').update(path).digest('hex').slice(0, 8)}`);
+    this.carried.add(`s:${join.id}`);
+    this.start.push(`IvaHttp.view(${this.jsJoin(join)}, ${JSON.stringify(path)});`);
+    return this.E('web', { ...attrs, j: join, url: '' });
   }
 
   /**
@@ -967,8 +999,7 @@ export class Builder {
 
   /**
    * The web server's port: <Project httpPort>, else the first free one from
-   * 8900 (after every port a system names). Its views get their URLs; it
-   * starts first.
+   * 8900 (after every port a system names). It starts first.
    */
   private assignPorts() {
     if (!this.web) return;
@@ -984,9 +1015,6 @@ export class Builder {
     if (this.httpPort !== undefined && taken.has(port)) throw new CompileError(`<Project httpPort={${port}}>: a system uses that port already`);
     while (taken.has(port)) port++;
     for (const entry of this.web.system.attrs) if (entry[0] === 'port' || entry[0] === 'origin') entry[1] = String(port);
-    for (const { x, path: at } of this.web.views) {
-      for (const entry of x.attrs) if (entry[0] === 'url') entry[1] = `http://127.0.0.1:${port}/${at}`;
-    }
     this.start.unshift(`IvaHttp.web("IvaWeb", ${port});`);
   }
 

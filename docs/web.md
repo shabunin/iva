@@ -74,6 +74,20 @@ web view http://127.0.0.1:8900/house/
   may run twice, if its answer reached another page first).
 - **Runtime themes.** With `<Project themes>`, an app's `options` and `bg` are
   kept per look; a switch reloads each app's page in the new look's.
+- **Started, then shown.** iViewer starts the server a while after the page
+  shows (on Android only once its system is switched off and on, which iva
+  does at start): the server asks itself (`/iva/ping`) until it answers, and
+  only then sets each web view's URL (a join of its own) - a web view that
+  loaded before would show "Loading ... failed" for good.
+- **As tall as the window.** iViewer's web views on Android lay a page out as
+  tall as nothing: CSS `height: 100%` on `html` / `body` comes out 0 (and with
+  `overflow: hidden`, a chart or a 3D view is clipped away). The boot page
+  sets them to the window's height in pixels, on load and on every resize; a
+  page of the project (`<Web url="page.html">`) gets its `html` so. In your
+  own CSS, size from `window.innerHeight` rather than `vh`.
+- **What a page meets on the panel** - its size, its JavaScript errors, the
+  first `console.error`s, a lost WebGL context - goes to the panel's log
+  (`/iva/log`): `iva serve` shows it in its console, with the panel's own.
 
 ## `iva/web`
 

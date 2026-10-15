@@ -356,16 +356,20 @@ test('<WebApp>: bundled into the build, a web view on the panel\'s one web serve
   // one server for all of them: the first free port from 8900 (the HttpServer has 8900); an app at /<name>/
   assert.equal((r.xml.match(/<system name="IvaWeb" ip="0\.0\.0\.0" port="8901" origin="8901" protocol="tcp" alwayson="1" offlinequeue="0" accept="1"/g) ?? []).length, 1);
   assert.equal((r.xml.match(/<system /g) ?? []).length, 2);
-  assert.equal((r.xml.match(/<web [^>]*url="http:\/\/127\.0\.0\.1:8901\/app\/"/g) ?? []).length, 2);
-  assert.match(r.xml, /<web x="500" [^>]*url="http:\/\/127\.0\.0\.1:8901\/app\/"/);
-  assert.match(r.xml, /<web [^>]*url="http:\/\/127\.0\.0\.1:8901\/energy\/"/);
-  assert.match(r.xml, /<web [^>]*url="http:\/\/127\.0\.0\.1:8901\/iva-color\/FFB000"/);
+  // the web views: no URL in the .gui - a join IvaHttp sets once the server answers (loaded before, they'd show "failed")
+  const views = [...r.xml.matchAll(/<web [^>]*j="(\d+)"[^>]*url=""/g)].map((m) => m[1]);
+  assert.equal(views.length, 4);
+  assert.equal(new Set(views).size, 3, 'the app placed twice: one join');
+  assert.match(r.xml, /<web x="500" [^>]*url=""/);
   assert.match(r.xml, /<system name="api" [^>]*port="8900"[^>]*offlinequeue="0" accept="1"[\s\S]*?<fb name="request" regex="\(\?msi\)\^\.\*\?\\r\\n\\r\\n" \/>/);
   assert.deepEqual(r.scripts.map((x) => x.name), ['iva-joins.js', 'iva-http.js', 'iva-start.js']);
   for (const sc of r.scripts) assert.doesNotThrow(() => new Function(sc.code!), sc.name);
   const start = r.scripts.find((x) => x.name === 'iva-start.js')!.code!;
-  // the server first, then the apps
+  // the server first, then the apps; each web view's page once it answers
   assert.ok(start.indexOf('IvaHttp.web("IvaWeb", 8901);') < start.indexOf('IvaHttp.app('));
+  for (const path of ['app/', 'energy/', 'iva-color/FFB000']) assert.match(start, new RegExp(`IvaHttp\\.view\\(Joins\\.s\\["iva_web_[0-9a-f]{8}"\\], "${path}"\\);`), path);
+  // iViewer on Android starts systems once they're switched off and on: so, once the scripts run (not under a debugger)
+  assert.match(start, /if \(CF\.debug \|\| !CF\.device \|\| CF\.device\.platform !== "Android"\) return;[\s\S]*CF\.setSystemProperties\(n, \{ enabled: false \}\)[\s\S]*\}\)\(\["api","IvaWeb"\]\);/);
   assert.equal(start.match(/IvaHttp\.app\("app"/g)!.length, 1);
   assert.match(start, /joins: \{ "lamp": Joins\.d\["lamp"\], "temp": "a12" \}, options: \{"rooms":2\}/);
   assert.match(start, /IvaHttp\.serve\("api", myApi\);/);
@@ -376,7 +380,7 @@ test('<WebApp>: bundled into the build, a web view on the panel\'s one web serve
   </Project>
 );`);
   assert.match(fixed.xml, /<system name="IvaWeb" [^>]*port="9100"/);
-  assert.match(fixed.xml, /url="http:\/\/127\.0\.0\.1:9100\/energy\/"/);
+  assert.match(fixed.scripts.find((x) => x.name === 'iva-start.js')!.code!, /IvaHttp\.web\("IvaWeb", 9100\);/);
 });
 
 test('<WebApp>: one app per name; the entry must exist and build', async () => {
@@ -514,7 +518,8 @@ test('joins only scripts use get a hidden element each (iViewer knows no other);
   assert.doesNotMatch(holder[1], new RegExp(`<btn j="${joins.digital.lamp}"`));
   // placed, hidden, on the start page
   assert.match(r.xml, /<page name="Main"[\s\S]*<subpage name="iva_joins" x="0" y="0"[^>]*v="0"/);
-  // the web view: the panel's web server, the file by name
-  assert.match(r.xml, /<web [^>]*url="http:\/\/127\.0\.0\.1:8900\/iva-file\/page\.html"/);
+  // the web view: the panel's web server, the file by name - its URL once the server answers
+  assert.match(r.xml, /<web [^>]*j="\d+"[^>]*url=""/);
+  assert.match(r.scripts.find((x) => x.name === 'iva-start.js')!.code!, /IvaHttp\.view\(Joins\.s\["iva_web_[0-9a-f]{8}"\], "iva-file\/page\.html"\);/);
   assert.match(r.xml, /<system name="IvaWeb"/);
 });

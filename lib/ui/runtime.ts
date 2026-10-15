@@ -394,7 +394,8 @@ var IvaUI = (function () {
         c.last = Date.now();
         if (c.pending === c.sent) return;
         c.sent = c.pending;
-        CF.setJoin(o.url, IvaHttp.url('iva-color/' + c.sent.slice(1)));
+        // once the panel's web server answers (before, the web view would show "failed")
+        IvaHttp.ready(function () { CF.setJoin(o.url, IvaHttp.url('iva-color/' + c.sent.slice(1))); });
       }, wait);
     },
     /** a text field's placeholder (a serial join): shown while the field (input) is empty */
