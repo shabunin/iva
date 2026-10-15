@@ -30,3 +30,21 @@ test("in a list item, a button's text joins are the item's own (each item its s1
   const page = (r.createNode(node) as any).cfNode;
   assert.deepEqual([page.j, page.inactive_s, page.active_s], ['1', '1', '2']);
 });
+
+test("CF.setProperties' curves: CF's constants (ANIMATION_CURVE_EASE_IN ...) and plain names", async () => {
+  const { easeOf } = await import('../src/runtime/cf/renderer.ts');
+  assert.equal(easeOf('ANIMATION_CURVE_EASE_IN'), 'easeIn');
+  assert.equal(easeOf('ANIMATION_CURVE_EASE_OUT'), 'easeOut');
+  assert.equal(easeOf('ANIMATION_CURVE_EASE_IN_OUT'), 'easeInOut');
+  assert.equal(easeOf('ANIMATION_CURVE_LINEAR'), 'linear');
+  assert.equal(easeOf('easeInOut'), 'easeInOut');
+  assert.equal(easeOf(undefined), 'linear');
+});
+
+test('xrotation / yrotation (3D) drawn as a scale: an edge at 90°, the back mirrored past it, with its own scale', async () => {
+  const { drawnScale } = await import('../src/runtime/cf/renderer.ts');
+  assert.deepEqual(drawnScale({ x: 1, y: 1 }, { x: 0, y: 0 }), { x: 1, y: 1 });
+  assert.deepEqual(drawnScale({ x: 1, y: 1 }, { x: 0, y: 90 }), { x: 0, y: 1 });
+  assert.deepEqual(drawnScale({ x: 1.5, y: 1 }, { x: 0, y: 180 }), { x: -1.5, y: 1 });
+  assert.equal(Math.round(drawnScale({ x: 1, y: 2 }, { x: 60, y: 0 }).y * 100) / 100, 1);
+});

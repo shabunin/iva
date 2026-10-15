@@ -24,6 +24,23 @@ import { bindGestures } from './components/Gestures';
 const activeAnimations = new Set<AnimationPlaybackControlsWithThen>();
 const animsByTarget = new WeakMap<object, Set<AnimationPlaybackControlsWithThen>>();
 
+/** CF's animation curve (CF.AnimationCurveEaseIn is "ANIMATION_CURVE_EASE_IN"; "easeIn" too) as an ease. */
+export function easeOf(curve: unknown): 'linear' | 'easeIn' | 'easeOut' | 'easeInOut' {
+  const c = String(curve ?? '').toLowerCase().replace(/[^a-z]/g, '');
+  return c.endsWith('easeinout') ? 'easeInOut' : c.endsWith('easein') ? 'easeIn' : c.endsWith('easeout') ? 'easeOut' : 'linear';
+}
+
+/**
+ * The scale an element is drawn at: its own (scale / xscale / yscale) and its
+ * turn about the X and Y axes (xrotation / yrotation: iViewer's 3D rotations,
+ * here as seen from afar - narrowing to an edge at 90°, its back past it).
+ */
+export function drawnScale(scale: { x: number; y: number }, rotation: { x: number; y: number }): { x: number; y: number } {
+  const rad = Math.PI / 180;
+  const f = (v: number) => (Math.abs(v) < 1e-9 ? 0 : v);
+  return { x: f(scale.x * Math.cos(rotation.y * rad)), y: f(scale.y * Math.cos(rotation.x * rad)) };
+}
+
 export function trackAnimation<T extends object>(target: T, a: AnimationPlaybackControlsWithThen) {
   activeAnimations.add(a);
   let set = animsByTarget.get(target);
@@ -285,10 +302,8 @@ export class CFRenderer {
         return;
       }
 
-      let ease: 'linear' | 'easeIn' | 'easeOut' | 'easeInOut' = "linear";
-      if (curve === "easein") ease = "easeIn";
-      else if (curve === "easeout") ease = "easeOut";
-      else if (curve === "easeinout") ease = "easeInOut";
+      // CF.AnimationCurveEaseIn ... (it was always linear: the constants are ANIMATION_CURVE_...)
+      const ease = easeOf(curve);
 
       activeContainers.forEach(c => {
         const targetProps: any = {};
@@ -302,15 +317,22 @@ export class CFRenderer {
         if (change.w !== undefined) targetProps.width = change.w;
         if (change.h !== undefined) targetProps.height = change.h;
 
-        let xScaleTarget = change.xscale !== undefined ? change.xscale : (change.scale !== undefined ? change.scale : undefined);
-        let yScaleTarget = change.yscale !== undefined ? change.yscale : (change.scale !== undefined ? change.scale : undefined);
+        const xScaleTarget = change.xscale !== undefined ? change.xscale : (change.scale !== undefined ? change.scale : undefined);
+        const yScaleTarget = change.yscale !== undefined ? change.yscale : (change.scale !== undefined ? change.scale : undefined);
+        // its scale and its turn about X and Y (3D rotations), drawn as one scale
+        const look = ((c as any).cfLook ??= { scale: { x: c.scale.x, y: c.scale.y }, rotation: { x: 0, y: 0 } });
+        if (xScaleTarget !== undefined) look.scale.x = xScaleTarget;
+        if (yScaleTarget !== undefined) look.scale.y = yScaleTarget;
+        if (change.xrotation !== undefined) look.rotation.x = Number(change.xrotation) || 0;
+        if (change.yrotation !== undefined) look.rotation.y = Number(change.yrotation) || 0;
+        const scaled = xScaleTarget !== undefined || yScaleTarget !== undefined || change.xrotation !== undefined || change.yrotation !== undefined;
+        const to = drawnScale(look.scale, look.rotation);
 
         if (duration > 0 || delay > 0) {
           if (Object.keys(targetProps).length > 0) {
             trackAnimation(c, animate(c, targetProps, { duration, delay, ease }));
           }
-          if (xScaleTarget !== undefined) trackAnimation(c.scale, animate(c.scale, { x: xScaleTarget }, { duration, delay, ease }));
-          if (yScaleTarget !== undefined) trackAnimation(c.scale, animate(c.scale, { y: yScaleTarget }, { duration, delay, ease }));
+          if (scaled) trackAnimation(c.scale, animate(c.scale, { x: to.x, y: to.y }, { duration, delay, ease }));
         } else {
           if (targetProps.angle !== undefined) c.angle = targetProps.angle;
           if (targetProps.alpha !== undefined) c.alpha = targetProps.alpha;
@@ -318,8 +340,7 @@ export class CFRenderer {
           if (targetProps.y !== undefined) c.y = targetProps.y;
           if (targetProps.width !== undefined) c.width = targetProps.width;
           if (targetProps.height !== undefined) c.height = targetProps.height;
-          if (xScaleTarget !== undefined) c.scale.x = xScaleTarget;
-          if (yScaleTarget !== undefined) c.scale.y = yScaleTarget;
+          if (scaled) c.scale.set(to.x, to.y);
         }
       });
     });
@@ -462,6 +483,8 @@ export class CFRenderer {
             y: node.y,
             w: effW,
             h: effH,
+            xrotation: 0,
+            yrotation: 0,
             zrotation: 0,
             opacity: 1,
             scale: 1.0,
@@ -492,6 +515,8 @@ export class CFRenderer {
             y: node.y,
             w: effW,
             h: effH,
+            xrotation: 0,
+            yrotation: 0,
             zrotation: 0,
             opacity: 1,
             scale: 1.0,
