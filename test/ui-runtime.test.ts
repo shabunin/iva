@@ -174,6 +174,20 @@ test('TimePicker: the field, the drums, OK writes the hour and minute', () => {
   assert.deepEqual([joins.a1, joins.a2, joins.s1, joins.d1], [8, 15, '08:15', 0]);
 });
 
+test('TimePicker: OK while a drum still turns (let go a moment ago, no end yet) takes where it has got to', () => {
+  for (const scale of [1, 3]) {
+    const { IvaUI, joins, tops } = panel({ scale });
+    const drums = [{ list: 'l1', values: Array.from({ length: 24 }, (_, i) => pad(i)) }, { list: 'l2', values: Array.from({ length: 12 }, (_, i) => pad(i * 5)) }];
+    IvaUI.picker('t', { kind: 'time', open: 'd1', label: 's1', rowH: 48, watch: ['a1', 'a2'], step: 5, ampm: false, value: '07:30', drums });
+    IvaUI.pickerOpen('t');
+    // flung: still turning, between rows
+    tops.l1 = 13.3;
+    tops.l2 = 2.8;
+    IvaUI.pickerOk('t');
+    assert.deepEqual([joins.a1, joins.a2, joins.s1, joins.d1], [13, 15, '13:15', 0], `scale ${scale}`);
+  }
+});
+
 test('TimePicker: 12 hours and AM / PM', () => {
   const { IvaUI, joins } = panel();
   const drums = [{ list: 'l1', values: [] }, { list: 'l2', values: [] }, { list: 'l3', values: ['AM', 'PM'] }].map((d, k) => ({

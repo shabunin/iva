@@ -34,6 +34,17 @@ var IvaUI = (function () {
       if (Math.abs(Number(first) - row) <= 1 && isFinite(pos) && pos > 0) listScale = pos / (row * rowH);
     });
   }
+  // where a picker's drum k is (listInfo): the row nearest the middle - in listInfo's unit when it's
+  // learnt, else the first row shown - and whether it's right on it (null: the unit isn't known)
+  function drumAt(p, k, cb) {
+    var h = p.o.rowH, n = p.o.drums[k].values.length;
+    CF.listInfo(p.o.drums[k].list, function (l, count, first, visible, pos) {
+      pos = Number(pos);
+      var unit = listScale * h, known = unit > 0 && isFinite(pos);
+      var i = clamp(known ? Math.round(pos / unit) : Number(first) || 0, 0, n - 1);
+      cb(i, known ? Math.abs(pos - i * unit) <= unit * 0.02 : null);
+    });
+  }
   function rowsOf(list) {
     CF.watch(CF.ListWillStartScrollingEvent, list, function () { if (pressed[list]) pressed[list].moved = true; });
   }
@@ -464,7 +475,7 @@ var IvaUI = (function () {
      * count a sliver of the row above as the first shown) turns back to it.
      */
     picker: function (id, o) {
-      var p = pickers[id] = { o: o, kind: KINDS[o.kind], rows: [], to: [] };
+      var p = pickers[id] = { o: o, kind: KINDS[o.kind], rows: [], to: [], turned: [] };
       for (var k = 0; k < o.drums.length; k++) {
         var dr = o.drums[k], items = [{ subpage: dr.row, s1: '' }, { subpage: dr.row, s1: '' }];
         for (var i = 0; i < dr.values.length; i++) items.push({ subpage: dr.row, s1: dr.values[i] });
@@ -509,16 +520,34 @@ var IvaUI = (function () {
       var p = pickers[id];
       IvaUI.drumTo(id, p.kind.rows(p.o, p.kind.now(p.o)), true);
     },
+    /**
+     * OK: the drums' values, each where it is now - one still turning (let go
+     * a moment ago, before its end snapped it) counts where it's got to; one a
+     * script turns (Now, a tap on a row) where it's going
+     */
     pickerOk: function (id) {
-      var p = pickers[id], o = p.o, v = p.kind.values(o, p.rows);
-      for (var k = 0; k < o.watch.length; k++) CF.setJoin(o.watch[k], v[k]);
-      CF.setJoin(o.open, 0);
+      var p = pickers[id], o = p.o, left = o.drums.length;
+      function done() {
+        var v = p.kind.values(o, p.rows);
+        for (var n = 0; n < o.watch.length; n++) CF.setJoin(o.watch[n], v[n]);
+        CF.setJoin(o.open, 0);
+      }
+      if (!left) return done();
+      for (var k = 0; k < o.drums.length; k++) {
+        (function (k) {
+          drumAt(p, k, function (i) {
+            if (Date.now() - (p.turned[k] || 0) > 400) p.rows[k] = i;
+            if (--left === 0) done();
+          });
+        })(k);
+      }
     },
     /** turn the drums to these rows */
     drumTo: function (id, rows, animated) {
       var p = pickers[id];
       for (var k = 0; k < p.o.drums.length; k++) {
         p.rows[k] = p.to[k] = clamp(Math.round(rows[k] || 0), 0, p.o.drums[k].values.length - 1);
+        p.turned[k] = animated ? Date.now() : 0;
         CF.listScroll(p.o.drums[k].list, p.rows[k], CF.TopPosition, !!animated);
       }
     },
@@ -530,15 +559,11 @@ var IvaUI = (function () {
     drumSnap: function (list) {
       var at = drumOf[list];
       if (!at) return;
-      var p = pickers[at.id], h = p.o.rowH, n = p.o.drums[at.k].values.length;
-      CF.listInfo(list, function (l, count, first, visible, pos) {
-        pos = Number(pos);
-        first = Number(first) || 0;
-        var unit = listScale * h, known = unit > 0 && isFinite(pos);
-        var i = clamp(known ? Math.round(pos / unit) : first, 0, n - 1);
+      var p = pickers[at.id];
+      drumAt(p, at.k, function (i, on) {
         p.rows[at.k] = i;
         // not right on it: turned to it (the unit not known: once - this ends a turn too)
-        if (known ? Math.abs(pos - i * unit) > unit * 0.02 : p.to[at.k] !== i) {
+        if (on === null ? p.to[at.k] !== i : !on) {
           p.to[at.k] = i;
           CF.listScroll(list, i, CF.TopPosition, true);
         }
@@ -553,6 +578,7 @@ var IvaUI = (function () {
       var p = pickers[at.id], i = Number(index) - 2;
       if (i < 0 || i >= p.o.drums[at.k].values.length) return;
       p.rows[at.k] = p.to[at.k] = i;
+      p.turned[at.k] = Date.now();
       CF.listScroll(list, i, CF.TopPosition, true);
     },
     /** a number field: the value in o.join (min..max as 0..65535), typed on a keypad (shown in o.display) */
