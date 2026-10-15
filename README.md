@@ -151,6 +151,13 @@ assets) rebuilds it and reloads the page; other files (logs, dist/) don't.
 Options: `--port`, `--host 0.0.0.0` (preview from a tablet on the LAN),
 `-v` (log sockets).
 
+The toolbar over the panel: reload, landscape / portrait (greyed out when
+the GUI has no such layout), outline (element bounds, names on hover), an
+FPS box, zoom (−, the zoom: a tap goes between fit and 100 %, +; also
+Ctrl+wheel, ⌘/Ctrl +, −, 0) and the hand (drag the view; H, or hold Space;
+the middle button drags too), fullscreen. Outline and FPS stay on across
+reloads. Ctrl+M hides it.
+
 One Node process serves:
 
 ```

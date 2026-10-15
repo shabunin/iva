@@ -52,6 +52,8 @@ main {
   aspect-ratio: 1024 / 768;
 }
 #stage:fullscreen { width: 100vw; height: 100vh; aspect-ratio: auto; display: flex; align-items: center; justify-content: center; }
+/* what zoom and the hand move (the toolbar transforms it; the stage clips it) */
+#view { position: absolute; inset: 0; }
 /* Pixi (autoDensity) sets the canvas size inline; the stage decides it */
 #canvas { display: block; width: 100% !important; height: 100% !important; object-fit: contain; }
 #errors { margin-left: auto; color: var(--err); cursor: help; white-space: nowrap; }

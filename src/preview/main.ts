@@ -92,6 +92,7 @@ function setOrientation(o: Orientation) {
   const { w, h } = size(o);
   current.app.renderer.resize(w, h);
   if (current.renderer.currentPageName) current.renderer.navigate(current.renderer.currentPageName, o);
+  current.menu?.followOrientation(o);
   fitStage();
 }
 
@@ -154,6 +155,10 @@ async function boot(gui: string) {
       host: { reload: () => location.reload() },
     },
   });
+  // a GUI with one orientation: the renderer showed the other while loading - the panel's size follows
+  const turned = current.renderer.targetOrientation as Orientation | undefined;
+  const want = size(turned ?? orientation);
+  if (turned && (turned !== orientation || current.app.screen.width !== want.w || current.app.screen.height !== want.h)) setOrientation(turned);
   fitStage();
   const warn = m.missingScripts.length ? ` · missing scripts: ${m.missingScripts.join(', ')}` : '';
   // how a link got here (cf://... -> the project's own .gui)

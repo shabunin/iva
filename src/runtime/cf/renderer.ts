@@ -78,6 +78,8 @@ export class CFRenderer {
   loadGui?: (url: string, settings: Record<string, unknown>) => void;
   /** the page to show first instead of the GUI's start page */
   startPage?: string;
+  /** the frame rate shown (setShowFps) */
+  showFps = false;
   fpsContainer?: Container;
   fpsText?: Text;
   fpsBg?: Graphics;
@@ -86,10 +88,6 @@ export class CFRenderer {
   tooltipContainer?: Container;
   tooltipText?: Text;
   tooltipBg?: Graphics;
-
-  private isPanning = false;
-  private lastPanX = 0;
-  private lastPanY = 0;
 
   constructor(app: Application, project: CFProject, imageMap: Record<string, string>) {
     this.app = app;
@@ -110,66 +108,57 @@ export class CFRenderer {
     // Removed old prepopulation of joins as per user request
   }
 
+  /** The frame rate in the top-right corner (the toolbar's FPS box): on its own, not part of the outline mode. */
+  setShowFps(on: boolean) {
+    this.showFps = on;
+    if (on && !this.fpsContainer) {
+      this.fpsContainer = new Container();
+      this.fpsContainer.zIndex = 9999;
+
+      this.fpsBg = new Graphics();
+      this.fpsContainer.addChild(this.fpsBg);
+
+      this.fpsText = new Text({
+        text: 'FPS: 00',
+        style: new TextStyle({ fill: '#B200FF', fontSize: 18, fontWeight: 'bold' })
+      });
+      this.fpsContainer.addChild(this.fpsText);
+
+      this.app.stage.addChild(this.fpsContainer);
+      this.app.stage.sortableChildren = true;
+
+      this.fpsTicker = () => {
+        if (this.fpsText && this.fpsBg && this.fpsContainer) {
+          this.fpsText.text = `FPS: ${Math.round(this.app.ticker.FPS)}`;
+
+          // Re-draw background
+          this.fpsBg.clear();
+          this.fpsBg.rect(0, 0, this.fpsText.width + 10, this.fpsText.height + 6);
+          this.fpsBg.fill({ color: 0x000000, alpha: 0.7 });
+
+          this.fpsText.x = 5;
+          this.fpsText.y = 3;
+
+          // Position at top-right
+          this.fpsContainer.x = this.app.screen.width - this.fpsContainer.width - 10;
+          this.fpsContainer.y = 10;
+        }
+      };
+      this.app.ticker.add(this.fpsTicker);
+    }
+    if (this.fpsContainer) this.fpsContainer.visible = on;
+  }
+
   setDebugMode(val: boolean) {
     this.debugMode = val;
-    
+
     if (val) {
-      if (!this.fpsContainer) {
-        this.fpsContainer = new Container();
-        this.fpsContainer.zIndex = 9999;
-        
-        this.fpsBg = new Graphics();
-        this.fpsContainer.addChild(this.fpsBg);
 
-        this.fpsText = new Text({
-          text: 'FPS: 00',
-          style: new TextStyle({ fill: '#B200FF', fontSize: 18, fontWeight: 'bold' })
-        });
-        this.fpsContainer.addChild(this.fpsText);
-
-        this.app.stage.addChild(this.fpsContainer);
-        this.app.stage.sortableChildren = true;
-
-        this.fpsTicker = () => {
-          if (this.fpsText && this.fpsBg && this.fpsContainer) {
-            this.fpsText.text = `FPS: ${Math.round(this.app.ticker.FPS)}`;
-            
-            // Re-draw background
-            this.fpsBg.clear();
-            this.fpsBg.rect(0, 0, this.fpsText.width + 10, this.fpsText.height + 6);
-            this.fpsBg.fill({ color: 0x000000, alpha: 0.7 });
-            
-            this.fpsText.x = 5;
-            this.fpsText.y = 3;
-
-            // Position at top-right
-            this.fpsContainer.x = this.app.screen.width - this.fpsContainer.width - 10;
-            this.fpsContainer.y = 10;
-          }
-        };
-        this.app.ticker.add(this.fpsTicker);
-      }
-      this.fpsContainer.visible = true;
-
-      // Add DOM event listeners for Pan & Zoom
-      if (this.app.canvas) {
-        this.app.canvas.addEventListener('wheel', this.onWheel);
-        this.app.canvas.addEventListener('pointerdown', this.onPointerDown);
-        window.addEventListener('pointermove', this.onPointerMove);
-        window.addEventListener('pointerup', this.onPointerUp);
-      }
+      // the tooltip follows the pointer (zoom and the hand are the toolbar's)
+      window.addEventListener('pointermove', this.onPointerMove);
 
     } else {
-      if (this.fpsContainer) {
-        this.fpsContainer.visible = false;
-      }
-      // Remove DOM event listeners
-      if (this.app.canvas) {
-        this.app.canvas.removeEventListener('wheel', this.onWheel);
-        this.app.canvas.removeEventListener('pointerdown', this.onPointerDown);
-        window.removeEventListener('pointermove', this.onPointerMove);
-        window.removeEventListener('pointerup', this.onPointerUp);
-      }
+      window.removeEventListener('pointermove', this.onPointerMove);
       
       if (this.tooltipContainer) {
         this.tooltipContainer.visible = false;
@@ -181,55 +170,14 @@ export class CFRenderer {
     }
   }
 
-  // Camera Handlers
-  private onWheel = (e: WheelEvent) => {
-    if (!this.debugMode || !this.currentContainer) return;
-    if (e.ctrlKey) {
-      e.preventDefault(); // Stop browser zoom
-      const zoomFactor = 1.1;
-      const direction = e.deltaY > 0 ? (1 / zoomFactor) : zoomFactor;
-      
-      const rect = this.app.canvas.getBoundingClientRect();
-      const pointerX = e.clientX - rect.left;
-      const pointerY = e.clientY - rect.top;
-      
-      const localX = (pointerX - this.currentContainer.x) / this.currentContainer.scale.x;
-      const localY = (pointerY - this.currentContainer.y) / this.currentContainer.scale.y;
-
-      this.currentContainer.scale.x *= direction;
-      this.currentContainer.scale.y *= direction;
-
-      this.currentContainer.x = pointerX - localX * this.currentContainer.scale.x;
-      this.currentContainer.y = pointerY - localY * this.currentContainer.scale.y;
-    }
-  };
-
-  private onPointerDown = (e: PointerEvent) => {
-    if (!this.debugMode || !this.currentContainer) return;
-    if (e.button === 1) { // Middle mouse
-      e.preventDefault();
-      this.isPanning = true;
-      this.lastPanX = e.clientX;
-      this.lastPanY = e.clientY;
-      this.app.canvas.style.cursor = 'grabbing';
-    }
-  };
-
+  // the tooltip follows the pointer
   private onPointerMove = (e: PointerEvent) => {
-    if (this.isPanning && this.currentContainer) {
-      const dx = e.clientX - this.lastPanX;
-      const dy = e.clientY - this.lastPanY;
-      this.currentContainer.x += dx;
-      this.currentContainer.y += dy;
-      this.lastPanX = e.clientX;
-      this.lastPanY = e.clientY;
-    }
-    
-    // Update tooltip position if visible
     if (this.tooltipContainer && this.tooltipContainer.visible) {
+      // screen pixels to the panel's (the canvas fitted, maybe zoomed)
       const rect = this.app.canvas.getBoundingClientRect();
-      let posX = e.clientX - rect.left + 15;
-      let posY = e.clientY - rect.top + 15;
+      const k = rect.width ? this.app.screen.width / rect.width : 1;
+      let posX = (e.clientX - rect.left) * k + 15;
+      let posY = (e.clientY - rect.top) * k + 15;
       
       // Keep tooltip on screen
       if (posX + this.tooltipContainer.width > this.app.screen.width) {
@@ -241,13 +189,6 @@ export class CFRenderer {
       
       this.tooltipContainer.x = posX;
       this.tooltipContainer.y = posY;
-    }
-  };
-
-  private onPointerUp = (e: PointerEvent) => {
-    if (e.button === 1 && this.isPanning) {
-      this.isPanning = false;
-      this.app.canvas.style.cursor = 'auto';
     }
   };
 
@@ -298,12 +239,7 @@ export class CFRenderer {
     if (this.fpsTicker) {
       this.app.ticker.remove(this.fpsTicker);
     }
-    if (this.app && this.app.canvas) {
-      this.app.canvas.removeEventListener('wheel', this.onWheel);
-      this.app.canvas.removeEventListener('pointerdown', this.onPointerDown);
-      window.removeEventListener('pointermove', this.onPointerMove);
-      window.removeEventListener('pointerup', this.onPointerUp);
-    }
+    window.removeEventListener('pointermove', this.onPointerMove);
     if (this.app) {
       try {
         this.app.destroy({ removeView: false }, { children: true });

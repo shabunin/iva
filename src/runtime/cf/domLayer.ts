@@ -245,8 +245,10 @@ export class DomLayer {
     const canvas = this.renderer.app.canvas;
     const r = canvas.getBoundingClientRect();
     const { sx, sy, ox, oy } = this.fit;
-    const x = (e.clientX - r.left - canvas.clientLeft - ox) / sx;
-    const y = (e.clientY - r.top - canvas.clientTop - oy) / sy;
+    // a zoomed view (a CSS transform on the canvas's box): screen pixels to its layout pixels
+    const k = canvas.offsetWidth ? r.width / canvas.offsetWidth : 1;
+    const x = ((e.clientX - r.left) / k - canvas.clientLeft - ox) / sx;
+    const y = ((e.clientY - r.top) / k - canvas.clientTop - oy) / sy;
     const over = this.itemAt(x, y);
     if (over && !this.routed) {
       canvas.style.pointerEvents = 'none';
