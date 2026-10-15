@@ -1,3 +1,5 @@
 node_modules/
 dist/
 fixtures/DemoUserInterfaces/
+panel/src-tauri/target/
+panel/src-tauri/gen/schemas/

@@ -146,6 +146,12 @@ a remote debugger does that, a plain start doesn't: no TCP client connects, no
 server listens. A project with iva's start code (iva/ui, web apps,
 `<OnStart>`) does it at start, for every system that hasn't connected.
 
+iViewer for Android isn't maintained any more, and 5.0.7 crashes on Android
+16 once a page whose gestures were touched goes away. [panel/](panel/README.md)
+is an app of iva's own for the panel instead: the GUI on iva's runtime, full
+screen, real sockets from the app (Tauri, Android APK from CI). Give it
+`iva serve`'s address and it reloads with every build too.
+
 ## `iva decompile`
 
 An existing project (from GUI Designer, or anywhere) into JSX:

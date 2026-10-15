@@ -38,6 +38,11 @@
   "include": [
     "src",
     "test",
-    "lib"
+    "lib",
+    "panel"
+  ],
+  "exclude": [
+    "panel/dist",
+    "panel/src-tauri"
   ]
 }

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <title>iva panel</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div id="stage"><div id="view"><canvas id="canvas"></canvas></div></div>
+    <div id="status"></div>
+    <form id="settings" hidden>
+      <h1>iva panel</h1>
+      <label for="url">GUI</label>
+      <input id="url" type="text" inputmode="url" placeholder="http://192.168.1.10:8019" autocomplete="off" autocapitalize="off" spellcheck="false" />
+      <p class="hint">A .gui or a zipped GUI on a web server (http://, cf://), or <code>iva serve</code>'s address.</p>
+      <div class="row">
+        <button type="submit">Load</button>
+        <button type="button" id="cancel">Back</button>
+      </div>
+      <p class="hint">Settings again: hold three fingers on the screen, or a finger in the top-left corner, or press F1.</p>
+      <pre id="errors"></pre>
+      <p id="about"></p>
+    </form>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

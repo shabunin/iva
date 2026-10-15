@@ -1,0 +1,36 @@
+[package]
+name = "iva-panel"
+version = "0.1.0"
+description = "iva panel: iViewer (.gui) projects on iva's own runtime"
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "iva_panel_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+# The host (src/plugins) is agapi's src-tauri/src/plugins/{net,http}: the same
+# crates, without mDNS, Bluetooth and the device plugins.
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+# devtools: the web inspector in release builds too (chrome://inspect over adb)
+tauri = { version = "2", features = ["devtools"] }
+tauri-plugin-log = "2"
+tauri-plugin-http = { version = "2", features = ["dangerous-settings", "unsafe-headers", "rustls-tls-webpki-roots"] }
+tauri-plugin-websocket = "2"
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1", features = ["v4"] }
+socket2 = { version = "0.5", features = ["all"] }
+axum = { version = "0.8.4", features = ["ws"] }
+bytes = "1"
+tokio-util = "0.7"
+futures-util = "0.3"
+tokio-rustls = "0.26"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "0.26"
+rustls-pki-types = "1"

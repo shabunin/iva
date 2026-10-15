@@ -11,7 +11,11 @@
     "dev": "node bin/iva.mjs dev",
     "fixtures": "git clone --depth 1 https://github.com/CommandFusion/DemoUserInterfaces fixtures/DemoUserInterfaces",
     "lint": "node scripts/lint.mjs",
-    "test": "node --test --import tsx test/*.test.ts"
+    "test": "node --test --import tsx test/*.test.ts",
+    "tauri": "tauri",
+    "panel:dev": "vite --config panel/vite.config.ts",
+    "panel:build": "vite build --config panel/vite.config.ts",
+    "panel:android": "cd panel && tauri android build --apk"
   },
   "dependencies": {
     "@fortawesome/free-brands-svg-icons": "^6.7.2",
@@ -32,6 +36,10 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@tauri-apps/api": "^2.12.4",
+    "@tauri-apps/cli": "^2.12.3",
+    "@tauri-apps/plugin-http": "^2.8.3",
+    "@tauri-apps/plugin-websocket": "^2.5.0",
     "@types/node": "^22.14.0",
     "@types/qrcode": "^1.5.6",
     "@types/ws": "^8.5.12",
