@@ -215,14 +215,14 @@ export class DomLayer {
     }
   };
 
-  /** Clipping by masked parents (a list's viewport), as an inset of the element's own box. */
+  /** Clipping by masked parents (a list's viewport, a row's box), as an inset of the element's own box. */
   private clipOf(c: Container, it: DomItem): string {
     let clip: Rectangle | null = null;
     for (let p: Container | null = c.parent; p; p = p.parent) {
       const mask = p.mask;
       if (mask && mask instanceof Container) {
-        const b = mask.getBounds().rectangle;
-        clip = clip ? clip.fit(b) : b.clone();
+        const b = maskRect(mask);
+        clip = clip ? clip.fit(b) : b;
       }
     }
     if (!clip) return '';
@@ -298,4 +298,16 @@ export class DomLayer {
     const it = last ? this.items.get(last) : undefined;
     return this.isUnder(it) ? it : null;
   }
+}
+
+/**
+ * A mask's box on the stage. From its own shape: a mask doesn't count for
+ * bounds (getBounds() gives an empty box), which would hide what it clips.
+ */
+function maskRect(mask: Container): Rectangle {
+  const b = mask instanceof Graphics ? mask.context.bounds : mask.getLocalBounds();
+  const m = mask.worldTransform;
+  const a = m.apply(new Point(b.minX, b.minY));
+  const z = m.apply(new Point(b.maxX, b.maxY));
+  return new Rectangle(Math.min(a.x, z.x), Math.min(a.y, z.y), Math.abs(z.x - a.x), Math.abs(z.y - a.y));
 }

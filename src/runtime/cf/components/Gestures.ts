@@ -145,7 +145,10 @@ export function bindGestures(container: Container, gestures: CFNode[]) {
     });
   };
 
+  // a drag on it is its own (a dial, a knob): not a list's it's in, scrolling
+  const drags = gestures.some((g) => ['pan', 'rotate', 'pinch'].includes((g.attributes.type || 'pan').toLowerCase()));
   container.on('pointerdown', (e: FederatedPointerEvent) => {
+    if (drags) e.stopPropagation();
     ensureHitArea(container);
     isPointerDown = true;
     const loc = toLocal(e);

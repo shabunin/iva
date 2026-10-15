@@ -16,7 +16,7 @@
 
 import {
   Box, Button as IvaButton, Gesture, Group, Image, Input, List, OnStart, Script, Slider as IvaSlider, Subpage, Text as IvaText, Web, WebApp,
-  a, d, draw, drawnName, fa, js as jsAction, l, s, variant,
+  a, d, draw, drawnName, fa, js as jsAction, l, s, screen, variant,
   type ButtonProps, type Child, type IconRef, type Join, type JoinRef, type TextProps, type VNode,
 } from 'iva';
 import { UI_RUNTIME } from './runtime.js';
@@ -41,7 +41,7 @@ export interface UiTheme {
   font: string;
   /** corner radius of rounded shapes */
   radius: number;
-  /** the panel size: Header, SideMenu, dialogs use it */
+  /** the panel size: Header, SideMenu, dialogs use it (default: screen(), the size being built) */
   panel: { width: number; height: number };
 }
 
@@ -84,6 +84,8 @@ export interface CardProps {
   y?: number;
   w?: number;
   h?: number;
+  /** how far down the content sits (grid(): centred in a card taller than it's laid out for) */
+  dy?: number;
   /** placed relative to the card */
   children?: Child;
 }
@@ -371,18 +373,29 @@ export interface DataListProps {
   h?: number;
 }
 export interface ScrollBoxProps {
-  /** list join */
-  join: Join;
+  /** list join: lines need one (a script fills them); children don't */
+  join?: Join;
   /** lines of text, a row each; or children: anything, scrolled as one */
   lines?: string[];
   children?: Child;
-  /** the children's height (default: as far down as they go) */
+  /** the children's height (default: as far down as they go); horizontal: their width */
   contentH?: number;
+  /** children scrolled sideways */
+  horizontal?: boolean;
   x?: number;
   y?: number;
   w?: number;
   h?: number;
   rowH?: number;
+}
+export interface ScrollAreaProps {
+  /** the area: default the panel below the header (y 72) */
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+  /** placed as on the page; they scroll when they go further down than the area */
+  children?: Child;
 }
 export interface WeekDaysProps {
   /** analog join: the bitmask (Mon 1, Tue 2, Wed 4 ... Sun 64) */
@@ -782,6 +795,8 @@ export interface AlarmCardProps {
   x?: number;
   y?: number;
   w?: number;
+  /** default 210; taller: the time and the days in the middle of it */
+  h?: number;
 }
 export interface NavCardProps {
   icon: string;
@@ -833,6 +848,12 @@ export interface ConfirmDialogProps {
 
 export interface Ui {
   theme: UiTheme;
+  /**
+   * Cards on the panel, whatever its size: items by name (the size each is
+   * laid out at), rows of names stretched across, taller when there's room
+   * (lists, tables, charts take it: grow). A Cell per name: <Card {...cells.x}>.
+   */
+  grid: <K extends string>(items: Record<K, GridItem>, rows: GridRow<K>[], o?: GridOptions) => Record<K, Cell>;
   Card: (p: CardProps) => VNode;
   Icon: (p: IconProps) => VNode;
   IconButton: (p: IconButtonProps) => VNode;
@@ -853,6 +874,7 @@ export interface Ui {
   ListRow: (p: ListRowProps) => VNode;
   DataList: (p: DataListProps) => VNode;
   ScrollBox: (p: ScrollBoxProps) => VNode;
+  ScrollArea: (p: ScrollAreaProps) => VNode;
   WeekDays: (p: WeekDaysProps) => VNode;
   PinPad: (p: PinPadProps) => VNode;
   ColorPicker: (p: ColorPickerProps) => VNode;
@@ -890,11 +912,52 @@ export function jsJoin(type: 'd' | 'a' | 's' | 'l', j: Join): string {
 /** A name for joins a component makes for itself, from the join it was given. */
 const keyOf = (j: Join): string => (typeof j === 'object' ? `${j.type}${j.id}` : String(j)).replace(/[^\w]/g, '_');
 
+/** How far right elements go (x + w), groups' offsets added: a sideways ScrollBox's content width. */
+function rightOf(c: Child, dx = 0): number {
+  if (Array.isArray(c)) return c.reduce<number>((m, k) => Math.max(m, rightOf(k, dx)), 0);
+  if (!c || typeof c !== 'object') return 0;
+  const n = c as VNode;
+  if (n.type === 'Subpage' && n.props.define) return 0;
+  const x = dx + (Number(n.props?.x) || 0);
+  if (n.type === 'Group') return rightOf(n.children, x);
+  return n.props?.w !== undefined ? x + Number(n.props.w) : 0;
+}
+
+/**
+ * Subpages over the whole panel (fixed: a sheet, a dialog) taken out of what a
+ * list scrolls, to go on the page - in the list they'd scroll with it. A
+ * dropdown's (its own subpage of the same join stays) stays with it.
+ */
+function liftFixed(children: Child): { content: Child; lifted: VNode[] } {
+  const lifted: VNode[] = [];
+  const stays = new Set<string>();
+  const scan = (c: Child) => {
+    if (Array.isArray(c)) return c.forEach(scan);
+    if (!c || typeof c !== 'object') return;
+    const n = c as VNode;
+    if (n.type === 'Subpage' && !n.props.fixed && n.props.join !== undefined) stays.add(JSON.stringify(n.props.join));
+    n.children?.forEach(scan);
+  };
+  scan(children);
+  const walk = (c: Child): Child => {
+    if (Array.isArray(c)) return c.map(walk);
+    if (!c || typeof c !== 'object') return c;
+    const n = c as VNode;
+    if (n.type === 'Subpage' && n.props.fixed && !stays.has(JSON.stringify(n.props.join))) {
+      lifted.push(n);
+      return null;
+    }
+    return n.children?.length ? { ...n, children: n.children.map(walk) } : n;
+  };
+  return { content: walk(children), lifted };
+}
+
 /** How far down elements go (y + h), groups' offsets added: a ScrollBox's content height. */
 function bottomOf(c: Child, dy = 0): number {
   if (Array.isArray(c)) return c.reduce<number>((m, k) => Math.max(m, bottomOf(k, dy)), 0);
   if (!c || typeof c !== 'object') return 0;
   const n = c as VNode;
+  if (n.type === 'Subpage' && n.props.define) return 0;
   const y = dy + (Number(n.props?.y) || 0);
   if (n.type === 'Group') return bottomOf(n.children, y);
   return n.props?.h !== undefined ? y + Number(n.props.h) : 0;
@@ -947,7 +1010,8 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
   const look = variant();
   const base = look === 'light' ? lightTheme : defaultTheme;
   const own = looks[look] ?? {};
-  const t: UiTheme = { ...base, ...theme, ...own, panel: { ...base.panel, ...(theme.panel ?? {}), ...(own.panel ?? {}) } };
+  // the panel: the size being built (screen()), unless the theme says
+  const t: UiTheme = { ...base, ...theme, ...own, panel: { ...screen(), ...(theme.panel ?? {}), ...(own.panel ?? {}) } };
   const font = t.font;
   // text in the look's colour unless a component says otherwise (white would vanish on a light look)
   const Text = (props: TextProps): VNode => <IvaText color={t.text} {...props} />;
@@ -960,14 +1024,19 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     muted: { fg: t.muted, bg: t.raised },
   };
 
-  function Card({ title, x = 0, y = 0, w = 380, h = 280, children }: CardProps): VNode {
+  function Card({ title, x = 0, y = 0, w = 380, h = 280, dy = 0, children }: CardProps): VNode {
     return (
       <Group x={x} y={y}>
         <Box w={w} h={h} bg={t.surface} radius={t.radius + 4} />
         {title && <Text x={28} y={18} w={w - 56} h={30} text={title.toUpperCase()} color={t.muted} font={font} fontSize={15} />}
-        {children}
+        {dy ? <Group y={dy}>{children}</Group> : children}
       </Group>
     );
+  }
+
+  /** Cards laid out on the panel, below the header by default (layoutGrid). */
+  function grid<K extends string>(items: Record<K, GridItem>, rows: GridRow<K>[], { x = 16, y = 88, w, h, gap = 16 }: GridOptions = {}): Record<K, Cell> {
+    return layoutGrid(items, rows, { x, y, w: w ?? t.panel.width - 2 * x, h: h ?? t.panel.height - y - 16 }, gap);
   }
 
   function Icon({ icon, size = 24, color = t.text, x = 0, y = 0 }: IconProps): VNode {
@@ -1397,24 +1466,33 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
   }
 
   /**
-   * Lines of text to drag through; or `children` scrolled as one: a list
-   * whose one row is a subpage of them (iViewer scrolls lists only). Inside it
-   * joins are the row's (CF.listUpdate / IvaUI.fill reach them, CF.setJoin
-   * doesn't) - pages, commands and JS on buttons work as anywhere.
+   * Lines of text to drag through; or `children` scrolled as one (iViewer
+   * scrolls lists only): a list with no rows whose header subpage they are, as
+   * GUI Designer projects scroll a panel of controls - everything in it works
+   * as anywhere, its joins the page's own. Sheets over the whole panel go on
+   * the page (in the list they'd scroll away).
    */
-  function ScrollBox({ join, lines = [], children, contentH, x = 0, y = 0, w = 232, h = 232, rowH = 50 }: ScrollBoxProps): VNode {
+  function ScrollBox({ join, lines = [], children, contentH, horizontal = false, x = 0, y = 0, w = 232, h = 232, rowH = 50 }: ScrollBoxProps): VNode {
     if (children !== undefined) {
-      const sub = `ui_scroll_${keyOf(join)}`;
-      const height = contentH ?? Math.max(h, bottomOf(children));
+      // the list's header subpage (no rows: nothing to fill, the joins in it the page's own), as
+      // GUI Designer projects scroll a panel of controls; sheets over the panel go on the page
+      const { content, lifted } = liftFixed(children);
+      // named after what's in it, its colours aside (the same name in every look): the same content (a
+      // side menu on every page) is one subpage
+      const look = /^#[0-9a-f]{3,8}$|iva_\w*[0-9a-f]{8}/i;
+      const shape = JSON.stringify([content, w, h, horizontal], (_k, v) => (typeof v === 'string' && look.test(v) ? '' : v));
+      const sub = `ui_scroll_${join !== undefined ? keyOf(join) : hash(shape)}`;
+      const size = contentH ?? (horizontal ? Math.max(w, rightOf(content)) : Math.max(h, bottomOf(content)));
       return (
         <Group x={x} y={y}>
-          <Subpage name={sub} define w={w} h={height}>{children}</Subpage>
-          <List w={w} h={h} join={typeof join === 'object' ? join : l(join)} item={sub} />
-          {runtime}
-          <OnStart js={`IvaUI.fill(${jsJoin('l', join)}, [{ subpage: ${JSON.stringify(sub)} }]);`} />
+          <Subpage name={sub} define w={horizontal ? size : w} h={horizontal ? h : size}>{content}</Subpage>
+          <List w={w} h={h} join={join === undefined ? undefined : typeof join === 'object' ? join : l(join)} header={sub}
+                orientation={horizontal ? 'horizontal' : undefined} />
+          {lifted}
         </Group>
       );
     }
+    if (join === undefined) throw new Error('ScrollBox: lines need a join (a list a script fills)');
     const sub = `ui_scroll_${w}_${rowH}`;
     return (
       <Group x={x} y={y}>
@@ -1426,6 +1504,22 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
         {runtime}
         <OnStart js={`IvaUI.fill(${jsJoin('l', join)}, ${JSON.stringify(lines.map((ln) => ({ subpage: sub, s1: ln })))});`} />
       </Group>
+    );
+  }
+
+  /**
+   * A page's content that scrolls when it goes further down than the panel:
+   * placed as on the page, it goes in a ScrollBox below the header then (a
+   * list with it as its header subpage); else it's placed as it is.
+   */
+  function ScrollArea({ x = 0, y = 72, w = t.panel.width, h, children }: ScrollAreaProps): VNode {
+    const height = h ?? t.panel.height - y;
+    const bottom = bottomOf(children) + 16;
+    if (bottom <= y + height) return <Group>{children}</Group>;
+    return (
+      <ScrollBox x={x} y={y} w={w} h={height} contentH={bottom - y}>
+        <Group x={-x} y={-y}>{children}</Group>
+      </ScrollBox>
     );
   }
 
@@ -1474,19 +1568,19 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
 
   /** An alarm: its title, on / off, the time (a TimePicker: a tap opens the drums), the days and their summary. */
   function AlarmCard({ title, on, onValue, hour, minute, value = '07:00', minuteStep = 1, ampm = false, timeTitle, days, daysValue = 31,
-                       x = 0, y = 0, w = 620 }: AlarmCardProps): VNode {
+                       x = 0, y = 0, w = 620, h = 210 }: AlarmCardProps): VNode {
     const summary: JoinRef = s(`ui_${keyOf(days)}_summary`);
-    const h = 210;
+    const dy = Math.max(0, Math.round((h - 210) / 2));
     return (
       <Group x={x} y={y}>
         <Box w={w} h={h} bg={t.surface} radius={t.radius + 4} />
         <Text x={28} y={12} w={w - 160} h={40} text={title} color={t.muted} font={font} fontSize={21} />
         <Button x={w - 124} y={12} w={96} h={36} join={on} feedback="toggle" text="OFF" activeText="ON" radius={18} bg={t.raised} color={t.muted}
                 active={{ bg: t.accent, color: t.text }} font={font} fontSize={15} />
-        <TimePicker x={24} y={56} w={ampm ? 260 : 200} h={64} hour={hour} minute={minute} value={value} minuteStep={minuteStep} ampm={ampm}
+        <TimePicker x={24} y={56 + dy} w={ampm ? 260 : 200} h={64} hour={hour} minute={minute} value={value} minuteStep={minuteStep} ampm={ampm}
                     title={timeTitle ?? title} fontSize={40} />
-        <Text x={w - 220} y={56} w={192} h={64} join={summary} align="right" color={t.muted} font={font} fontSize={21} />
-        <WeekDays x={24} y={138} join={days} value={daysValue} textJoin={summary} size={52} />
+        <Text x={w - 220} y={56 + dy} w={192} h={64} join={summary} align="right" color={t.muted} font={font} fontSize={21} />
+        <WeekDays x={24} y={138 + dy} join={days} value={daysValue} textJoin={summary} size={Math.min(52, Math.floor((w - 48 - 48) / 7))} />
         {onValue && <OnStart js={`CF.setJoin(${jsJoin('d', on)}, 1);`} />}
       </Group>
     );
@@ -1497,9 +1591,11 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
       <Group x={x} y={y}>
         <Button w={w} h={h} page={page} radius={t.radius + 4} bg={t.surface} active={{ bg: t.raised }}
                 icon={{ src: fa(icon, { size: 36, color: t.accent }), x: 22, y: 22 }} />
-        <Text x={22} y={h - 92} w={w - 44} h={32} text={title} font={font} fontSize={22} />
-        {/* two lines, from the top, when it's long */}
-        {text && <Text x={22} y={h - 58} w={w - 44} h={44} text={text} wrap valign="top" color={t.muted} font={font} fontSize={16} />}
+        {/* a tall card: the text on two lines, from the top, when it's long; a short one: one line, below the icon */}
+        <Text x={22} y={h - (h >= 170 ? 92 : 74)} w={w - 44} h={32} text={title} font={font} fontSize={22} />
+        {text && (h >= 170
+          ? <Text x={22} y={h - 58} w={w - 44} h={44} text={text} wrap valign="top" color={t.muted} font={font} fontSize={16} />
+          : <Text x={22} y={h - 44} w={w - 44} h={24} text={text} color={t.muted} font={font} fontSize={16} />)}
       </Group>
     );
   }
@@ -1508,6 +1604,13 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     const left = menu === false ? 24 : 84;
     const clockJoin: JoinRef = s('ui_clock');
     const titleW = Math.round(title.length * 15 + 30);
+    // on a narrow panel the clock goes first, then the breadcrumbs
+    const free = w - left - titleW - (themeToggle ? 80 : 0);
+    const crumbsW = section ? 30 + 100 + textWidth(section, 20) + 16 : 0;
+    const withClock = clock && free >= 160 + crumbsW;
+    const withCrumbs = !!section && free >= crumbsW + (withClock ? 160 : 0);
+    const showClock = clock && (withClock || (!withCrumbs && free >= 160));
+    const showCrumbs = withCrumbs;
     return (
       <Group>
         <Box w={w} h={h} bg={t.bar} />
@@ -1516,7 +1619,7 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
                   js={`CF.setJoin(${jsJoin('d', menu)}, 1)`} />
         )}
         <Text x={left} w={titleW} h={h} text={title} font={font} fontSize={30} />
-        {section && (
+        {showCrumbs && (
           <Group x={left + titleW + 30}>
             <Button w={70} h={h} text="Home" page={home} feedback="none" color={t.accent} active={{ color: shade(t.accent, 0.4) }} font={font} fontSize={20} />
             <Text x={74} w={20} h={h} text={'›'} color={t.muted} font={font} fontSize={20} />
@@ -1524,12 +1627,12 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
           </Group>
         )}
         {themeToggle && (
-          <Button x={w - (clock ? 230 : 80)} y={Math.round((h - 56) / 2)} w={56} h={56} icon={fa('circle-half-stroke', { size: 26 })} feedback="none"
+          <Button x={w - (showClock ? 230 : 80)} y={Math.round((h - 56) / 2)} w={56} h={56} icon={fa('circle-half-stroke', { size: 26 })} feedback="none"
                   js="if (typeof IvaTheme !== 'undefined') IvaTheme.toggle();" />
         )}
-        {clock && <Text x={w - 160} w={136} h={h} join={clockJoin} align="right" color={t.muted} font={font} fontSize={30} />}
-        {clock && runtime}
-        {clock && <OnStart js={`IvaUI.clock(${jsJoin('s', clockJoin)});`} joins={[clockJoin]} />}
+        {showClock && <Text x={w - 160} w={136} h={h} join={clockJoin} align="right" color={t.muted} font={font} fontSize={30} />}
+        {showClock && runtime}
+        {showClock && <OnStart js={`IvaUI.clock(${jsJoin('s', clockJoin)});`} joins={[clockJoin]} />}
       </Group>
     );
   }
@@ -1538,7 +1641,6 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     const { width: W, height: H } = t.panel;
     const close = `IvaUI.off(${jsJoin('d', menu)})`;
     const itemJoin = (page: string): JoinRef => d(`ui_menu_${page.replace(/[^\w]/g, '_')}`);
-    const list: JoinRef = l('ui_menu_items');
     const top = title ? 100 : 16;
     return (
       <Group>
@@ -1551,7 +1653,7 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
           {subtitle && <Text x={26} y={56} w={w - 52} h={24} text={subtitle} color={t.muted} font={font} fontSize={16} />}
           {title && <Box x={20} y={88} w={w - 40} h={1} bg={t.raised} />}
           {/* the items scroll when there are more than fit (a tap acts on release: a drag scrolls) */}
-          <ScrollBox join={list} y={top} w={w} h={H - top - 8} contentH={items.length * 60}>
+          <ScrollBox y={top} w={w} h={H - top - 8} contentH={items.length * 60}>
             {items.map((it, i) => (
               <Button x={8} y={i * 60} w={w - 16} h={52} page={it.page} onRelease={[jsAction(close)]} join={itemJoin(it.page)} feedback="none"
                       icon={fa(it.icon, { size: 24, color: t.accent })} iconAlign="left" text={it.text}
@@ -1560,15 +1662,17 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
           </ScrollBox>
         </Subpage>
         {runtime}
-        <OnStart js={`IvaUI.menu({ ${items.map((it) => `${JSON.stringify(it.page)}: ${jsJoin('d', itemJoin(it.page))}`).join(', ')} }, ${jsJoin('l', list)}, ${JSON.stringify(`ui_scroll_${keyOf(list)}`)});`} />
+        <OnStart js={`IvaUI.menu({ ${items.map((it) => `${JSON.stringify(it.page)}: ${jsJoin('d', itemJoin(it.page))}`).join(', ')} });`} />
       </Group>
     );
   }
 
-  function ConfirmDialog({ join, title = 'Are you sure?', message, confirmText = 'OK', cancelText = 'Cancel', danger = false, onConfirm, w = 520, h = 280 }: ConfirmDialogProps): VNode {
+  function ConfirmDialog({ join, title = 'Are you sure?', message, confirmText = 'OK', cancelText = 'Cancel', danger = false, onConfirm, w: asked = 520, h = 280 }: ConfirmDialogProps): VNode {
     const { width: W, height: H } = t.panel;
+    const w = Math.min(asked, W - 32);
     const close = `IvaUI.off(${jsJoin('d', join)})`;
     const name = `ui_dialog_${keyOf(join)}`;
+    const bw = Math.min(140, Math.floor((w - 80) / 2));
     return (
       <Group>
         <Subpage name={name} w={W} h={H} join={join} bg="#000000a0" in={{ type: 'fade', time: 0.2 }} out={{ type: 'fade', time: 0.2 }}>
@@ -1576,8 +1680,8 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
           <Group x={(W - w) / 2} y={(H - h) / 2}>
             <Text x={32} y={28} w={w - 64} h={40} text={title} font={font} fontSize={26} />
             {message && <Text x={32} y={80} w={w - 64} h={h - 190} text={message} color={t.muted} font={font} fontSize={18} wrap />}
-            <IconButton x={w - 32 - 140 - 16 - 140} y={h - 92} w={140} text={cancelText} js={close} />
-            <IconButton x={w - 32 - 140} y={h - 92} w={140} text={confirmText} tone={danger ? 'danger' : 'accent'} js={close} cmd={onConfirm} />
+            <IconButton x={w - 32 - bw - 16 - bw} y={h - 92} w={bw} text={cancelText} js={close} />
+            <IconButton x={w - 32 - bw} y={h - 92} w={bw} text={confirmText} tone={danger ? 'danger' : 'accent'} js={close} cmd={onConfirm} />
           </Group>
         </Subpage>
       </Group>
@@ -2150,12 +2254,18 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
   function AlarmTable({ name, conditions = [], source, summary, rowH = 38, x = 0, y = 0, w = 1100, h = 320 }: AlarmTableProps): VNode {
     const key = `al_${name.replace(/\W/g, '_')}`;
     const tableId = JSON.stringify(key);
-    const columns: TableColumn[] = [
+    // narrow (a phone): no source, the rest closer
+    const columns: TableColumn[] = w < 640 ? [
+      { key: 'time', title: 'Time', w: 84 }, { key: 'severity', title: 'Severity', w: 112, badge: true }, { key: 'text', title: 'Text' }, { key: 'state', title: 'State', w: 92 },
+    ] : [
       { key: 'time', title: 'Time', w: 110 }, { key: 'severity', title: 'Severity', w: 140, badge: true }, { key: 'source', title: 'Source', w: Math.round(w * 0.2) },
       { key: 'text', title: 'Text' }, { key: 'state', title: 'State', w: 120 },
     ];
-    const tb = tableBody(tableId, key, columns, w, h, 56, rowH, 17);
+    // narrow: the filters, then the buttons, then the counts, each a row of its own
+    const narrow = w < 640;
+    const tb = tableBody(tableId, key, columns, w, h, narrow ? 136 : 56, rowH, 17);
     const filters = ['All', 'Active', 'Unacked'];
+    const fw = narrow ? Math.floor((w - 12) / 3) : 106;
     const filterJoins = filters.map((_, i) => d(`ui_${key}_f${i}`));
     const sum: JoinRef = summary === undefined ? s(`ui_${key}_summary`) : typeof summary === 'object' ? summary : s(summary);
     const conds = conditions.map((c) => jsObject({
@@ -2176,14 +2286,16 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     const btn = { h: 44, radius: t.radius, bg: t.raised, active: { bg: t.accent }, font, fontSize: 17 };
     return (
       <Group x={x} y={y}>
-        <Box w={330} h={44} bg={t.raised} radius={t.radius} />
+        <Box w={narrow ? w : 330} h={44} bg={t.raised} radius={t.radius} />
         {filters.map((f, i) => (
-          <Button x={4 + i * 108} y={4} w={106} h={36} text={f} join={filterJoins[i]} feedback="none" js={`IvaUI.alarmFilter(${JSON.stringify(name)}, ${i})`}
+          <Button x={4 + i * (fw + 2)} y={4} w={fw} h={36} text={f} join={filterJoins[i]} feedback="none" js={`IvaUI.alarmFilter(${JSON.stringify(name)}, ${i})`}
                   radius={t.radius - 3} bg={t.raised} color={t.muted} active={{ bg: t.accent, color: t.text }} font={font} fontSize={16} />
         ))}
-        <Button x={346} w={120} text="Ack" icon={fa('check', { size: 16 })} iconAlign="left" js={`IvaUI.alarmAck(${JSON.stringify(name)})`} {...btn} />
-        <Button x={476} w={130} text="Ack all" icon={fa('check-double', { size: 16 })} iconAlign="left" js={`IvaUI.alarmAckAll(${JSON.stringify(name)})`} {...btn} />
-        <Text x={620} w={w - 620} h={44} join={sum} align="right" color={t.muted} font={font} fontSize={16} />
+        <Button x={narrow ? 0 : 346} y={narrow ? 52 : 0} w={narrow ? Math.floor((w - 10) / 2) : 120} text="Ack" icon={fa('check', { size: 16 })} iconAlign="left"
+                js={`IvaUI.alarmAck(${JSON.stringify(name)})`} {...btn} />
+        <Button x={narrow ? Math.floor((w - 10) / 2) + 10 : 476} y={narrow ? 52 : 0} w={narrow ? w - Math.floor((w - 10) / 2) - 10 : 130} text="Ack all"
+                icon={fa('check-double', { size: 16 })} iconAlign="left" js={`IvaUI.alarmAckAll(${JSON.stringify(name)})`} {...btn} />
+        <Text x={narrow ? 0 : 620} y={narrow ? 100 : 0} w={narrow ? w : w - 620} h={narrow ? 28 : 44} join={sum} align={narrow ? 'left' : 'right'} color={t.muted} font={font} fontSize={16} />
         {tb.body}
         {runtime}
         <OnStart js={`IvaUI.table(${tableId}, ${table}); IvaUI.alarms(${JSON.stringify(name)}, ${o});`}
@@ -2298,8 +2410,9 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     const hover = (tg: DropTarget): JoinRef => d(`ui_dd_${key}_t_${tg.id}`);
     const hintJoin = (tg: DropTarget): JoinRef => s(`ui_dd_${key}_h_${tg.id}`);
     const cols = Math.max(1, Math.floor((w + gap) / (targetW + gap)));
-    const placedItems = items.map((it, i) => ({ ...it, x: it.x ?? i * (itemW + gap), y: it.y ?? 0 }));
-    const top = itemH + 28;
+    const itemCols = Math.max(1, Math.floor((w + gap) / (itemW + gap)));
+    const placedItems = items.map((it, i) => ({ ...it, x: it.x ?? (i % itemCols) * (itemW + gap), y: it.y ?? Math.floor(i / itemCols) * (itemH + gap) }));
+    const top = Math.ceil(items.length / itemCols) * (itemH + gap) - gap + 28;
     const placedTargets = targets.map((tg, i) => ({ ...tg, x: tg.x ?? (i % cols) * (targetW + gap), y: tg.y ?? top + Math.floor(i / cols) * (targetH + gap) }));
     const o = jsObject({
       area: jsJoin('s', area),
@@ -2380,11 +2493,136 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
   }
 
   return {
-    theme: t, Card, Icon, IconButton, Tile, Badge, Stat, Toggle, Slider, Stepper, Segmented, SceneBar, Dimmer, Dial, Knob, Thermostat, Blinds,
-    RadioGroup, CheckBox, CheckBoxGroup, SelectBox, ListRow, DataList, ScrollBox, WeekDays, PinPad, AlarmCard, NavCard, Header, SideMenu, ConfirmDialog,
+    theme: t, grid, Card, Icon, IconButton, Tile, Badge, Stat, Toggle, Slider, Stepper, Segmented, SceneBar, Dimmer, Dial, Knob, Thermostat, Blinds,
+    RadioGroup, CheckBox, CheckBoxGroup, SelectBox, ListRow, DataList, ScrollBox, ScrollArea, WeekDays, PinPad, AlarmCard, NavCard, Header, SideMenu, ConfirmDialog,
     ColorPicker, TextField, SearchSelect, TimePicker, DatePicker, NumberField, DataTable, AlarmTable, AlarmBanner, Breadcrumbs, Loader, Pager,
     Trend, Chart, DragDrop,
   };
+}
+
+// ── layout ─────────────────────────────────────────────────────────
+
+/** Where grid() puts an item: its box, and how far down content laid out at its own size sits in it (centred; 0 for one that grows). */
+export interface Cell {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  dy: number;
+}
+/**
+ * A grid() item: [w, h], the size its content is laid out at (the least it
+ * gets), or { w, h, grow: true } for content that takes the room it gets (a
+ * list, a table, a chart). h can be a function of the width it gets: a card
+ * that lays its content out another way when narrow, taller.
+ */
+export type GridItem = [number, number | ((w: number) => number)] | { w: number; h: number | ((w: number) => number); grow?: boolean };
+/** A grid() row: items by name, left to right; [names]: those one above another. */
+export type GridRow<K extends string = string> = (K | K[])[];
+export interface GridOptions {
+  /** the area (default: the panel below the header: x 16, y 88, 16 from the edges) */
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+  /** between items (default 16) */
+  gap?: number;
+}
+
+interface GridBox {
+  w: number;
+  h: (w: number) => number;
+  grow: boolean;
+  name?: string;
+  stack?: GridBox[];
+}
+
+/**
+ * Items laid out in an area, row by row: each row stretched to the width
+ * (each item by its share), a row that doesn't fit going on in the next; the
+ * rows as high as their tallest item, the height left going to the rows with
+ * an item that grows - else to all of them, by their size - so the area is
+ * filled. Taller than the area: as tall as they are (a ScrollArea scrolls
+ * them). A stack's items share its height the same way.
+ */
+export function layoutGrid<K extends string>(items: Record<K, GridItem>, rows: GridRow<K>[], area: { x: number; y: number; w: number; h: number }, gap = 16): Record<K, Cell> {
+  const placed = new Set<string>();
+  const one = (name: K): GridBox => {
+    const it = items[name];
+    if (!it) throw new Error(`grid: no item "${name}" (items: ${Object.keys(items).join(', ')})`);
+    if (placed.has(name)) throw new Error(`grid: "${name}" is placed twice`);
+    placed.add(name);
+    const [w, h, grow] = Array.isArray(it) ? [it[0], it[1], false] : [it.w, it.h, !!it.grow];
+    return { w, h: typeof h === 'function' ? h : () => h, grow, name };
+  };
+  const box = (x: K | K[]): GridBox => {
+    if (!Array.isArray(x)) return one(x);
+    const stack = x.map(one);
+    return { w: Math.max(...stack.map((b) => b.w)), h: (w) => stack.reduce((n, b) => n + b.h(w), 0) + gap * (stack.length - 1), grow: stack.some((b) => b.grow), stack };
+  };
+  // rows that fit the width (one too wide goes on in the next)
+  const lines: GridBox[][] = [];
+  for (const row of rows) {
+    let line: GridBox[] = [];
+    let used = 0;
+    for (const b of row.map(box)) {
+      if (line.length && used + gap + b.w > area.w) {
+        lines.push(line);
+        line = [];
+        used = 0;
+      }
+      used += (line.length ? gap : 0) + b.w;
+      line.push(b);
+    }
+    if (line.length) lines.push(line);
+  }
+  const missing = Object.keys(items).filter((k) => !placed.has(k));
+  if (missing.length) throw new Error(`grid: ${missing.join(', ')} in no row`);
+  /**
+   * sizes sharing `total` (gaps between them) by their own sizes: the ones that
+   * grow get what's spare, else all; less than they need: widths shrink, heights don't
+   */
+  const share = (sizes: number[], grows: boolean[], total: number, shrink: boolean): number[] => {
+    const natural = sizes.reduce((a, b) => a + b, 0) + gap * (sizes.length - 1);
+    const spare = shrink ? total - natural : Math.max(0, total - natural);
+    const takers = spare > 0 && grows.some(Boolean) ? grows : sizes.map(() => true);
+    const weight = sizes.reduce((n, sz, i) => n + (takers[i] ? sz : 0), 0) || 1;
+    // cumulative and rounded: whole pixels, the gaps exact
+    let at = 0;
+    let acc = 0;
+    return sizes.map((sz, i) => {
+      acc += sz + (takers[i] ? (spare * sz) / weight : 0);
+      const end = Math.round(acc);
+      const out = end - at;
+      at = end;
+      return out;
+    });
+  };
+  const cells = {} as Record<K, Cell>;
+  const place = (b: GridBox, x: number, y: number, w: number, h: number) => {
+    if (!b.stack) {
+      cells[b.name as K] = { x, y, w, h, dy: b.grow ? 0 : Math.max(0, Math.round((h - b.h(w)) / 2)) };
+      return;
+    }
+    const hs = share(b.stack.map((s) => s.h(w)), b.stack.map((s) => s.grow), h, false);
+    let at = y;
+    b.stack.forEach((s, i) => {
+      place(s, x, at, w, hs[i]);
+      at += hs[i] + gap;
+    });
+  };
+  const widths = lines.map((line) => share(line.map((b) => b.w), line.map(() => true), area.w, true));
+  const heights = share(lines.map((l, r) => Math.max(...l.map((b, i) => b.h(widths[r][i])))), lines.map((l) => l.some((b) => b.grow)), area.h, false);
+  let y = area.y;
+  lines.forEach((line, r) => {
+    let x = area.x;
+    line.forEach((b, i) => {
+      place(b, x, y, widths[r][i], heights[r]);
+      x += widths[r][i] + gap;
+    });
+    y += heights[r] + gap;
+  });
+  return cells;
 }
 
 /** The components in the default theme. */
@@ -2412,6 +2650,8 @@ export const SelectBox: Ui['SelectBox'] = ui.SelectBox;
 export const ListRow: Ui['ListRow'] = ui.ListRow;
 export const DataList: Ui['DataList'] = ui.DataList;
 export const ScrollBox: Ui['ScrollBox'] = ui.ScrollBox;
+export const ScrollArea: Ui['ScrollArea'] = ui.ScrollArea;
+export const grid: Ui['grid'] = ui.grid;
 export const WeekDays: Ui['WeekDays'] = ui.WeekDays;
 export const PinPad: Ui['PinPad'] = ui.PinPad;
 export const AlarmCard: Ui['AlarmCard'] = ui.AlarmCard;

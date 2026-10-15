@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { compile } from '../src/compiler/index.ts';
+import { layoutGrid } from '../lib/ui/index.tsx';
 import { check } from '../src/check.ts';
 
 const GALLERY = path.resolve(import.meta.dirname, '../examples/gallery/app.jsx');
@@ -186,26 +187,84 @@ export default (
   assert.match(start, /function \(item, target\) \{ go\(item, target\) \}\);/);
 });
 
-test('ScrollBox with children: a list whose one row is a subpage of them, as tall as they go; the side menu scrolls its items', async () => {
+test('ScrollBox with children: a list whose header subpage they are (no rows to fill, the page\'s own joins); sheets on the page; ScrollArea', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-scroll-'));
-  fs.writeFileSync(path.join(dir, 'app.jsx'), `import { ScrollBox, NavCard, SideMenu } from 'iva/ui';
+  fs.writeFileSync(path.join(dir, 'app.jsx'), `import { ScrollBox, ScrollArea, NavCard, SideMenu, SelectBox, Toggle } from 'iva/ui';
 export default (
   <Project name="T" width={1280} height={800}>
     <Page name="P">
-      <ScrollBox join="cards" x={20} y={100} w={600} h={300}>
+      <ScrollBox x={20} y={100} w={600} h={300}>
         <NavCard y={0} w={295} h={180} icon="tv" title="One" page="P" />
         <NavCard y={200} w={295} h={180} icon="tv" title="Two" page="P" />
       </ScrollBox>
       <SideMenu title="Menu" items={[{ icon: 'house', text: 'Home', page: 'P' }]} />
     </Page>
+    <Page name="Q">
+      <ScrollArea>
+        <Toggle y={100} label="Lamp" join="lamp" />
+        <SelectBox y={700} w={300} options={['a', 'b']} join="pick" />
+        <Toggle y={1500} label="Fan" join="fan" />
+      </ScrollArea>
+    </Page>
   </Project>
 );
 `);
   const r = await compile(path.join(dir, 'app.jsx'));
-  assert.match(r.xml, /<subpage name="ui_scroll_cards" w="600" h="380"/);
-  assert.match(r.xml, /<list j="\d+" x="20" y="100" w="600" h="300" [^>]*contentSub="ui_scroll_cards"/);
+  assert.match(r.xml, /<subpage name="ui_scroll_\w+" w="600" h="380"/);
+  assert.match(r.xml, /<list j="0" x="20" y="100" w="600" h="300" headerSub="ui_scroll_\w+" titleSub="" contentSub="" footerSub=""/);
   const start = r.scripts.find((x) => x.name === 'iva-start.js')!.code!;
-  assert.match(start, /IvaUI\.fill\(Joins\.l\["cards"\], \[\{ subpage: "ui_scroll_cards" \}\]\);/);
-  // the menu's items in a ScrollBox: lit through the row
-  assert.match(start, /IvaUI\.menu\(\{ "P": Joins\.d\["ui_menu_P"\] \}, Joins\.l\["ui_menu_items"\], "ui_scroll_lui_menu_items"\);/);
+  assert.doesNotMatch(start, /IvaUI\.fill\(/);
+  // the menu's items in a ScrollBox: lit by their own joins
+  assert.match(start, /IvaUI\.menu\(\{ "P": Joins\.d\["ui_menu_P"\] \}\);/);
+  // the page that goes further down than the panel: a list below the header, its content as on the page, the sheet on the page
+  assert.match(r.xml, /<list j="0" x="0" y="72" w="1280" h="728" headerSub="(ui_scroll_\w+)"/);
+  const area = /<list j="0" x="0" y="72" w="1280" h="728" headerSub="(ui_scroll_\w+)"/.exec(r.xml)![1];
+  const content = new RegExp(`<subpage name="${area}" w="1280" h="(\\d+)"[^>]*>([\\s\\S]*?)</subpage>`).exec(r.xml)!;
+  assert.equal(Number(content[1]), 1500 + 48 + 16 - 72);
+  assert.match(content[2], /<txt [^>]*y="28"[^>]*>Lamp</);
+  assert.doesNotMatch(content[2], /ui_select_pick/);
+  assert.match(r.xml, /<page name="Q"[\s\S]*?<subpage [^>]*name="ui_select_pick"[\s\S]*?<\/page>/);
+});
+
+test('iva/ui at another screen size: the panel is screen() - the header and the side menu fit it', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-ui-size-'));
+  fs.writeFileSync(path.join(dir, 'app.jsx'), `import { Header, SideMenu } from 'iva/ui';
+export default (
+  <Project name="T" width={1280} height={800}>
+    <Page name="P">
+      <Header title="T" />
+      <SideMenu title="Menu" items={[{ icon: 'house', text: 'Home', page: 'P' }]} />
+    </Page>
+  </Project>
+);
+`);
+  const own = await compile(path.join(dir, 'app.jsx'));
+  assert.match(own.xml, /<subpage name="ui_menu_scrim" w="1280" h="800"/);
+  const r = await compile(path.join(dir, 'app.jsx'), { size: '1400x1400' });
+  assert.match(r.xml, /<subpage name="ui_menu_scrim" w="1400" h="1400"/);
+  assert.match(r.xml, /<subpage name="ui_menu" w="314" h="1400"/);
+  // the clock at the header's right end
+  assert.match(r.xml, /<txt j="\d+" x="1240" y="0" w="136" h="72"/);
+});
+
+test('grid(): rows stretched across, the height left to what grows (else to all), stacks, a row too wide wraps, taller than the area', () => {
+  const area = { x: 16, y: 88, w: 1248, h: 696 };
+  // laid out at this size already: as it is, the spare height shared by all rows
+  const c = layoutGrid({ a: [392, 260], b: [408, 260], c: [416, 260], seg: [1248, 170], scenes: [1248, 210] }, [['a', 'b', 'c'], ['seg'], ['scenes']], area);
+  assert.deepEqual([c.a, c.b, c.c].map((x) => [x.x, x.w]), [[16, 392], [424, 408], [848, 416]]);
+  assert.deepEqual([c.a.y, c.seg.y, c.scenes.y], [88, 374, 566]);
+  assert.equal(c.scenes.y + c.scenes.h, 88 + 696);
+  assert.deepEqual([c.a.dy, c.seg.dy, c.scenes.dy], [5, 3, 4]);
+  // a square panel: wider and taller; only the row with the pager takes the height
+  const sq = layoutGrid({ m: [404, 240], cf: [404, 240], ld: [408, 240], crumbs: [404, 190], nav: [404, 214], pager: { w: 828, h: 420, grow: true } },
+    [['m', 'cf', 'ld'], [['crumbs', 'nav'], 'pager']], { x: 16, y: 88, w: 1368, h: 1296 });
+  assert.deepEqual([sq.m, sq.cf, sq.ld].map((x) => [x.x, x.w, x.h]), [[16, 444, 240], [476, 444, 240], [936, 448, 240]]);
+  assert.deepEqual([sq.crumbs.y, sq.crumbs.x, sq.pager.x, sq.pager.y, sq.pager.h, sq.pager.dy], [344, 16, 475, 344, 1040, 0]);
+  // the stack's items share its height (neither grows: both, by their size)
+  assert.equal(sq.nav.y + sq.nav.h, sq.pager.y + sq.pager.h);
+  assert.ok(sq.crumbs.dy > 0 && sq.nav.dy > 0);
+  // narrower than a row: it wraps; a height for the width it gets; taller than the area: as tall as it is (it scrolls)
+  const narrow = layoutGrid({ a: [600, 300], b: [600, (w) => (w < 600 ? 500 : 300)] }, [['a', 'b']], { x: 0, y: 0, w: 435, h: 400 });
+  assert.deepEqual([narrow.a, narrow.b].map((x) => [x.x, x.y, x.w, x.h]), [[0, 0, 435, 300], [0, 316, 435, 500]]);
+  assert.throws(() => layoutGrid<'a' | 'b'>({ a: [1, 1], b: [1, 1] }, [['a']], area), /b in no row/);
 });

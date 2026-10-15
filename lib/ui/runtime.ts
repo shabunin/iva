@@ -161,20 +161,10 @@ var IvaUI = (function () {
       CF.setJoin(g.value, i);
       for (var k = 0; k < g.joins.length; k++) CF.setJoin(g.joins[k], k == i ? 1 : 0);
     },
-    /** side menu: the item of the page shown is on */
-    /**
-     * a side menu: each page's item lit while it's shown. In a ScrollBox (list,
-     * its row subpage): the joins are the row's - the row again, lit
-     */
-    menu: function (pages, list, row) {
+    /** a side menu: each page's item lit while it's shown */
+    menu: function (pages) {
       function show(page) {
-        if (!list) {
-          for (var p in pages) CF.setJoin(pages[p], p === page ? 1 : 0);
-          return;
-        }
-        var item = { subpage: row };
-        for (var q in pages) item[pages[q]] = q === page ? 1 : 0;
-        IvaUI.fill(list, [item]);
+        for (var p in pages) CF.setJoin(pages[p], p === page ? 1 : 0);
       }
       // iViewer passes (from, to, orientation); some runtimes just (to)
       CF.watch(CF.PageFlipEvent, function (a, b) { show(typeof b === 'string' ? b : a); });

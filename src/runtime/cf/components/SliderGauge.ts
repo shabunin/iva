@@ -262,6 +262,8 @@ export function renderSliderOrGauge(
 
     sliderContainer.on('pointerdown', (e: any) => {
         if (node.type === "gauge") return; // Gauges are usually read-only
+        // the drag moves the slider, not a list it's in
+        e.stopPropagation?.();
         isDraggingGauge = true;
         
         if (node.pressCmd && renderer.cfApi?.runCommand) {

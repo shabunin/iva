@@ -60,10 +60,12 @@ export function mergeThemes(builds: BuildResult[], names: string[]): BuildResult
     }
   }
 
-  // subpages placed somewhere (switched in place) vs only defined (list rows, image holders)
+  // subpages placed somewhere (switched in place) vs only defined (list rows, image holders); a
+  // list's header and footer are placed too (a panel of controls a list scrolls: nothing fills it)
   const placed = new Set<string>();
   const visit = (n: XNode, top: boolean) => {
     if (!top && n.tag === 'subpage' && attr(n, 'x') !== undefined) placed.add(attr(n, 'name')!);
+    if (n.tag === 'list') for (const k of ['headerSub', 'footerSub']) if (attr(n, k)) placed.add(attr(n, k)!);
     for (const c of n.children) visit(c, false);
   };
   for (const c of gui.children) visit(c, c.tag === 'subpage');

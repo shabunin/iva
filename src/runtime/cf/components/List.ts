@@ -22,6 +22,8 @@ export function renderList(
     // rows' masks and bounds don't take part (eventMode none), or they'd take
     // the taps meant for the rows' buttons.
     scrollBox.hitArea = new Rectangle(0, 0, node.w, node.h);
+    // a drag in a list scrolls that list, not one it's in (a page's ScrollArea)
+    scrollBox.on('pointerdown', (e) => e.stopPropagation());
 
     const headerName = node.headerSub;
     const footerName = node.footerSub;

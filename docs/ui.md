@@ -27,8 +27,38 @@ The whole set in use: [examples/gallery](../examples/gallery) (`iva dev examples
 
 `createUi(theme)` takes any of: `page`, `bar`, `surface`, `raised`,
 `accent`, `text`, `muted`, `danger`, `warning` (colours), `font` (an
-iOS / Android family), `radius`, `panel: { width, height }`. The default
-is a dark look with a teal accent (`defaultTheme`).
+iOS / Android family), `radius`, `panel: { width, height }` (default:
+`screen()`, the size being built). The default is a dark look with a teal
+accent (`defaultTheme`).
+
+## Screen sizes
+
+A project built for several screens (`<Project sizes>`, docs/components.md)
+lays itself out from the size. `ui.grid()` places cards on the panel,
+whatever its size:
+
+```jsx
+const L = ui.grid({
+  lights: [400, 260],                         // the size each is laid out at
+  scenes: [828, (w) => (w < 600 ? 400 : 260)], // a height for the width it gets
+  table: { w: 1248, h: 330, grow: true },     // content that takes the room there is
+}, [['lights', 'scenes'], ['table']]);         // rows, left to right ([a, b]: a above b)
+
+<ui.Card title="Lights" {...L.lights}>…</ui.Card>   // x, y, w, h; dy: content centred in a taller card
+```
+
+Each row is stretched across the panel (each card by its share); a row that
+doesn't fit goes on in the next (a phone: one card under another); the rows
+share the height left - the ones with something that grows, else all - so
+a bigger panel is filled. Lay a card's content out from its `w` / `h` (a
+slider `w={L.lights.w - 56}`).
+
+`<ui.ScrollArea>` around a page's content scrolls it when it goes further
+down than the panel - on a phone, about every page: the content (placed as
+on the page) becomes a list's header subpage below the header, as GUI
+Designer projects scroll a panel of controls, so everything in it works as
+anywhere, joins and all. Sheets go on the page; on a phone give pickers
+`mode="sheet"` (a dropdown would scroll with the page).
 
 ## Joins
 
@@ -64,7 +94,8 @@ it as a value in min..max.
 | `SelectBox` | a field opening the options: a sheet over the page, or a dropdown under the field | `options`, `join` (the index), `value`, `title`, `mode` (`sheet`·`dropdown`) |
 | `ListRow` | a row: icon, title, subtitle; a value, a toggle or a chevron on the right | `icon`, `title`, `subtitle`, `value` / `valueJoin`, `toggle`, `chevron` + `page` / `js` / `cmd`, `divider` |
 | `DataList` | a CF list of headers, rows, alerts, spacers, filled at start | `join` (list), `items: [{ header } \| { icon, title, subtitle, value, alert } \| { spacer }]` |
-| `ScrollBox` | lines of text to drag through; or anything (children) scrolled as one: a list whose one row is a subpage of them (iViewer scrolls lists only; inside, joins are the row's - `IvaUI.fill` / `CF.listUpdate` reach them; pages, commands and JS on buttons work as anywhere) | `join` (list), `lines`, or children + `contentH` (default: as far down as they go), `w`, `h` |
+| `ScrollBox` | lines of text to drag through; or anything (children) scrolled as one: a list with no rows whose header subpage they are (iViewer scrolls lists only; everything in it works as anywhere, its joins the page's own) | `join` (list: lines need one), `lines`, or children + `contentH` (default: as far down as they go), `horizontal`, `w`, `h` |
+| `ScrollArea` | a page's content, scrolling when it goes further down than the panel (a ScrollBox below the header); else as it is | `x`, `y` (default 72: below the header), `w`, `h`; children placed as on the page |
 | `WeekDays` | seven day toggles; the bitmask (Mon 1 … Sun 64) and a summary ("Weekdays", "Sun, Mon") | `join` (bitmask), `value`, `first` (`mon`·`sun`), `labels`, `textJoin`, `size` |
 | `AlarmCard` | a titled card: on / off, the time (a TimePicker: a tap opens the drums), the days | `title`, `on`, `hour` / `minute` (analog joins, as numbers), `value` ("06:45"), `minuteStep`, `ampm`, `timeTitle`, `days`, `daysValue` |
 | `TextField` | a label, a field (an icon, a placeholder while empty), the text in a serial join | `join`, `label`, `value`, `placeholder`, `password`, `icon`, `cmd` (sent on Return) |
@@ -75,7 +106,7 @@ it as a value in min..max.
 | `ColorPicker` | a colour wheel, a brightness slider, a swatch with the hex, colours one tap away | `r` / `g` / `b` (analog joins, 0..255: written as you pick, followed when they change), `hex`, `value` ('#FFB000'), `swatches`, `onChange` (JS with `r`, `g`, `b`, `hex`), `size`, `port` |
 | `PinPad` | a keypad: digits, ← (hold: clear), OK; the code shown as dots | `code` (serial join OK writes), `onEnter` (JS with `code`), `length`, `mask`, `placeholder` |
 | `NavCard` | a card that goes to a page | `icon`, `title`, `text`, `page` |
-| `Header` | the top bar: menu button, title, breadcrumbs, clock | `title`, `section`, `home`, `menu`, `clock`, `themeToggle` (a ◐ button: `IvaTheme.toggle()`) |
+| `Header` | the top bar: menu button, title, breadcrumbs, clock (a narrow panel: the clock, then the breadcrumbs left out) | `title`, `section`, `home`, `menu`, `clock`, `themeToggle` (a ◐ button: `IvaTheme.toggle()`) |
 | `SideMenu` | a menu over the page, marking the page shown; its items scroll when there are more than fit (a tap acts on release, a drag scrolls) | `title`, `subtitle`, `items: [{ icon, text, page }]`, `menu`, `slide` |
 | `ConfirmDialog` | a dialog over a dimmed page | `join`, `title`, `message`, `confirmText`, `cancelText`, `danger`, `onConfirm` |
 | `DataTable` | a table: a search field, header taps sort (up, down, off), striped rows in tones, badge columns, a tap selects a row; "9 rows" / "2 of 9 rows" | `columns: [{ key, title, w, align, decimals, badge }]`, `data` or `source` (serial join: a JSON array), `keyField` + `selected` (serial join, both ways), `toneKey` (the field naming the tone: `alarm`·`warning`·`ok`·`running`·`muted`·`heating`·`cooling`·`offline`), `onSelect` (JS with `row`), `search`, `placeholder`, `words` |
