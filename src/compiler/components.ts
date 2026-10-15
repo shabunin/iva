@@ -318,6 +318,12 @@ export interface ProjectProps extends XmlProp {
   /** raw XML for <properties> after <size> (default: iva's) */
   properties?: string;
   /**
+   * the devices licensed to run it: iViewer's registration data, a name and
+   * the code iViewer shows in its unlicensed-mode message for that device:
+   * licenses={{ 'Living room iPad': '8437F51DCCD3F92EA6898A980ACA0259' }}
+   */
+  licenses?: Record<string, string>;
+  /**
    * looks the panel switches between at runtime: the project is built once per
    * name (variant() tells which), and IvaTheme.set(name) switches (CF.setProperties
    * with a theme, by tag). The first is the one it starts in, unless `theme` says.
@@ -752,7 +758,7 @@ const PLACEMENT = ['x', 'y', 'join', 'visible', 'in', 'out', 'topmost', 'fixed',
 /** The props each element takes (children aside).
  * @internal */
 export const PROPS: Record<string, string[]> = {
-  Project: ['name', 'device', 'orientation', 'width', 'height', 'otherSize', 'autoposition', 'sizes', 'joinBase', 'assets', 'properties', 'themes', 'theme', 'folders', 'httpPort'],
+  Project: ['name', 'device', 'orientation', 'width', 'height', 'otherSize', 'autoposition', 'sizes', 'joinBase', 'assets', 'properties', 'licenses', 'themes', 'theme', 'folders', 'httpPort'],
   Page: ['name', 'start', 'bg', 'image', 'theme', 'tags'],
   Landscape: ['bg', 'image', 'theme'],
   Portrait: ['bg', 'image', 'theme'],

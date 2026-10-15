@@ -465,3 +465,13 @@ export default (
   assert.deepEqual(writeBuilds([main, phone], out).map((g) => path.relative(out, g).split(path.sep).join('/')), ['T.gui', '1400w1400h/T.gui']);
   await assert.rejects(compile(entry, { size: '1400x1400@9x' }), /size: "1400x1400@9x" isn't one/);
 });
+
+test('<Project licenses>: the devices licensed to run it, in <properties> as GUI Designer writes them', async () => {
+  const r = await build(`export default (
+  <Project name="T" width={1024} height={768} licenses={{ 'Kitchen iPad': '8437f51dccd3f92ea6898a980aca0259', 'Phone': 'B61C91A1867233DEC98FE9605E2AA91B' }}>
+    <Page name="Main" />
+  </Project>
+);`);
+  assert.match(r.xml, /<debug [^>]*\/>\s*<devices>\s*<device name="Kitchen iPad">8437F51DCCD3F92EA6898A980ACA0259<\/device>\s*<device name="Phone">B61C91A1867233DEC98FE9605E2AA91B<\/device>\s*<\/devices>\s*<\/properties>/);
+  await fails(`export default (<Project name="T" width={1024} height={768} licenses={{ 'Phone': '12345' }}><Page name="P" /></Project>);`, /licenses: "Phone": "12345" isn't a device code/);
+});

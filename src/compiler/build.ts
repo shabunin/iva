@@ -218,6 +218,21 @@ export class Builder {
       }
     }
 
+    // the devices licensed to run it (<properties><devices>, as GUI Designer writes them)
+    if (p.licenses !== undefined) {
+      if (!p.licenses || typeof p.licenses !== 'object' || Array.isArray(p.licenses)) {
+        throw this.err(project, "licenses: { 'a name': 'the device code' } (licenses={{ 'Kitchen iPad': '8437F51DCCD3F92EA6898A980ACA0259' }})");
+      }
+      let devices = properties.find((x) => x.tag === 'devices');
+      if (!devices) properties.push((devices = el('devices', {}, [])));
+      for (const [name, code] of Object.entries(p.licenses as Record<string, unknown>)) {
+        if (typeof code !== 'string' || !/^[0-9a-f]{32}$/i.test(code.trim())) {
+          throw this.err(project, `licenses: "${name}": ${JSON.stringify(code)} isn't a device code (32 hex digits, as iViewer shows it)`);
+        }
+        devices.children.push(el('device', { name }, [], code.trim().toUpperCase()));
+      }
+    }
+
     const children = this.elements(project);
     // themes first: elements refer to them by name
     for (const c of children) if (c.type === 'Theme') this.theme(c);
