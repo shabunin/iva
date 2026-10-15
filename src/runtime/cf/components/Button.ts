@@ -302,7 +302,8 @@ export function renderButton(
         }
     };
 
-    btn.onDown.connect(() => {
+    /** The press: the button down, its press actions. */
+    const press = () => {
         if (node.sim === "1") {
             isBtnDown = true;
             if (node.j && node.j !== "0") {
@@ -414,7 +415,7 @@ export function renderButton(
                 repeatInterval = setInterval(executeBasicActions, node.repeatdelay);
             }
         }
-    });
+    };
 
     /** A list being dragged took the touch (a device cancels it): the press is undone, nothing is released. */
     const inDraggedList = (): boolean => {
@@ -423,8 +424,50 @@ export function renderButton(
         }
         return false;
     };
+    /** In a list (a ScrollBox: one a finger can drag) - a page's ScrollArea too. */
+    const inList = (): boolean => {
+        for (let p: Container | null = container.parent; p; p = p.parent) {
+            if ((p as any).isDragging !== undefined) return true;
+        }
+        return false;
+    };
 
-    const handleUp = () => {
+    // In a list a touch is a press only once it isn't the start of a drag, as a
+    // device's list holds its rows' touches back: after a moment holding still,
+    // or let go before that (a tap - press, then release). A drag the list takes
+    // first is neither: a swipe that starts on a picker's field doesn't open it.
+    const TAP_WAIT = 120;
+    let pending: ReturnType<typeof setTimeout> | null = null;
+    let pressed = false;
+    btn.onDown.connect(() => {
+        if (pending) clearTimeout(pending);
+        pending = null;
+        if (!inList()) {
+            pressed = true;
+            press();
+            return;
+        }
+        pressed = false;
+        pending = setTimeout(() => {
+            pending = null;
+            if (container.destroyed || inDraggedList()) return;
+            pressed = true;
+            press();
+        }, TAP_WAIT);
+    });
+
+    const handleUp = (inside: boolean) => {
+        if (pending) {
+            clearTimeout(pending);
+            pending = null;
+            // let go on it before the moment was up: a tap
+            if (inside && !inDraggedList() && !container.destroyed) {
+                pressed = true;
+                press();
+            }
+        }
+        if (!pressed) return; // the list took the touch: nothing was pressed, nothing is released
+        pressed = false;
         stopRepeat();
         if (!isBtnDown && node.sim !== "0") return; // if sim!==0, we only care if we were down
         isBtnDown = false;
@@ -477,8 +520,8 @@ export function renderButton(
         if (href && renderer.cfApi?.openURL) renderer.cfApi.openURL(href);
     };
 
-    btn.onUp.connect(handleUp);
-    btn.onUpOut.connect(handleUp);
+    btn.onUp.connect(() => handleUp(true));
+    btn.onUpOut.connect(() => handleUp(false));
 
     const checkSJoin = (jName: string | undefined) => {
         if (jName && jName !== "0") {
