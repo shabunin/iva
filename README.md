@@ -114,7 +114,9 @@ node bin/iva.mjs dev path/to/project.gui      # or a folder: every .gui in it, w
 node bin/iva.mjs dev fixtures/DemoUserInterfaces   # after `npm run fixtures`
 ```
 
-Open http://127.0.0.1:5180/. Saving any file in the project reloads the page.
+Open http://127.0.0.1:5180/. Saving a file the project is built from (its .jsx
+files and the components it imports, wherever they are, its scripts and
+assets) rebuilds it and reloads the page; other files (logs, dist/) don't.
 Options: `--port`, `--host 0.0.0.0` (preview from a tablet on the LAN),
 `-v` (log sockets).
 

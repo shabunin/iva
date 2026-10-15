@@ -15,7 +15,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { compile, IvaError, slug, type CompileResult } from '../compiler/index.js';
-import { watchTree } from './watch.js';
+import { watchInputs, watchTree } from './watch.js';
 
 export interface DeviceServerOptions {
   /** a JSX entry, or a .gui */
@@ -104,7 +104,7 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
   const log = opts.log ?? ((m: string) => console.log(`[iva] ${m}`));
   const isGui = target.toLowerCase().endsWith('.gui');
   // what's being served (replaced on each good build) and the last build error
-  const state: { served: Served | null; error: string | null } = { served: null, error: null };
+  const state: { served: Served | null; error: string | null; inputs: CompileResult['inputs'] | null } = { served: null, error: null, inputs: null };
   const waiting = new Set<(v: string) => void>();
 
   const load = async (): Promise<void> => {
@@ -128,6 +128,7 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
         return;
       }
       for (const w of r.warnings) log(`warning: ${w}`);
+      state.inputs = r.inputs;
       const files = new Map<string, { name: string; data?: Buffer; file?: string }>();
       for (const a of r.assets) files.set(a.name.toLowerCase(), a);
       for (const s of r.scripts) files.set(s.name.toLowerCase(), { name: s.name, file: s.file, data: s.code !== undefined ? Buffer.from(s.code) : undefined });
@@ -203,11 +204,15 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
     send(404, '<H2>404 Error! File Does Not Exist...</H2>', 'text/html');
   });
 
-  // rebuild / re-read on change
-  const watcher = watchTree(path.dirname(target), !isGui, (file) => {
+  // rebuild on a change to what the build read; a .gui: re-read on a change next to it
+  const changed = async (file: string) => {
     log(`changed: ${file}`);
-    void load();
-  }, log);
+    await load();
+    if (state.inputs) inputs?.set(state.inputs);
+  };
+  const inputs = isGui ? null : watchInputs(changed, log);
+  if (inputs && state.inputs) inputs.set(state.inputs);
+  const watcher = inputs ?? watchTree(path.dirname(target), false, changed, log);
 
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);

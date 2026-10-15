@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { createServer as createVite } from 'vite';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { HostSession } from './host/session.js';
-import { watchTree } from './watch.js';
+import { watchInputs, watchTree } from './watch.js';
 import { findGuis, loadManifest, rootDir, safeJoin, type GuiEntry, type ProjectManifest } from './project.js';
 import { compile, IvaError, slug, type CompileResult } from '../compiler/index.js';
 
@@ -55,6 +55,8 @@ interface ProjectSource {
   file(rel: string): string | Buffer | null;
   /** after a change; resolves to an error message, or null when it's fine to reload */
   refresh(): Promise<string | null>;
+  /** the files the last good build read (watched instead of the whole folder), if there was one */
+  inputs?(): { files: string[]; dirs: string[] } | null;
 }
 
 function guiSource(target: string): ProjectSource {
@@ -104,6 +106,7 @@ async function jsxSource(entry: string, log: (m: string) => void): Promise<Proje
       return a ? (a.data ?? a.file ?? null) : null;
     },
     refresh: build,
+    inputs: () => (result as CompileResult | null)?.inputs ?? null,
   };
 }
 
@@ -191,13 +194,29 @@ export async function startDev(opts: DevOptions) {
     });
   });
 
-  // ── reload on change ──
-  const watcher = watchTree(source.dir, true, async (file) => {
+  // ── reload on change: a JSX project's own inputs (wherever they are); a .gui's folder ──
+  const changed = async (file: string) => {
     log(`changed: ${file}`);
     const error = await source.refresh();
+    follow();
     const msg = error ? { t: 'error', text: error } : { t: 'reload' };
     for (const ws of pages) ws.send(JSON.stringify(msg));
-  }, log);
+  };
+  const inputs = source.inputs ? watchInputs(changed, log) : null;
+  let folder: { close(): void } | null = null;
+  const follow = () => {
+    const now = source.inputs?.();
+    if (inputs && now) {
+      inputs.set(now);
+      folder?.close();
+      folder = null;
+    } else if (!folder) {
+      // nothing built yet (or a .gui): the whole folder
+      folder = watchTree(source.dir, true, changed, log);
+    }
+  };
+  follow();
+  const watcher = { close: () => { inputs?.close(); folder?.close(); } };
 
   await new Promise<void>((resolve, reject) => {
     httpServer.once('error', reject);

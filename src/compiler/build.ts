@@ -61,6 +61,8 @@ export interface BuildResult {
   /** named joins -> numbers */
   joins: Record<string, Record<string, number>>;
   warnings: string[];
+  /** the assets folder, if the project has one */
+  assetDir: string | null;
 }
 
 type Attrs = Record<string, string | number | boolean | null | undefined | JoinSlot>;
@@ -225,7 +227,7 @@ export class Builder {
       ...[...this.subpages.values()].map((s) => s.node),
       ...this.trailing,
     ]);
-    return { root, assets: [...this.assets.values()], scripts: this.scripts, joins: this.joins.map(), warnings: this.warnings };
+    return { root, assets: [...this.assets.values()], scripts: this.scripts, joins: this.joins.map(), warnings: this.warnings, assetDir: this.assetDir };
   }
 
   // ── checks & helpers ─────────────────────────────────────────────

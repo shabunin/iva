@@ -24,6 +24,8 @@ export interface CompileResult {
   warnings: string[];
   /** the source files it was built from */
   files: string[];
+  /** every file the build read (sources, copied assets, scripts) and the assets folder: what to watch */
+  inputs: { files: string[]; dirs: string[] };
 }
 
 /** A build error with where it happened, ready to print. */
@@ -73,7 +75,9 @@ export async function compile(entry: string): Promise<CompileResult> {
     const { tree, files } = await evaluate(file);
     const result = new Builder(baseDir).build(tree);
     const name = result.root.children[0].children.find((c) => c.tag === 'project')?.text ?? path.basename(file, path.extname(file));
-    return { name, xml: serialize(result.root), assets: result.assets, scripts: result.scripts, joins: result.joins, warnings: result.warnings, files };
+    const used = [...files, ...result.assets.flatMap((a) => (a.file ? [a.file] : [])), ...result.scripts.flatMap((sc) => (sc.file ? [sc.file] : []))];
+    const inputs = { files: [...new Set(used.map((f) => path.resolve(f)))], dirs: result.assetDir ? [result.assetDir] : [] };
+    return { name, xml: serialize(result.root), assets: result.assets, scripts: result.scripts, joins: result.joins, warnings: result.warnings, files, inputs };
   } catch (e) {
     throw located(e, baseDir);
   }
