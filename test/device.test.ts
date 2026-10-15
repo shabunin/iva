@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import { startDeviceServer } from '../src/server/device.ts';
+import { readZip } from '../src/server/zip.ts';
 
 const ECHO = path.resolve(import.meta.dirname, '../fixtures/local/echo-system/echo.gui');
 const quiet = () => {};
@@ -128,6 +129,31 @@ test('a JSX project is built and served from memory', async () => {
     assert.match((await get(s.port, '/images/scripts/iva-joins.js')).body, /var Joins/);
     assert.equal((await get(s.port, '/scripts/iva-joins.js')).status, 404);
     assert.equal((await get(s.port, '/images/scripts/../iva-joins.js')).status, 404);
+  } finally {
+    await s.close();
+  }
+});
+
+test('the whole build in one zip for the panel to keep, and 304 for the build it has', async () => {
+  const s = await startDeviceServer({
+    target: path.resolve(import.meta.dirname, '../examples/hello/app.jsx'), port: 0, host: '127.0.0.1', live: true, log: quiet,
+  });
+  try {
+    const res = await fetch(`http://127.0.0.1:${s.port}/__iva/gui.zip`);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'application/zip');
+    const etag = res.headers.get('etag')!;
+    const files = readZip(Buffer.from(await res.arrayBuffer()));
+    // the .gui and every file at the path it's served from (its case kept), the live script too
+    assert.match(files.get('Hello-iva.gui')!.toString('utf8'), /<imagefolder>images<\/imagefolder>/);
+    assert.ok([...files.keys()].some((n) => /^images\/controls\/iva_track_[0-9a-f]+\.png$/.test(n)));
+    assert.match(files.get('images/scripts/iva-joins.js')!.toString('utf8'), /var Joins/);
+    assert.match(files.get('iva-live.js')!.toString('utf8'), /__iva\/wait/);
+    // the same build again: not modified
+    const again = { headers: { 'If-None-Match': etag } };
+    assert.equal((await fetch(`http://127.0.0.1:${s.port}/__iva/gui.zip`, again)).status, 304);
+    assert.equal((await fetch(`http://127.0.0.1:${s.port}/`, again)).status, 304);
+    assert.equal((await fetch(`http://127.0.0.1:${s.port}/`, { headers: { 'If-None-Match': '"other"' } })).status, 200);
   } finally {
     await s.close();
   }

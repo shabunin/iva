@@ -16,6 +16,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { compile, IvaError, scriptsDir, slug, type CompileResult } from '../compiler/index.js';
 import { watchInputs, watchTree } from './watch.js';
+import { writeZip } from './zip.js';
 
 export interface DeviceServerOptions {
   /** a JSX entry, or a .gui */
@@ -42,8 +43,8 @@ interface Served {
   name: string;
   /** the .gui as served (the live script added when live) */
   gui: Buffer;
-  /** other files by lower-cased name */
-  files: Map<string, { name: string; data?: Buffer; file?: string }>;
+  /** other files by lower-cased path: `path` as served (images/x.png) */
+  files: Map<string, { name: string; path: string; data?: Buffer; file?: string }>;
   version: string;
   modified: Date;
 }
@@ -210,11 +211,11 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
     if (isGui) {
       // a .gui and the files next to it (and in its folders: an image folder, scripts/), as GUI Designer serves them
       const dir = path.dirname(target);
-      const files = new Map<string, { name: string; file: string }>();
+      const files = new Map<string, { name: string; path: string; file: string }>();
       const walk = (sub: string, depth: number) => {
         for (const e of fs.readdirSync(path.join(dir, sub), { withFileTypes: true })) {
           const rel = sub ? `${sub}/${e.name}` : e.name;
-          if (e.isFile()) files.set(rel.toLowerCase(), { name: rel, file: path.join(dir, rel) });
+          if (e.isFile()) files.set(rel.toLowerCase(), { name: rel, path: rel, file: path.join(dir, rel) });
           else if (e.isDirectory() && depth < 4 && !e.name.startsWith('.') && e.name !== 'node_modules') walk(rel, depth + 1);
         }
       };
@@ -232,13 +233,14 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
       for (const w of r.warnings) log(`warning: ${w}`);
       state.inputs = r.inputs;
       // where writeBuild puts them, iViewer asks for them: images/..., images/scripts/...
-      const files = new Map<string, { name: string; data?: Buffer; file?: string }>();
+      const files = new Map<string, { name: string; path: string; data?: Buffer; file?: string }>();
       const at = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
-      for (const a of r.assets) files.set(at(r.layout.images, a.name).toLowerCase(), a);
+      for (const a of r.assets) files.set(at(r.layout.images, a.name).toLowerCase(), { ...a, path: at(r.layout.images, a.name) });
       for (const s of r.scripts) {
-        files.set(at(scriptsDir(r.layout), s.name).toLowerCase(), { name: s.name, file: s.file, data: s.code !== undefined ? Buffer.from(s.code) : undefined });
+        const where = at(scriptsDir(r.layout), s.name);
+        files.set(where.toLowerCase(), { name: s.name, path: where, file: s.file, data: s.code !== undefined ? Buffer.from(s.code) : undefined });
       }
-      files.set('joins.json', { name: 'joins.json', data: Buffer.from(JSON.stringify(r.joins, null, 2) + '\n') });
+      files.set('joins.json', { name: 'joins.json', path: 'joins.json', data: Buffer.from(JSON.stringify(r.joins, null, 2) + '\n') });
       next = { name: `${slug(r.name)}.gui`, gui: Buffer.from('﻿' + r.xml), files };
       log(`built ${path.basename(target)} in ${Date.now() - t0} ms`);
     }
@@ -251,6 +253,28 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
   };
   await load();
   if (!state.served) throw new Error(`can't serve: ${state.error}`);
+
+  /**
+   * The GUI as served, in one archive: the .gui, its files at their paths, the
+   * live script - what the iva panel keeps on the device (the web pages and
+   * assets a script loads too, which the .gui doesn't name). Made once a build.
+   */
+  let zipped: { key: string; data: Buffer } | null = null;
+  const zipOf = (s: Served, host: string) => {
+    const key = `${s.version} ${host}`;
+    if (zipped?.key === key) return zipped.data;
+    const entries: [string, Buffer][] = [[s.name, s.gui]];
+    for (const f of s.files.values()) {
+      const data = f.data ?? (f.file && fs.existsSync(f.file) ? fs.readFileSync(f.file) : undefined);
+      if (data) entries.push([f.path, data]);
+    }
+    if (opts.live) {
+      const xml = s.gui.toString('utf8');
+      entries.push([LIVE_SCRIPT, Buffer.from(liveScript(`http://${host}`, s.version, panelServers(xml), systemNames(xml)))]);
+    }
+    zipped = { key, data: writeZip(entries) };
+    return zipped.data;
+  };
 
   const server = http.createServer((req, res) => {
     // a path only ('//x' would read as a host): one slash in front
@@ -265,8 +289,10 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
         'CF-Server': CF_SERVER,
         ...(status === 200 ? { 'Last-Modified': s.modified.toUTCString(), ETag: `"${s.version}"` } : {}),
         'Content-Type': type,
-        // the iva panel app's page loads the images from here (another origin: WebGL needs CORS)
+        // the iva panel app's page loads the images from here (another origin: WebGL needs CORS);
+        // it tells iva serve (the whole build in one zip) and a build it has by these
         'Access-Control-Allow-Origin': '*',
+        'Access-Control-Expose-Headers': 'Server, ETag',
         ...extra,
       });
       res.end(req.method === 'HEAD' ? undefined : data);
@@ -275,6 +301,10 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
       if (!url.pathname.startsWith('/__iva/')) log(`${who} ${req.method} ${req.url} -> ${status} (${data.length} B)${agent}`);
     };
 
+    // a browser asking first whether it may ask for a build it has (the panel's page in a browser)
+    if (req.method === 'OPTIONS') {
+      return send(204, '', 'text/plain', { 'Access-Control-Allow-Methods': 'GET, HEAD', 'Access-Control-Allow-Headers': 'If-None-Match, If-Modified-Since' });
+    }
     // live reload: answer when the build changes (or after a while, with the same version)
     if (url.pathname === '/__iva/wait') {
       if (url.searchParams.get('v') !== s.version) return send(200, state.served!.version, 'text/plain');
@@ -301,8 +331,17 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
       return send(200, 'ok', 'text/plain');
     }
 
+    // the build the asker has already (the panel's saved copy): not again
+    const unchanged = req.headers['if-none-match'] === `"${s.version}"`;
+    if (url.pathname === '/__iva/gui.zip') {
+      if (unchanged) return send(304, '', 'application/zip');
+      const host = req.headers.host ?? `${lanAddresses()[0]?.address ?? '127.0.0.1'}:${opts.port}`;
+      return send(200, zipOf(s, host), 'application/zip');
+    }
+
     const name = decodeURIComponent(url.pathname.slice(1));
     if (name === '' || name.toLowerCase() === s.name.toLowerCase() || (name.toLowerCase().endsWith('.gui') && !s.files.has(name.toLowerCase()))) {
+      if (unchanged) return send(304, '', 'text/xml');
       return send(200, s.gui, 'text/xml');
     }
     // the live script: in the image folder, as iViewer looks for scripts (images/iva-live.js)
