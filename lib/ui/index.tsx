@@ -1673,6 +1673,18 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
   }
 
   function NavCard({ icon, title, text, page, x = 0, y = 0, w = 380, h = 180 }: NavCardProps): VNode {
+    // a narrow card (two across a phone): smaller, the title on up to two lines, the text under it on three
+    if (w < 260) {
+      const m = 18;
+      return (
+        <Group x={x} y={y}>
+          <Button w={w} h={h} page={page} radius={t.radius + 4} bg={t.surface} active={{ bg: t.raised }}
+                  icon={{ src: fa(icon, { size: 30, color: t.accent }), x: m, y: m }} />
+          <Text x={m} y={m + 42} w={w - 2 * m} h={48} text={title} wrap valign="top" font={font} fontSize={18} />
+          {text && <Text x={m} y={m + 92} w={w - 2 * m} h={Math.max(20, h - m - 102)} text={text} wrap valign="top" color={t.muted} font={font} fontSize={14} />}
+        </Group>
+      );
+    }
     return (
       <Group x={x} y={y}>
         <Button w={w} h={h} page={page} radius={t.radius + 4} bg={t.surface} active={{ bg: t.raised }}
