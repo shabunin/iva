@@ -803,6 +803,8 @@ export async function decompile(guiPath: string, outDir: string): Promise<Decomp
     ['otherSize', other[0] === main[1] && other[1] === main[0] ? undefined : other],
     ['autoposition', autoposition === 'scale' ? undefined : autoposition ?? null],
     ['properties', propsXml],
+    // the files where the .gui has them (not iva's images/ and scripts/)
+    ['folders', false],
   ];
   const project = j('Project', projectProps, [...inline, ...body.map((b) => new Code(b))]);
   jsx('app.jsx', () => `${fileHeader}${imports.join('\n')}${imports.length ? '\n\n' : ''}export default (\n${print(project, '  ')}\n);\n`);

@@ -98,13 +98,20 @@ export function loadManifest(base: string, guiRel: string, assetUrl: (rel: strin
   const guiXml = decodeXml(fs.readFileSync(guiPath));
   const projectDir = path.dirname(guiPath);
 
+  // iViewer finds images in the .gui's image folder (<imagefolder>), by the name the .gui gives: a path in it, or a bare name
+  const folder = (guiXml.match(/<imagefolder>([^<]*)<\/imagefolder>/)?.[1] ?? '').trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+  const imageRoot = folder ? path.join(projectDir, folder) : projectDir;
   const imageMap: Record<string, string> = {};
   const files: string[] = [];
   walk(projectDir, (f) => {
     files.push(f);
     const leaf = path.basename(f);
-    // the shallowest file wins when two folders hold the same name
-    if (IMAGE_RE.test(leaf) && !imageMap[leaf]) imageMap[leaf] = assetUrl(toPosix(path.relative(base, f)));
+    if (!IMAGE_RE.test(leaf)) return;
+    const url = assetUrl(toPosix(path.relative(base, f)));
+    const inFolder = toPosix(path.relative(imageRoot, f));
+    if (!inFolder.startsWith('..') && !imageMap[inFolder]) imageMap[inFolder] = url;
+    // by bare name too: the shallowest file wins when two folders hold the same name
+    if (!imageMap[leaf]) imageMap[leaf] = url;
   });
 
   const scriptMap: Record<string, string> = {};

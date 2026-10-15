@@ -1,4 +1,4 @@
-import { Application, Container, Sprite, Text, Graphics, Assets, TextStyle, Color, NineSliceSprite, Rectangle } from 'pixi.js';
+import { Application, Container, Sprite, Text, Graphics, Assets, TextStyle, Color, NineSliceSprite, Rectangle, type Texture } from 'pixi.js';
 import { Slider, FancyButton, ScrollBox } from '@pixi/ui';
 import { animate, type AnimationPlaybackControlsWithThen } from 'motion';
 import { CFProject, CFNode, CFTheme, CFSubpage } from './parser';
@@ -423,6 +423,20 @@ export class CFRenderer {
   }
 
   /** A URL as the GUI gives it, made loadable here: project files by name, anything with a scheme as is. */
+  /** A loaded image by the name the .gui gives it: a path in its image folder (icons/x.png), else its file name. */
+  texture(ref: string): Texture | undefined {
+    if (!ref) return undefined;
+    const name = ref.replace(/\\/g, '/');
+    const leaf = name.split('/').pop() || name;
+    const keys = Object.keys(this.imageMap);
+    const tries = [name, keys.find((k) => k.toLowerCase() === name.toLowerCase()), leaf, keys.find((k) => k.toLowerCase() === leaf.toLowerCase())];
+    for (const k of tries) {
+      const t = k ? Assets.get(k) : undefined;
+      if (t) return t;
+    }
+    return undefined;
+  }
+
   /** What a web view loads for a URL: the host's way to it, else the URL (a project file by name). */
   webSrc(url: string): string {
     return this.webUrl?.(url) ?? this.resolveUrl(url);
@@ -446,10 +460,15 @@ export class CFRenderer {
     let url = match[1].trim();
     if (url.startsWith("'") || url.startsWith('"')) url = url.substring(1);
     if (url.endsWith("'") || url.endsWith('"')) url = url.substring(0, url.length - 1);
-    const fileName = url.replace(/\\/g, '/').split('/').pop() || url;
+    url = url.replace(/\\/g, '/');
+    const possibleKeys = Object.keys(this.imageMap);
+    // as the .gui names it (a path in its image folder: icons/x.png), then by file name
+    if (Assets.get(url)) return url;
+    const fullKey = possibleKeys.find(k => k.toLowerCase() === url.toLowerCase());
+    if (fullKey) return fullKey;
+    const fileName = url.split('/').pop() || url;
 
     if (Assets.get(fileName)) return fileName;
-    const possibleKeys = Object.keys(this.imageMap);
     const foundKey = possibleKeys.find(k => k.toLowerCase() === fileName.toLowerCase());
     return foundKey || fileName;
   }

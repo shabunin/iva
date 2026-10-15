@@ -1,7 +1,7 @@
 /**
  * `iva serve`: the project for iViewer on a real device, over the LAN, the
  * way GUI Designer's Upload Service serves it (port 8019; `/` and
- * `/<name>.gui` are the .gui, every other file flat by name, the same
+ * `/<name>.gui` are the .gui, every other file by its path in the build, the same
  * headers), so iViewer loads it from "GUI File URL" = http://<this machine>:8019.
  *
  * A JSX project is rebuilt on save; a .gui is re-read when it changes (say,
@@ -111,12 +111,17 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
     const t0 = Date.now();
     let next: Omit<Served, 'version' | 'modified'>;
     if (isGui) {
-      // a .gui and the files next to it, flat by name, as GUI Designer serves them
+      // a .gui and the files next to it (and in its folders: an image folder, scripts/), as GUI Designer serves them
       const dir = path.dirname(target);
       const files = new Map<string, { name: string; file: string }>();
-      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-        if (e.isFile()) files.set(e.name.toLowerCase(), { name: e.name, file: path.join(dir, e.name) });
-      }
+      const walk = (sub: string, depth: number) => {
+        for (const e of fs.readdirSync(path.join(dir, sub), { withFileTypes: true })) {
+          const rel = sub ? `${sub}/${e.name}` : e.name;
+          if (e.isFile()) files.set(rel.toLowerCase(), { name: rel, file: path.join(dir, rel) });
+          else if (e.isDirectory() && depth < 4 && !e.name.startsWith('.') && e.name !== 'node_modules') walk(rel, depth + 1);
+        }
+      };
+      walk('', 0);
       next = { name: path.basename(target), gui: fs.readFileSync(target), files };
     } else {
       let r: CompileResult;
@@ -129,9 +134,13 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
       }
       for (const w of r.warnings) log(`warning: ${w}`);
       state.inputs = r.inputs;
+      // where writeBuild puts them: images/..., scripts/... (as the .gui names them)
       const files = new Map<string, { name: string; data?: Buffer; file?: string }>();
-      for (const a of r.assets) files.set(a.name.toLowerCase(), a);
-      for (const s of r.scripts) files.set(s.name.toLowerCase(), { name: s.name, file: s.file, data: s.code !== undefined ? Buffer.from(s.code) : undefined });
+      const at = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
+      for (const a of r.assets) files.set(at(r.layout.images, a.name).toLowerCase(), a);
+      for (const s of r.scripts) {
+        files.set(at(r.layout.scripts, s.name).toLowerCase(), { name: s.name, file: s.file, data: s.code !== undefined ? Buffer.from(s.code) : undefined });
+      }
       files.set('joins.json', { name: 'joins.json', data: Buffer.from(JSON.stringify(r.joins, null, 2) + '\n') });
       next = { name: `${slug(r.name)}.gui`, gui: Buffer.from('﻿' + r.xml), files };
       log(`built ${path.basename(target)} in ${Date.now() - t0} ms`);
@@ -194,7 +203,8 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
       const host = req.headers.host ?? `${lanAddresses()[0]?.address ?? '127.0.0.1'}:${opts.port}`;
       return send(200, liveScript(`http://${host}`, s.version), TYPES['.js']);
     }
-    const f = !name.includes('/') ? s.files.get(name.toLowerCase()) : undefined;
+    // only what the map has: a path is a key, never a file system path
+    const f = s.files.get(name.toLowerCase());
     if (f) {
       const data = f.data ?? (f.file && fs.existsSync(f.file) ? fs.readFileSync(f.file) : undefined);
       if (data) return send(200, data, TYPES[path.extname(f.name).toLowerCase()] ?? 'application/unknown');

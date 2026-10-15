@@ -6,7 +6,7 @@ A CommandFusion iViewer panel, written in JSX and built with
 ```bash
 iva dev      # live preview
 iva check    # check before building
-iva build    # dist/{{slug}}.gui for iViewer / GUI Designer
+iva build    # dist/{{slug}}.gui (+ images/, scripts/) for iViewer / GUI Designer
 iva serve    # to iViewer on a device: GUI File URL http://<this machine>:8019
 ```
 

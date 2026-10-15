@@ -27,6 +27,8 @@ export interface CompileResult {
   files: string[];
   /** every file the build read (sources, copied assets, scripts) and the assets folder: what to watch */
   inputs: { files: string[]; dirs: string[] };
+  /** the folders beside the .gui: images (iViewer's image folder) and scripts; '' = beside it (<Project folders={false}>) */
+  layout: { images: string; scripts: string };
 }
 
 /** A build error with where it happened, ready to print. */
@@ -110,7 +112,10 @@ export async function compile(entry: string): Promise<CompileResult> {
     const name = result.root.children[0].children.find((c) => c.tag === 'project')?.text ?? path.basename(file, path.extname(file));
     const used = [...files, ...result.inputs, ...result.assets.flatMap((a) => (a.file ? [a.file] : [])), ...result.scripts.flatMap((sc) => (sc.file ? [sc.file] : []))];
     const inputs = { files: [...new Set(used.map((f) => path.resolve(f)))], dirs: result.assetDir ? [result.assetDir] : [] };
-    return { name, xml: serialize(result.root), assets: result.assets, scripts: result.scripts, joins: result.joins, warnings: result.warnings, files, inputs };
+    return {
+      name, xml: serialize(result.root), assets: result.assets, scripts: result.scripts, joins: result.joins, warnings: result.warnings, files, inputs,
+      layout: result.layout,
+    };
   } catch (e) {
     throw located(e, baseDir);
   }
@@ -120,21 +125,28 @@ export async function compile(entry: string): Promise<CompileResult> {
 export const slug = (name: string) => name.replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'project';
 
 /**
- * outDir/<name>.gui, the images, sounds and scripts next to it (iViewer
- * finds them by file name), and joins.json. Returns the .gui path.
+ * outDir/<name>.gui; images/ beside it (iViewer's image folder: the
+ * project's images, sounds and files, iva's drawings in backgrounds/, icons/,
+ * controls/, web apps in apps/), scripts/, joins.json. With
+ * <Project folders={false}> everything beside the .gui. Returns the .gui path.
  */
 export function writeBuild(result: CompileResult, outDir: string): string {
   fs.rmSync(outDir, { recursive: true, force: true });
   fs.mkdirSync(outDir, { recursive: true });
   const gui = path.join(outDir, `${slug(result.name)}.gui`);
   fs.writeFileSync(gui, '﻿' + result.xml);
+  const place = (dir: string, name: string) => {
+    const dest = path.join(outDir, dir, name);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    return dest;
+  };
   for (const a of result.assets) {
-    if (a.data) fs.writeFileSync(path.join(outDir, a.name), a.data);
-    else fs.copyFileSync(a.file!, path.join(outDir, a.name));
+    const dest = place(result.layout.images, a.name);
+    if (a.data) fs.writeFileSync(dest, a.data);
+    else fs.copyFileSync(a.file!, dest);
   }
   for (const s of result.scripts) {
-    const dest = path.join(outDir, s.name);
-    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    const dest = place(result.layout.scripts, s.name);
     if (s.file) fs.copyFileSync(s.file, dest);
     else fs.writeFileSync(dest, s.code ?? '');
   }

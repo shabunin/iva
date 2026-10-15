@@ -69,10 +69,13 @@ test('a JSX project is built and served from memory', async () => {
   try {
     assert.equal(s.name, 'Hello-iva.gui');
     const gui = (await get(s.port, '/Hello-iva.gui')).body;
-    assert.match(gui, /<script name="iva-joins\.js" \/>\s*<script name="main\.js" \/>\s*<script name="iva-live\.js" \/>/);
-    const png = /iva_track_[0-9a-f]+\.png/.exec(gui)![0];
-    assert.equal((await get(s.port, `/${png}`)).headers.get('content-type'), 'image/png');
-    assert.match((await get(s.port, '/iva-joins.js')).body, /var Joins/);
+    // the build's folders: scripts/, images/ (the .gui's image folder)
+    assert.match(gui, /<imagefolder>images<\/imagefolder>/);
+    assert.match(gui, /<script name="scripts\/iva-joins\.js" \/>\s*<script name="scripts\/main\.js" \/>\s*<script name="iva-live\.js" \/>/);
+    const png = /controls\/iva_track_[0-9a-f]+\.png/.exec(gui)![0];
+    assert.equal((await get(s.port, `/images/${png}`)).headers.get('content-type'), 'image/png');
+    assert.match((await get(s.port, '/scripts/iva-joins.js')).body, /var Joins/);
+    assert.equal((await get(s.port, '/scripts/../iva-joins.js')).status, 404);
   } finally {
     await s.close();
   }

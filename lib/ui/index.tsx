@@ -16,7 +16,7 @@
 
 import {
   Box, Button as IvaButton, Gesture, Group, Image, Input, List, OnStart, Script, Slider as IvaSlider, Subpage, Text as IvaText, Web, WebApp,
-  a, d, draw, fa, js as jsAction, l, s, variant,
+  a, d, draw, drawnName, fa, js as jsAction, l, s, variant,
   type ButtonProps, type Child, type IconRef, type Join, type JoinRef, type TextProps, type VNode,
 } from 'iva';
 import { UI_RUNTIME } from './runtime.js';
@@ -1094,7 +1094,7 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     const key = keyOf(join);
     const id = JSON.stringify(key);
     const from = -sweep / 2;
-    const prefix = `iva_dial_${hash(`${size}|${th}|${sweep}|${steps}|${color}`)}_`;
+    const prefix = `${drawnName('dial', hash(`${size}|${th}|${sweep}|${steps}|${color}`))}_`;
     const frames = Array.from({ length: steps + 1 }, (_, i) => draw.arc({ size, thickness: th, from, to: from + (sweep * i) / steps, color, name: `${prefix}${i}` }));
     const arcJoin: JoinRef = s(`ui_${key}_arc`);
     const thumbJoin: JoinRef = s(`ui_${key}_thumb`);
@@ -1114,7 +1114,7 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
           <Text y={Math.round(size * 0.58)} w={size} h={Math.round(size * 0.12)} text={label} join={labelJoin} align="center" color={t.muted} font={font} fontSize={Math.round(size * 0.075)} />
         )}
         {/* every frame in the project (iViewer ships / caches what the .gui names), out of sight */}
-        <Subpage name={`ui_frames_${prefix}`} w={1} h={1} visible={false}>
+        <Subpage name={`ui_frames_${prefix.replace(/\W/g, '_')}`} w={1} h={1} visible={false}>
           {frames.map((f) => <Image w={1} h={1} src={f} />)}
         </Subpage>
         {runtime}
@@ -1294,7 +1294,7 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
   function DataList({ join, items, x = 0, y = 0, w = 560, h = 480 }: DataListProps): VNode {
     const key = keyOf(join);
     const sub = (kind: string) => `ui_dl_${w}_${kind}`;
-    const iconFile = (name: string, color: string) => `iva_icon_${hash(`${name}|${color}`)}`;
+    const iconFile = (name: string, color: string) => drawnName('icon', hash(`${name}|${color}`));
     const used = new Map<string, IconRef>();
     const rows = items.map((it) => {
       if ('header' in it) return { subpage: sub('header'), s1: it.header };
@@ -1886,7 +1886,7 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
   function tableImages(key: string, w: number, rowH: number, badgeW: number) {
     const draws = new Map<string, ReturnType<typeof draw.box>>();
     const add = (o: Parameters<typeof draw.box>[0]) => {
-      const name = `iva_row_${hash(JSON.stringify(o))}`;
+      const name = drawnName('row', hash(JSON.stringify(o)));
       draws.set(name, draw.box({ ...o, name }));
       return `${name}.png`;
     };
@@ -2121,11 +2121,11 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     const text: JoinRef = s(`ui_${key}_text`);
     const more: JoinRef = s(`ui_${key}_more`);
     const box = (fill: string, border?: string) => {
-      const name = `iva_banner_${hash(JSON.stringify([w, h, fill, border]))}`;
+      const name = drawnName('banner', hash(JSON.stringify([w, h, fill, border])));
       return { name, src: draw.box({ w, h, radius: t.radius, fill, borderWidth: border ? 2 : 0, borderColor: border, name }) };
     };
     const icon = (n: string, color: string) => {
-      const file = `iva_icon_${hash(`${n}|${color}|22`)}`;
+      const file = drawnName('icon', hash(`${n}|${color}|22`));
       return { name: file, src: fa(n, { size: 22, color, file }) };
     };
     const looks = {
@@ -2221,7 +2221,7 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
         {pages.map((page, i) => (
           <Subpage name={`ui_pg_${key}_${i}`} w={w} h={h - dotH} join={pageJoins[i]} in={fade} out={fade}>
             {/* a swipe on the page (where its own content doesn't take the touch) */}
-            <Image w={w} h={h - dotH} src={draw.box({ w: 4, h: 4, fill: '#00000000', name: 'iva_clear_4' })}>
+            <Image w={w} h={h - dotH} src={draw.box({ w: 4, h: 4, fill: '#00000000', name: drawnName('clear', '4') })}>
               <Gesture type="swipe" direction="left" onBegin={`IvaUI.pagerStep(${id}, 1)`} />
               <Gesture type="swipe" direction="right" onBegin={`IvaUI.pagerStep(${id}, -1)`} />
             </Image>

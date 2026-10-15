@@ -49,13 +49,13 @@ export default (
 );
 `);
   const r = await compile(path.join(dir, 'app.jsx'));
-  const frames = r.assets.filter((x) => /^iva_dial_\w+_\d+\.png$/.test(x.name));
+  const frames = r.assets.filter((x) => /^controls\/iva_dial_\w+_\d+\.png$/.test(x.name));
   assert.equal(frames.length, 11); // 0..10, shared by the two dials that look the same
-  assert.equal(r.assets.filter((x) => /^iva_dial_\w+_\d+@2x\.png$/.test(x.name)).length, 11);
+  assert.equal(r.assets.filter((x) => /^controls\/iva_dial_\w+_\d+@2x\.png$/.test(x.name)).length, 11);
   assert.equal((r.xml.match(/<gesture /g) ?? []).length, 6); // tap + pan on each control's ring
   assert.match(r.xml, /js="IvaUI\.dialTouch\(&quot;level&quot;, gesture\.x, gesture\.y\)"/);
   // every frame named in the .gui (in a hidden subpage), so it ships with the project
-  assert.equal((r.xml.match(/<subpage name="ui_frames_iva_dial_\w+_" w=/g) ?? []).length, 1);
+  assert.equal((r.xml.match(/<subpage name="ui_frames_controls_iva_dial_\w+_" w=/g) ?? []).length, 1);
   const start = r.scripts.find((x) => x.name === 'iva-start.js')!.code!;
   assert.equal(start.match(/IvaUI\.dial\(/g)!.length, 3);
   assert.match(start, /IvaUI\.set\(Joins\.a\["level"\], 65, 0, 100\)/);
@@ -70,7 +70,7 @@ test('forms, lists, schedule: popups last, list rows defined, icons drawn at the
   assert.ok(placed.indexOf('ui_select_fan') > placed.indexOf('ui_menu'), placed.join(', '));
   assert.match(gui, /<subpage name="ui_dl_560_row" w="560"/);
   assert.doesNotMatch(gui, /<subpage name="ui_dl_560_row" x=/);
-  const icon = r.assets.find((a) => /^iva_icon_\w+\.png$/.test(a.name))!;
+  const icon = r.assets.find((a) => /^icons\/iva_icon_\w+\.png$/.test(a.name))!;
   assert.equal(icon.data!.readUInt32BE(16), 26);
   const start = r.scripts.find((s) => s.name === 'iva-start.js')!.code!;
   for (const f of ['IvaUI.fill(', 'IvaUI.days(', 'IvaUI.pin(']) assert.ok(start.includes(f), f);
@@ -99,7 +99,7 @@ export default (
   assert.match(r.xml, /<fb name="request" regex="\(\?msi\)\^\.\*\?\\r\\n\\r\\n"/);
   assert.match(r.xml, /<subpage name="ui_cp_r1" w="210" h="210"/);
   assert.equal((r.xml.match(/<web [^>]*url="http:\/\/127\.0\.0\.1:8900\/iva-color\/000000"/g) ?? []).length, 2);
-  assert.ok(r.assets.some((a) => /^iva_wheel_\w+\.png$/.test(a.name)));
+  assert.ok(r.assets.some((a) => /^controls\/iva_wheel_\w+\.png$/.test(a.name)));
   assert.equal((r.xml.match(/<input /g) ?? []).length, 2);
   const start = r.scripts.find((s) => s.name === 'iva-start.js')!.code!;
   for (const f of ['IvaHttp.web("IvaWeb", 8900);', 'IvaUI.color(', 'IvaUI.hint(', 'IvaUI.select(']) assert.ok(start.includes(f), f);
@@ -150,7 +150,7 @@ export default (
   for (const sp of ['ui_tbl_al_plant_alarms_row', 'ui_tbl_al_plant_alarms_images', 'ui_loader_busy', 'ui_pg_pg_0', 'ui_pg_pg_1']) {
     assert.match(r.xml, new RegExp(`<subpage name="${sp}" w=`), sp);
   }
-  const rows = new Set([...start.matchAll(/iva_row_\w+\.png/g)].map((m) => m[0]));
+  const rows = new Set([...start.matchAll(/backgrounds\/iva_row_\w+\.png/g)].map((m) => m[0]));
   assert.ok(rows.size > 10);
   for (const f of rows) assert.ok(r.assets.some((a) => a.name === f), f);
   // the back arrow and the link are buttons to pages; the last crumb is text

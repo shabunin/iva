@@ -316,6 +316,13 @@ declare module 'iva' {
       /** the look it starts in (default: the first of `themes`) */
       theme?: string;
       /**
+       * the build's folders (default true): the .gui with images/ (iViewer's
+       * asset folder: <imagefolder>) and scripts/ next to it, iva's drawings in
+       * images/backgrounds, icons, controls. false: everything next to the .gui
+       * (as GUI Designer saves a project without an image folder)
+       */
+      folders?: boolean;
+      /**
        * the port of the panel's own web server: every <WebApp> and the
        * ColorPicker's swatch (default: the first free from 8900)
        */

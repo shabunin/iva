@@ -102,7 +102,10 @@ async function jsxSource(entry: string, log: (m: string) => void): Promise<Proje
       return { gui: `${slug(r.name)}.gui`, title: r.name, guiXml: r.xml, imageMap, scriptMap, missingScripts: [], fileBase: '/__iva/files/' };
     },
     file: (rel) => {
-      const a = (result as CompileResult | null)?.assets.find((x) => x.name === rel);
+      const r = result as CompileResult | null;
+      // a web view's page of the project: images/page.html, as the .gui names it
+      const name = r?.layout.images && rel.startsWith(`${r.layout.images}/`) ? rel.slice(r.layout.images.length + 1) : rel;
+      const a = r?.assets.find((x) => x.name === name || x.name === rel);
       return a ? (a.data ?? a.file ?? null) : null;
     },
     refresh: build,

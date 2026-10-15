@@ -10,6 +10,7 @@ import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { Resvg } from '@resvg/resvg-js';
 import { suggest } from './suggest.js';
+import { drawnName } from './components.js';
 
 export type RGBA = [number, number, number, number];
 
@@ -254,4 +255,5 @@ export function icon(name: string, style: IconStyle | undefined, color: string, 
 }
 
 /** A stable file name for generated image data. */
-export const generatedName = (kind: string, data: Buffer) => `iva_${kind}_${createHash('sha1').update(data).digest('hex').slice(0, 8)}.png`;
+/** A drawing's file: in its kind's folder, named after its content (the same image once). */
+export const generatedName = (kind: string, data: Buffer) => `${drawnName(kind, createHash('sha1').update(data).digest('hex').slice(0, 8))}.png`;

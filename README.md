@@ -33,6 +33,24 @@ iva designer   # build and open it in CommandFusion GUI Designer
 
 (`iva` = `node bin/iva.mjs` from this folder, or `npm link` it.)
 
+`iva build` lays the project out as GUI Designer does with an image folder:
+
+```
+dist/
+  my-panel.gui          <imagefolder>images</imagefolder>
+  images/               the project's images and files (assets/), and iva's own:
+    backgrounds/          drawn cards, buttons, rows
+    icons/                Font Awesome icons
+    controls/             dial, knob, slider frames
+    apps/                 web apps (<WebApp>)
+    sounds/
+  scripts/              <script name="scripts/main.js">, iva's scripts
+  joins.json
+```
+
+`<Project folders={false}>` puts everything beside the .gui instead (a
+decompiled .gui keeps its own layout this way).
+
 Every element and prop: [docs/components.md](docs/components.md).
 Build errors point at the file and line, with "did you mean" for typos.
 

@@ -200,8 +200,10 @@ export function mergeThemes(builds: BuildResult[], names: string[]): BuildResult
   scripts.splice(at >= 0 ? at : scripts.length, 0, themeScript);
   const list = gui.children.find((c) => c.tag === 'scripts');
   if (list) {
-    const i = list.children.findIndex((c) => attr(c, 'name') === 'iva-start.js');
-    list.children.splice(i >= 0 ? i : list.children.length, 0, el('script', { name: 'iva-themes.js' }));
+    // as the .gui names scripts: in the build's scripts folder
+    const named = (n: string) => (main.layout.scripts ? `${main.layout.scripts}/${n}` : n);
+    const i = list.children.findIndex((c) => attr(c, 'name') === named('iva-start.js'));
+    list.children.splice(i >= 0 ? i : list.children.length, 0, el('script', { name: named('iva-themes.js') }));
   }
 
   const warnings = [...new Set([...builds.flatMap((b) => b.warnings), ...d.warnings])];

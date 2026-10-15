@@ -33,6 +33,10 @@ function drawImage(d: DrawRef, sc: number): Buffer {
 import { el, parseXml, serialize, type XNode } from './xml.js';
 import { bundleWebApp, HTTP_RUNTIME, resolveEntry } from './web.js';
 
+/** The build's folders (<Project folders>, the default): images/ is iViewer's asset folder (<imagefolder>). */
+export const IMAGES_DIR = 'images';
+export const SCRIPTS_DIR = 'scripts';
+
 export class CompileError extends Error {
   constructor(message: string, public source?: Source) {
     super(message);
@@ -69,6 +73,8 @@ export interface BuildResult {
   inputs: string[];
   /** each web app's options and colour, by its name (a look's own, with <Project themes>) */
   apps: Record<string, { options: unknown; bg: string }>;
+  /** where the build puts files next to the .gui: assets (iViewer's image folder), scripts; '' = beside it */
+  layout: { images: string; scripts: string };
 }
 
 type Attrs = Record<string, string | number | boolean | null | undefined | JoinSlot>;
@@ -125,6 +131,8 @@ export class Builder {
   /** <Project httpPort> */
   private httpPort: number | undefined;
   private appOptions: Record<string, { options: unknown; bg: string }> = {};
+  /** <Project folders>: images/ and scripts/ beside the .gui */
+  private folders = true;
   private inputs = new Set<string>();
 
   /** the panel's size per orientation */
@@ -146,6 +154,7 @@ export class Builder {
     const project = top[0];
     this.check(project);
     const p = project.props;
+    this.folders = p.folders !== false;
     if (p.httpPort !== undefined && (!Number.isInteger(p.httpPort) || p.httpPort < 1 || p.httpPort > 65535)) {
       throw this.err(project, 'httpPort: a number 1-65535');
     }
@@ -178,12 +187,19 @@ export class Builder {
     } else if (p.assets !== undefined) {
       throw this.err(project, `assets: no folder ${p.assets}`);
     }
-    let properties: XNode[] = [el('autoposition'), el('imagefolder'), el('debug', { loaderrors: 0, connectionerrors: 0 })];
+    // the image folder: where iViewer finds images, sounds and CF.loadAsset's files (the "assets folder")
+    let properties: XNode[] = [el('autoposition'), el('imagefolder', {}, [], this.folders ? IMAGES_DIR : undefined), el('debug', { loaderrors: 0, connectionerrors: 0 })];
     if (p.properties !== undefined) {
       try {
         properties = parseXml(p.properties);
       } catch (e: any) {
         throw this.err(project, `properties: ${e.message}`);
+      }
+      // the build puts the files in images/: the .gui says so (folders={false} keeps yours)
+      if (this.folders) {
+        const folder = properties.find((x) => x.tag === 'imagefolder');
+        if (folder) folder.text = IMAGES_DIR;
+        else properties.push(el('imagefolder', {}, [], IMAGES_DIR));
       }
     }
 
@@ -254,14 +270,14 @@ export class Builder {
       ...section('sounds', this.sounds),
       this.themes.toXml(),
       ...section('tokens', this.tokens),
-      ...section('scripts', this.scripts.map((s) => this.withXml(el('script', { name: s.name }), { props: { xml: s.xml } } as unknown as VNode))),
+      ...section('scripts', this.scripts.map((s) => this.withXml(el('script', { name: this.folders ? `${SCRIPTS_DIR}/${s.name}` : s.name }), { props: { xml: s.xml } } as unknown as VNode))),
       ...this.pages,
       ...[...this.subpages.values()].map((s) => s.node),
       ...this.trailing,
     ]);
     return {
       root, assets: [...this.assets.values()], scripts: this.scripts, joins: this.joins.map(), warnings: this.warnings, assetDir: this.assetDir,
-      inputs: [...this.inputs], apps: this.appOptions,
+      inputs: [...this.inputs], apps: this.appOptions, layout: this.folders ? { images: IMAGES_DIR, scripts: SCRIPTS_DIR } : { images: '', scripts: '' },
     };
   }
 
@@ -802,6 +818,12 @@ export class Builder {
     return this.webView(node, { ...geom, j: 0, title: 0, back: 0, forward: 0, refresh: 0, stop: 0, tags: tagsAttr(p.tags) }, `${name}/`);
   }
 
+  /** A web view's URL: a page of the project (url="page.html", shipped from assets/) where the build puts it. */
+  private webPage(url: string): string {
+    if (!this.folders || /^[a-z][a-z0-9+.-]*:/i.test(url) || url.startsWith('/') || !this.assets.has(url.toLowerCase())) return url;
+    return `${IMAGES_DIR}/${url}`;
+  }
+
   /**
    * The web server's port: <Project httpPort>, else the first free one from
    * 8900 (after every port a system names). Its views get their URLs; it
@@ -913,7 +935,8 @@ export class Builder {
     const from = this.dirOf(node);
     const file = path.resolve(from, p.src);
     if (!fs.existsSync(file)) throw this.err(node, `sound not found: ${p.src}`);
-    const name = path.basename(file);
+    // in the image folder's sounds/ (iViewer finds sounds where it finds images)
+    const name = this.folders ? `sounds/${path.basename(file)}` : path.basename(file);
     this.assets.set(name.toLowerCase(), { name, file });
     this.sounds.push(this.withXml(this.E('sound', { name: p.name, j: this.join(node, 'join', 'd'), loop: bool(p.loop), releasestop: bool(p.releaseStop) }, [], name, node), node));
   }
@@ -1002,7 +1025,7 @@ export class Builder {
         // url="panel:/iva-color/000000": a page of the panel's own web server
         const own = /^panel:\/*(.*)$/i.exec(String(p.url));
         if (own) return this.webView(node, { ...attrs, tags: tagsAttr(p.tags) }, own[1]);
-        return this.E('web', { ...attrs, url: p.url, tags: tagsAttr(p.tags) });
+        return this.E('web', { ...attrs, url: this.webPage(p.url), tags: tagsAttr(p.tags) });
       }
       case 'Video': {
         const auth = p.auth ?? {};

@@ -20,16 +20,8 @@ export function renderImage(
     const tryLoadImg = (url: string) => {
         console.log(`tryLoadImg called with: ${url}`);
         if (!url) return;
-        const fileName = url.replace(/\\/g, '/').split('/').pop() || url;
-
-        // Case insensitive search over Assets aliases if simple get fails
-        let assetLoaded = Assets.get(fileName);
-        if (!assetLoaded) {
-            // The Assets cache is actually stored internally, but we have imageMap
-            const possibleKeys = Object.keys(renderer.imageMap);
-            const foundKey = possibleKeys.find(k => k.toLowerCase() === fileName.toLowerCase());
-            if (foundKey) assetLoaded = Assets.get(foundKey);
-        }
+        // as the .gui names it (a path in its image folder), else by file name
+        const assetLoaded = renderer.texture(url);
 
         if (assetLoaded) {
             if (bgSprite) bgSprite.texture = assetLoaded;

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DOMParser } from 'linkedom';
-import { compile, IvaError } from '../src/compiler/index.ts';
+import { compile, IvaError, writeBuild } from '../src/compiler/index.ts';
 import { circle } from '../src/compiler/images.ts';
 import { parseGUI } from '../src/runtime/cf/parser.ts';
 
@@ -56,7 +56,7 @@ test('the hello example reads back through cf-runtime', async () => {
   assert.equal(gui.commands.Ping.text, 'hello\\x0D');
   assert.equal(sys.children.find((c) => c.type === 'fb')!.children[0].attributes.target, `s${r.joins.serial.reply}`);
   // scripts: the joins map first
-  assert.deepEqual(gui.scripts.map((s) => s.name), ['iva-joins.js', 'main.js']);
+  assert.deepEqual(gui.scripts.map((s) => s.name), ['scripts/iva-joins.js', 'scripts/main.js']);
 });
 
 test('named joins skip numbers used explicitly', async () => {
@@ -159,7 +159,7 @@ test('radius / border: the background is drawn at the button\'s size, per state'
   const gui = await parseGUI(r.xml);
   const [filled, outline] = gui.pages.Main.landscape!;
   const t = gui.themes[filled.t!];
-  assert.match(t.states['0']['background-image'], /url\(iva_btn_\w+\.png\)/);
+  assert.match(t.states['0']['background-image'], /url\(backgrounds\/iva_btn_\w+\.png\)/);
   assert.notEqual(t.states['0']['background-image'], t.states['1']['background-image']);
   assert.equal(t.states['0']['background-color'], undefined);
   assert.match(gui.themes[outline.t!].states['0']['background-image'], /iva_btn_/);
@@ -174,7 +174,7 @@ test('radius / border: the background is drawn at the button\'s size, per state'
 test('a subpage with radius gets a drawn background', async () => {
   const r = await build(wrap(`<Subpage name="Card" w={300} h={120} radius={16} bg="#222" />`));
   const gui = await parseGUI(r.xml);
-  assert.match(gui.themes[gui.subpages.Card.theme!].states['0']['background-image'], /url\(iva_bg_\w+\.png\)/);
+  assert.match(gui.themes[gui.subpages.Card.theme!].states['0']['background-image'], /url\(backgrounds\/iva_bg_\w+\.png\)/);
 });
 
 test('fa() icons: on buttons in the text colour (active too), as images, with "did you mean"', async () => {
@@ -185,12 +185,12 @@ test('fa() icons: on buttons in the text colour (active too), as images, with "d
   const [btn, img] = gui.pages.Main.landscape!;
   const off = btn.children.find((c) => c.type === 'inactive')!.children[0];
   const on = btn.children.find((c) => c.type === 'active')!.children[0];
-  assert.match(off.text!, /^iva_fa_\w+\.png$/);
+  assert.match(off.text!, /^icons\/iva_fa_\w+\.png$/);
   assert.notEqual(off.text, on.text); // drawn in each state's colour
   assert.deepEqual([off.x, off.y, off.w, off.h], [20, 20, 40, 40]);
   assert.match(gui.themes[btn.t!].states['0'].padding, /^0px 20px 0px 75px$/);
   assert.equal(gui.themes[btn.t!].states['0']['text-align'], 'left');
-  assert.match(img.content!, /^iva_fa_\w+\.png$/);
+  assert.match(img.content!, /^icons\/iva_fa_\w+\.png$/);
   await fails(wrap(`<Image w={10} h={10} src={fa('lightbulp')} />`), /no Font Awesome icon "lightbulp" \(did you mean "lightbulb"\?\)/);
 });
 
@@ -204,7 +204,7 @@ test('<Box>: a drawn image touches go through; <Group>: moves its children', asy
   const [box, btn] = gui.pages.Main.landscape!;
   assert.equal(box.type, 'img');
   assert.deepEqual([box.x, box.y, box.attributes.clickthrough], [100, 50, '1']);
-  assert.match(box.content!, /^iva_box_\w+\.png$/);
+  assert.match(box.content!, /^backgrounds\/iva_box_\w+\.png$/);
   assert.deepEqual([btn.x, btn.y], [110, 60]);
 });
 
@@ -278,7 +278,7 @@ test('<Input> actions, <Web> named joins, a <System> from a component: once', as
 
 test('<Text bg>: a drawn box behind the text (iViewer draws no text backgrounds)', async () => {
   const r = await build(wrap(`<Group x={10}><Text x={20} y={30} w={200} h={40} text="Hi" bg="#336699" radius={8} /></Group>`));
-  assert.match(r.xml, /<img x="30" y="30" w="200" h="40" j="0" clickthrough="1"[^>]*>iva_box_\w+\.png<\/img>\s*<txt j="0" x="30" y="30" w="200" h="40"/);
+  assert.match(r.xml, /<img x="30" y="30" w="200" h="40" j="0" clickthrough="1"[^>]*>backgrounds\/iva_box_\w+\.png<\/img>\s*<txt j="0" x="30" y="30" w="200" h="40"/);
   assert.doesNotMatch(r.xml, /type="text"[^\]]*background-color/);
 });
 
@@ -366,3 +366,30 @@ test('<WebApp>: one app per name; the entry must exist and build', async () => {
   await fails(wrap(`<WebApp entry="iva:nope" w={9} h={9} />`), /no built-in web app "iva:nope" \(iva has: iva:trend, iva:chart\)/);
 });
 
+test('the build: the .gui, images/ (its image folder: drawings by kind, sounds, web apps), scripts/; folders={false}: all beside it', async () => {
+  const files = { 'beep.mp3': 'mp3', 'main.js': 'CF.log(1);' };
+  const jsx = (folders: string) => `export default (
+  <Project name="T" width={1024} height={768}${folders}>
+    <Script src="./main.js" />
+    <Sound name="beep" src="./beep.mp3" />
+    <Page name="Main"><Box w={100} h={50} bg="#123456" radius={8} /><Image x={200} w={32} h={32} src={fa('lightbulb')} /></Page>
+  </Project>
+);`;
+  const tree = (dir: string) => (fs.readdirSync(dir, { recursive: true }) as string[]).map((f) => f.split(path.sep).join('/'))
+    .filter((f) => fs.statSync(path.join(dir, f)).isFile()).map((f) => f.replace(/_[0-9a-f]{8}(@2x)?\.png$/, '_#$1.png')).sort();
+  const r = await build(jsx(''), files);
+  assert.match(r.xml, /<imagefolder>images<\/imagefolder>/);
+  assert.match(r.xml, /<script name="scripts\/main\.js" \/>/);
+  assert.match(r.xml, /<sound name="beep" [^>]*>sounds\/beep\.mp3<\/sound>/);
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-dist-'));
+  writeBuild(r, out);
+  assert.deepEqual(tree(out), ['T.gui', 'images/backgrounds/iva_box_#.png', 'images/backgrounds/iva_box_#@2x.png', 'images/icons/iva_fa_#.png',
+    'images/icons/iva_fa_#@2x.png', 'images/sounds/beep.mp3', 'joins.json', 'scripts/main.js'].sort());
+  // as before: everything beside the .gui (a decompiled project keeps its own layout)
+  const flat = await build(jsx(' folders={false}'), files);
+  assert.match(flat.xml, /<imagefolder \/>/);
+  assert.match(flat.xml, /<script name="main\.js" \/>/);
+  const out2 = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-dist-'));
+  writeBuild(flat, out2);
+  assert.ok(tree(out2).includes('backgrounds/iva_box_#.png') && tree(out2).includes('main.js') && tree(out2).includes('beep.mp3'));
+});

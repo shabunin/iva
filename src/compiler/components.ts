@@ -32,6 +32,17 @@ export const l: JoinHelper = joinRef('l');
 /** A join prop whose type the element fixes: `join={12}`, `join="power"` (named) or `d(12)`. */
 export type Join = number | string | JoinRef;
 
+/** The folders of the build's image folder that iva's drawings go in, by kind. @internal */
+export const DRAWN_FOLDERS: Record<string, string> = {
+  bg: 'backgrounds', box: 'backgrounds', btn: 'backgrounds', banner: 'backgrounds', row: 'backgrounds', cutout: 'backgrounds', clear: 'backgrounds',
+  fa: 'icons', icon: 'icons',
+  dial: 'controls', arc: 'controls', dot: 'controls', ticks: 'controls', knob: 'controls', wheel: 'controls', ring: 'controls', track: 'controls',
+  fill: 'controls', thumb: 'controls',
+};
+
+/** An iva drawing's file (no extension), in its folder: drawnName('fa', 'a1b2c3d4') -> 'icons/iva_fa_a1b2c3d4'. @internal */
+export const drawnName = (kind: string, id: string): string => `${DRAWN_FOLDERS[kind] ?? 'drawn'}/iva_${kind}_${id}`;
+
 /** A Font Awesome icon, drawn into an image at build time: fa('lightbulb'). */
 export interface IconRef {
   $$icon: 1;
@@ -261,6 +272,13 @@ export interface ProjectProps extends XmlProp {
   themes?: string[];
   /** the look it starts in (default: the first of `themes`) */
   theme?: string;
+  /**
+   * the build's folders (default true): the .gui with images/ (iViewer's
+   * asset folder: <imagefolder>) and scripts/ next to it, iva's drawings in
+   * images/backgrounds, icons, controls. false: everything next to the .gui
+   * (as GUI Designer saves a project without an image folder)
+   */
+  folders?: boolean;
   /**
    * the port of the panel's own web server: every <WebApp> and the
    * ColorPicker's swatch (default: the first free from 8900)
@@ -681,7 +699,7 @@ const PLACEMENT = ['x', 'y', 'join', 'visible', 'in', 'out', 'topmost', 'fixed',
 /** The props each element takes (children aside).
  * @internal */
 export const PROPS: Record<string, string[]> = {
-  Project: ['name', 'device', 'orientation', 'width', 'height', 'otherSize', 'autoposition', 'joinBase', 'assets', 'properties', 'themes', 'theme', 'httpPort'],
+  Project: ['name', 'device', 'orientation', 'width', 'height', 'otherSize', 'autoposition', 'joinBase', 'assets', 'properties', 'themes', 'theme', 'folders', 'httpPort'],
   Page: ['name', 'start', 'bg', 'image', 'theme', 'tags'],
   Landscape: ['bg', 'image', 'theme'],
   Portrait: ['bg', 'image', 'theme'],
