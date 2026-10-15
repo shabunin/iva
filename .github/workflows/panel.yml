@@ -1,0 +1,69 @@
+name: panel
+
+# The panel app for Android (panel/): an APK on every change to it or to the
+# runtime it runs, as an artifact of the run (gh run download -n iva-panel-apk).
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'panel/**'
+      - 'src/runtime/**'
+      - 'src/preview/fonts.ts'
+      - 'src/compiler/fonts.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/panel.yml'
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: 'Rust targets (aarch64: phones and tablets since ~2017; armv7: older 32-bit ones)'
+        default: 'aarch64'
+
+concurrency:
+  group: panel-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: panel/src-tauri -> target
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '17'
+          cache: gradle
+          cache-dependency-path: panel/src-tauri/gen/android/**/*.gradle*
+
+      - uses: android-actions/setup-android@v3
+
+      - run: npm ci
+
+      - name: Build the APK
+        working-directory: panel
+        run: |
+          export NDK_HOME="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
+          echo "NDK: $NDK_HOME"
+          targets="${{ github.event.inputs.targets || 'aarch64' }}"
+          npx tauri android build --apk $(for t in $targets; do printf -- '--target %s ' "$t"; done)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: iva-panel-apk
+          path: panel/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
