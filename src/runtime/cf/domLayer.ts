@@ -9,10 +9,13 @@ import type { CFRenderer } from './renderer';
  * Two places to be:
  * - under the canvas (web views): the node erases a hole in the canvas where
  *   it is, so whatever the GUI draws later (an image over a web view, a popup)
- *   still covers the element, as on a device. The canvas lets the pointer
- *   through while it is over the element's uncovered part. This needs a
- *   canvas that can be transparent (backgroundAlpha < 1); with an opaque one
- *   these elements go on top too.
+ *   still covers the element, as on a device. The canvas never takes the
+ *   pointer then: a touch picks its target as it lands (no hover to route it
+ *   by), so Pixi listens on the canvas's box instead - a touch on an element
+ *   is the element's, anywhere else the GUI's; an element something drawn
+ *   later covers lets it through to the GUI. This needs a canvas that can be
+ *   transparent (backgroundAlpha < 1); with an opaque one these elements go on
+ *   top too.
  * - on top of the canvas (`over`): no hole, nothing covers it (an input
  *   field while it is being edited: what's under it stays visible).
  */
@@ -43,7 +46,8 @@ export class DomLayer {
   private items = new Map<Container, DomItem>();
   private renderer: CFRenderer;
   private fit = { sx: 1, sy: 1, ox: 0, oy: 0 };
-  private routed = false;
+  /** when the elements under the canvas were last checked for what covers them */
+  private checked = 0;
 
   /** The layer of this renderer's app (one per app; a new renderer takes it over). */
   static for(renderer: CFRenderer): DomLayer {
@@ -87,7 +91,7 @@ export class DomLayer {
     if (this.underRoot) {
       if (getComputedStyle(canvas).position === 'static') canvas.style.position = 'relative';
       canvas.style.zIndex = '1';
-      window.addEventListener('pointermove', this.route, true);
+      if (parent) this.listenOn(parent);
     }
     // after Pixi has rendered the frame: world transforms are current then
     app.ticker.add(this.sync, undefined, UPDATE_PRIORITY.UTILITY);
@@ -121,13 +125,16 @@ export class DomLayer {
   clear() {
     for (const it of this.items.values()) this.drop(it);
     this.items.clear();
-    this.unroute();
   }
 
   destroy() {
     this.clear();
     this.renderer.app.ticker?.remove(this.sync);
-    window.removeEventListener('pointermove', this.route, true);
+    if (this.underRoot) {
+      const { canvas, renderer } = this.renderer.app;
+      canvas.style.pointerEvents = '';
+      renderer.events.setTargetElement(canvas);
+    }
     this.underRoot?.remove();
     this.overRoot.remove();
     layers.delete(this.renderer.app);
@@ -213,6 +220,14 @@ export class DomLayer {
       st.opacity = alpha < 0.999 ? String(alpha) : '';
       st.clipPath = this.clipOf(c, it);
     }
+    // what the elements under the canvas lie under now: a covered one lets the pointer through to the GUI
+    const now = performance.now();
+    if (this.underRoot && now - this.checked > 250) {
+      this.checked = now;
+      for (const it of this.items.values()) {
+        if (this.isUnder(it) && it.el.style.display !== 'none') it.el.style.pointerEvents = this.uncovered(it) ? 'auto' : 'none';
+      }
+    }
   };
 
   /** Clipping by masked parents (a list's viewport, a row's box), as an inset of the element's own box. */
@@ -239,27 +254,37 @@ export class DomLayer {
 
   // ── the pointer, with elements under the canvas ──────────────────
 
-  /** Let the pointer through the canvas while it is over an element nothing covers. */
-  private route = (e: PointerEvent) => {
-    if (!this.items.size || e.buttons) return; // never in the middle of a drag
+  /**
+   * The canvas lets every touch through; Pixi listens on its box: what lands
+   * on an element under the canvas is the element's, what lands on the box is
+   * the GUI's (the layers between take none themselves).
+   */
+  private listenOn(box: HTMLElement) {
     const canvas = this.renderer.app.canvas;
-    const r = canvas.getBoundingClientRect();
-    const { sx, sy, ox, oy } = this.fit;
-    // a zoomed view (a CSS transform on the canvas's box): screen pixels to its layout pixels
-    const k = canvas.offsetWidth ? r.width / canvas.offsetWidth : 1;
-    const x = ((e.clientX - r.left) / k - canvas.clientLeft - ox) / sx;
-    const y = ((e.clientY - r.top) / k - canvas.clientTop - oy) / sy;
-    const over = this.itemAt(x, y);
-    if (over && !this.routed) {
-      canvas.style.pointerEvents = 'none';
-      this.routed = true;
-    } else if (!over && this.routed) this.unroute();
-  };
+    const events = this.renderer.app.renderer.events;
+    canvas.style.pointerEvents = 'none';
+    // positions from the canvas, as when Pixi listens on it (its element's width / height: the canvas's pixels)
+    events.mapPositionToPoint = (point, x, y) => {
+      const r = canvas.getBoundingClientRect();
+      const k = 1 / events.resolution;
+      point.x = (x - r.left) * (canvas.width / (r.width || 1)) * k;
+      point.y = (y - r.top) * (canvas.height / (r.height || 1)) * k;
+    };
+    events.setTargetElement(box);
+    // a mouse drag passing over a web view stays the GUI's (a touch stays with what it landed on anyway)
+    box.addEventListener('pointerdown', (e) => {
+      if (e.target === box && e.pointerType === 'mouse') box.setPointerCapture(e.pointerId);
+    });
+  }
 
-  private unroute() {
-    if (!this.routed) return;
-    this.renderer.app.canvas.style.pointerEvents = '';
-    this.routed = false;
+  /** Nothing drawn later covers the element (its middle and near its corners). */
+  private uncovered(it: DomItem): boolean {
+    const m = it.container.worldTransform;
+    for (const [fx, fy] of [[0.5, 0.5], [0.1, 0.1], [0.9, 0.1], [0.1, 0.9], [0.9, 0.9]]) {
+      const p = m.apply(new Point(it.w * fx, it.h * fy));
+      if (this.itemAt(p.x, p.y) !== it) return false;
+    }
+    return true;
   }
 
   private inside(c: Container, x: number, y: number, w: number, h: number): boolean {
@@ -288,8 +313,10 @@ export class DomLayer {
       if (!c.visible || c.destroyed) return;
       const node = (c as any).cfNode as { type: string; attributes?: Record<string, string> } | undefined;
       if (node && c.hitArea instanceof Rectangle) {
-        const blocks = this.items.has(c) || BLOCKING.has(node.type) ||
-          (node.type === 'img' && node.attributes?.clickthrough !== '1');
+        // a subpage that's hidden (its content off: a closed side menu, a sheet) covers nothing
+        const off = node.type === 'subpage' && !c.children.some((k) => k.visible && !(k instanceof Graphics));
+        const blocks = !off && (this.items.has(c) || BLOCKING.has(node.type) ||
+          (node.type === 'img' && node.attributes?.clickthrough !== '1'));
         if (blocks && this.inside(c, x, y, c.hitArea.width, c.hitArea.height)) last = c;
       }
       for (const child of c.children) walk(child as Container);
