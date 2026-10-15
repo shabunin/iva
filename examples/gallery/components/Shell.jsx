@@ -13,6 +13,7 @@ export const sections = [
   { page: 'Schedule', icon: 'clock', text: 'Schedule & security', sub: 'WeekDays, AlarmCard, PinPad' },
   { page: 'Tables', icon: 'table', text: 'Tables & alarms', sub: 'DataTable, AlarmTable, AlarmBanner' },
   { page: 'Charts', icon: 'chart-line', text: 'Charts & 3D', sub: 'Trend, Chart, WebApp (three.js)' },
+  { page: 'DragDrop', icon: 'hand', text: 'Drag & drop', sub: 'DragDrop: items onto targets' },
   { page: 'Navigation', icon: 'compass', text: 'Navigation & feedback', sub: 'Header, SideMenu, Breadcrumbs, Pager, Loader, ConfirmDialog' },
 ];
 

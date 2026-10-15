@@ -85,6 +85,7 @@ it as a value in min..max.
 | `AlarmBanner` | the newest unacknowledged alarm (alarms before warnings) and "+N more", blinking while any is unacknowledged; then the active ones, steady; else "No alarms" | `alarms` (the AlarmTable's name), `page` / `js` (a tap) |
 | `Breadcrumbs` | Home › Floor 1 › Kitchen: all but the last are links | `items: (string \| { label, page, js })[]`, `back` (‹ to the previous page), `separator`, `fontSize` |
 | `Loader` | a busy overlay over everything while a join is on: a spinner and a text; taps stay on it | `join` (digital), `text` / `textJoin`, `icon` |
+| `DragDrop` | drag and drop, as CommandFusion's DragDropManager: tiles (items) dragged onto cards (targets); a target lights up while an item it takes is over it, a drop writes the item's label into its serial join and runs `onDrop`; the item goes back to its place | `name`, `items: [{ id, label, icon, x, y }]`, `targets: [{ id, label, icon, value (serial join), accept (item ids), x, y }]`, `onDrop` (JS with `item`, `target`), `placeholder`, `itemW` / `itemH`, `targetW` / `targetH`, `gap`, `w`, `h` |
 | `Pager` | pages in one place: swipe, or tap a dot | `join` (analog: the page shown, 0, 1 …, both ways), `value`, `dots`, `w`, `h`; a page per child |
 
 Put `Header` and `SideMenu` on every page (a small `Shell` component, as

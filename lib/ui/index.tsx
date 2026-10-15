@@ -701,6 +701,47 @@ export interface LoaderProps {
   textJoin?: Join;
   icon?: string;
 }
+export interface DragItem {
+  id: string;
+  label: string;
+  /** a Font Awesome icon's name */
+  icon?: string;
+  /** where it is (default: in a row, in order) */
+  x?: number;
+  y?: number;
+}
+export interface DropTarget {
+  id: string;
+  label: string;
+  icon?: string;
+  /** serial join: the label of the item dropped on it (shown on it) */
+  value?: Join;
+  /** the items it takes (default: all) */
+  accept?: string[];
+  x?: number;
+  y?: number;
+}
+export interface DragDropProps {
+  /** names its joins */
+  name: string;
+  /** what can be dragged: tiles of an icon and a label (they stay where they are: a palette) */
+  items: DragItem[];
+  /** where they go: cards that light up under a dragged item, showing the last one dropped */
+  targets: DropTarget[];
+  /** JavaScript run on a drop, with `item` and `target` (ids) */
+  onDrop?: string;
+  /** shown on a target with nothing on it */
+  placeholder?: string;
+  itemW?: number;
+  itemH?: number;
+  targetW?: number;
+  targetH?: number;
+  gap?: number;
+  x?: number;
+  y?: number;
+  w: number;
+  h: number;
+}
 export interface PagerProps {
   /** analog join: the page shown (0, 1, ...), both ways */
   join: Join;
@@ -824,6 +865,7 @@ export interface Ui {
   Breadcrumbs: (p: BreadcrumbsProps) => VNode;
   Loader: (p: LoaderProps) => VNode;
   Pager: (p: PagerProps) => VNode;
+  DragDrop: (p: DragDropProps) => VNode;
   AlarmCard: (p: AlarmCardProps) => VNode;
   Knob: (p: KnobProps) => VNode;
   Thermostat: (p: ThermostatProps) => VNode;
@@ -2204,6 +2246,67 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     );
   }
 
+  /**
+   * Drag and drop, as CommandFusion's DragDropManager does it: a pan on a
+   * layer over the area moves the item under the finger (CF.setProperties),
+   * a target lights up while it's over it, a drop writes the item's label
+   * into the target's `value` and runs `onDrop`. Items are buttons (one join
+   * moves icon and label together), drawn after the targets: on top of them.
+   */
+  function DragDrop({ name, items, targets, onDrop, placeholder = 'Drop here', itemW = 112, itemH = 96, targetW = 230, targetH = 104, gap = 16,
+                      x = 0, y = 0, w, h }: DragDropProps): VNode {
+    const key = name.replace(/\W/g, '_');
+    const area: JoinRef = s(`ui_dd_${key}`);
+    const itemJoin = (it: DragItem): JoinRef => d(`ui_dd_${key}_i_${it.id}`);
+    const hover = (tg: DropTarget): JoinRef => d(`ui_dd_${key}_t_${tg.id}`);
+    const hintJoin = (tg: DropTarget): JoinRef => s(`ui_dd_${key}_h_${tg.id}`);
+    const cols = Math.max(1, Math.floor((w + gap) / (targetW + gap)));
+    const placedItems = items.map((it, i) => ({ ...it, x: it.x ?? i * (itemW + gap), y: it.y ?? 0 }));
+    const top = itemH + 28;
+    const placedTargets = targets.map((tg, i) => ({ ...tg, x: tg.x ?? (i % cols) * (targetW + gap), y: tg.y ?? top + Math.floor(i / cols) * (targetH + gap) }));
+    const o = jsObject({
+      area: jsJoin('s', area),
+      items: `[${placedItems.map((it) => `{ id: ${JSON.stringify(it.id)}, join: ${jsJoin('d', itemJoin(it))} }`).join(', ')}]`,
+      targets: `[${placedTargets.map((tg) => jsObject({
+        id: JSON.stringify(tg.id), hover: jsJoin('d', hover(tg)),
+        value: tg.value === undefined ? undefined : jsJoin('s', tg.value), hint: tg.value === undefined ? undefined : jsJoin('s', hintJoin(tg)),
+        accept: tg.accept ? JSON.stringify(tg.accept) : undefined,
+      })).join(', ')}]`,
+      labels: JSON.stringify(Object.fromEntries(items.map((it) => [it.id, it.label]))),
+      placeholder: JSON.stringify(placeholder),
+    });
+    const gesture = (fn: string) => `IvaUI.${fn}(${JSON.stringify(key)}, gesture.x, gesture.y)`;
+    return (
+      <Group x={x} y={y}>
+        {placedTargets.map((tg) => (
+          <>
+            <Button x={tg.x} y={tg.y} w={targetW} h={targetH} join={hover(tg)} feedback="none" radius={t.radius} bg={t.raised}
+                    borderWidth={2} borderColor={t.raised} active={{ bg: shade(t.raised, 0.08), borderColor: t.accent }}
+                    icon={tg.icon ? { src: fa(tg.icon, { size: 20, color: t.muted }), x: 16, y: 16 } : undefined} />
+            <Text x={tg.x + (tg.icon ? 46 : 16)} y={tg.y + 10} w={targetW - 62} h={32} text={tg.label} font={font} fontSize={18} />
+            {tg.value !== undefined && (
+              <>
+                <Text x={tg.x + 16} y={tg.y + targetH - 48} w={targetW - 32} h={36} join={hintJoin(tg)} color={t.muted} font={font} fontSize={18} />
+                <Text x={tg.x + 16} y={tg.y + targetH - 48} w={targetW - 32} h={36} join={tg.value} color={t.accent} font={font} fontSize={22} />
+              </>
+            )}
+          </>
+        ))}
+        {placedItems.map((it) => (
+          <Button x={it.x} y={it.y} w={itemW} h={itemH} join={itemJoin(it)} feedback="none" radius={t.radius} bg={t.raised} text={it.label}
+                  icon={it.icon ? fa(it.icon, { size: 28, color: t.accent }) : undefined} iconAlign="top" font={font} fontSize={16} />
+        ))}
+        {/* the layer the finger moves on: over everything (items and targets only show) */}
+        <Image w={w} h={h} join={area} src={draw.box({ w, h, fill: '#00000000' })}>
+          <Gesture type="pan" onBegin={gesture('ddBegin')} onChange={gesture('ddMove')} onEnd={`IvaUI.ddEnd(${JSON.stringify(key)})`} />
+        </Image>
+        {runtime}
+        <OnStart js={`IvaUI.dragdrop(${JSON.stringify(key)}, ${o}, function (item, target) { ${onDrop ?? ''} });`}
+                 joins={[area, ...placedItems.map(itemJoin), ...placedTargets.map(hover), ...placedTargets.filter((tg) => tg.value !== undefined).map(hintJoin)]} />
+      </Group>
+    );
+  }
+
   /** Pages side by side in one place: a swipe (or a dot) goes to the next / previous; the page shown in an analog join. */
   function Pager({ join, value = 0, dots = true, x = 0, y = 0, w, h, children }: PagerProps): VNode {
     const key = keyOf(join);
@@ -2243,7 +2346,7 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     theme: t, Card, Icon, IconButton, Tile, Badge, Stat, Toggle, Slider, Stepper, Segmented, SceneBar, Dimmer, Dial, Knob, Thermostat, Blinds,
     RadioGroup, CheckBox, CheckBoxGroup, SelectBox, ListRow, DataList, ScrollBox, WeekDays, PinPad, AlarmCard, NavCard, Header, SideMenu, ConfirmDialog,
     ColorPicker, TextField, SearchSelect, TimePicker, DatePicker, NumberField, DataTable, AlarmTable, AlarmBanner, Breadcrumbs, Loader, Pager,
-    Trend, Chart,
+    Trend, Chart, DragDrop,
   };
 }
 
@@ -2289,6 +2392,7 @@ export const AlarmBanner: Ui['AlarmBanner'] = ui.AlarmBanner;
 export const Breadcrumbs: Ui['Breadcrumbs'] = ui.Breadcrumbs;
 export const Loader: Ui['Loader'] = ui.Loader;
 export const Pager: Ui['Pager'] = ui.Pager;
+export const DragDrop: Ui['DragDrop'] = ui.DragDrop;
 export const NavCard: Ui['NavCard'] = ui.NavCard;
 export const Header: Ui['Header'] = ui.Header;
 export const SideMenu: Ui['SideMenu'] = ui.SideMenu;

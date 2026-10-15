@@ -22,6 +22,7 @@ var IvaUI = (function () {
   var tableOf = {};
   var alarmSets = {};
   var pagers = {};
+  var drags = {};
   function rowsOf(list) {
     CF.watch(CF.ListWillStartScrollingEvent, list, function () { if (pressed[list]) pressed[list].moved = true; });
   }
@@ -838,6 +839,89 @@ var IvaUI = (function () {
       var o = pagers[id];
       if (!o) return;
       CF.getJoin(o.join, function (j, v) { IvaUI.pagerGo(id, Math.round(Number(v) || 0) + dir); });
+    },
+    /**
+     * drag and drop (CommandFusion's DragDropManager, as a component): a pan
+     * on the gesture layer (o.area) picks the item under the finger, which
+     * follows it (CF.setProperties x / y); a target it's over lights up (its
+     * join), a drop writes the item's label into the target's value and calls
+     * drop(item, target); the item goes back to its place. Where things are
+     * is read when a drag starts (CF.getProperties): placed anywhere, moved.
+     */
+    dragdrop: function (id, o, drop) {
+      drags[id] = { o: o, drop: drop, cur: null };
+      for (var i = 0; i < o.targets.length; i++) {
+        if (o.targets[i].value && o.targets[i].hint) IvaUI.hint(o.targets[i].value, o.targets[i].hint, o.placeholder);
+      }
+    },
+    ddBegin: function (id, x, y) {
+      var dd = drags[id];
+      if (!dd) return;
+      var o = dd.o, joins = [o.area], i;
+      for (i = 0; i < o.items.length; i++) joins.push(o.items[i].join);
+      for (i = 0; i < o.targets.length; i++) joins.push(o.targets[i].hover);
+      dd.cur = { pending: true };
+      CF.getProperties(joins, function (props) {
+        var area = props[0], px = area.x + x, py = area.y + y, cur = null;
+        for (var k = o.items.length - 1; k >= 0 && !cur; k--) {
+          var r = props[1 + k];
+          if (px >= r.x && px < r.x + r.w && py >= r.y && py < r.y + r.h) {
+            cur = { item: o.items[k], home: { x: r.x, y: r.y }, dx: r.x - px, dy: r.y - py, x: r.x, y: r.y, area: area, target: -1,
+              targets: props.slice(1 + o.items.length) };
+          }
+        }
+        // the finger may have lifted already
+        if (!dd.cur || !dd.cur.pending) return;
+        dd.cur = cur;
+        if (cur) CF.setProperties({ join: cur.item.join, opacity: 0.8, scale: 1.08 }, 0, 0.12);
+      });
+    },
+    ddMove: function (id, x, y) {
+      var dd = drags[id], c = dd && dd.cur;
+      if (!c || c.pending) return;
+      var px = c.area.x + x, py = c.area.y + y;
+      var nx = Math.round(px + c.dx), ny = Math.round(py + c.dy);
+      if (nx !== c.x || ny !== c.y) {
+        c.x = nx;
+        c.y = ny;
+        CF.setProperties({ join: c.item.join, x: nx, y: ny });
+      }
+      // the target under the finger, if it takes this item
+      var over = -1;
+      for (var k = 0; k < c.targets.length; k++) {
+        var r = c.targets[k], t = dd.o.targets[k];
+        if (px >= r.x && px < r.x + r.w && py >= r.y && py < r.y + r.h && (!t.accept || t.accept.indexOf(c.item.id) >= 0)) over = k;
+      }
+      if (over !== c.target) {
+        if (c.target >= 0) CF.setJoin(dd.o.targets[c.target].hover, 0);
+        if (over >= 0) CF.setJoin(dd.o.targets[over].hover, 1);
+        c.target = over;
+      }
+    },
+    ddEnd: function (id) {
+      var dd = drags[id], c = dd && dd.cur;
+      if (!dd) return;
+      dd.cur = null;
+      if (!c || c.pending) return;
+      var join = c.item.join, home = c.home;
+      if (c.target < 0) {
+        // nowhere: back to its place
+        CF.setProperties({ join: join, x: home.x, y: home.y, opacity: 1, scale: 1 }, 0, 0.3, CF.AnimationCurveEaseOut);
+        return;
+      }
+      var t = dd.o.targets[c.target];
+      // taken: it shrinks away, and comes back in its place
+      CF.setProperties({ join: join, scale: 0.01 }, 0, 0.18, CF.AnimationCurveEaseOut, function () {
+        CF.setProperties({ join: join, x: home.x, y: home.y, opacity: 0 }, 0, 0, CF.AnimationCurveLinear, function () {
+          CF.setProperties({ join: join, opacity: 1, scale: 1 }, 0, 0.2);
+        });
+      });
+      if (t.value) CF.setJoin(t.value, dd.o.labels[c.item.id]);
+      // the target blinks: dropped
+      setTimeout(function () { CF.setJoin(t.hover, 0); }, 160);
+      setTimeout(function () { CF.setJoin(t.hover, 1); }, 280);
+      setTimeout(function () { CF.setJoin(t.hover, 0); }, 420);
+      if (dd.drop) dd.drop(c.item.id, t.id);
     },
     /** a digital join off */
     off: function (join) { CF.setJoin(join, 0); }

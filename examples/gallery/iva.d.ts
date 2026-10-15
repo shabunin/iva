@@ -1451,6 +1451,47 @@ declare module 'iva/ui' {
       textJoin?: Join;
       icon?: string;
   }
+  export interface DragItem {
+      id: string;
+      label: string;
+      /** a Font Awesome icon's name */
+      icon?: string;
+      /** where it is (default: in a row, in order) */
+      x?: number;
+      y?: number;
+  }
+  export interface DropTarget {
+      id: string;
+      label: string;
+      icon?: string;
+      /** serial join: the label of the item dropped on it (shown on it) */
+      value?: Join;
+      /** the items it takes (default: all) */
+      accept?: string[];
+      x?: number;
+      y?: number;
+  }
+  export interface DragDropProps {
+      /** names its joins */
+      name: string;
+      /** what can be dragged: tiles of an icon and a label (they stay where they are: a palette) */
+      items: DragItem[];
+      /** where they go: cards that light up under a dragged item, showing the last one dropped */
+      targets: DropTarget[];
+      /** JavaScript run on a drop, with `item` and `target` (ids) */
+      onDrop?: string;
+      /** shown on a target with nothing on it */
+      placeholder?: string;
+      itemW?: number;
+      itemH?: number;
+      targetW?: number;
+      targetH?: number;
+      gap?: number;
+      x?: number;
+      y?: number;
+      w: number;
+      h: number;
+  }
   export interface PagerProps {
       /** analog join: the page shown (0, 1, ...), both ways */
       join: Join;
@@ -1577,6 +1618,7 @@ declare module 'iva/ui' {
       Breadcrumbs: (p: BreadcrumbsProps) => VNode;
       Loader: (p: LoaderProps) => VNode;
       Pager: (p: PagerProps) => VNode;
+      DragDrop: (p: DragDropProps) => VNode;
       AlarmCard: (p: AlarmCardProps) => VNode;
       Knob: (p: KnobProps) => VNode;
       Thermostat: (p: ThermostatProps) => VNode;
@@ -1637,6 +1679,7 @@ declare module 'iva/ui' {
   export declare const Breadcrumbs: Ui['Breadcrumbs'];
   export declare const Loader: Ui['Loader'];
   export declare const Pager: Ui['Pager'];
+  export declare const DragDrop: Ui['DragDrop'];
   export declare const NavCard: Ui['NavCard'];
   export declare const Header: Ui['Header'];
   export declare const SideMenu: Ui['SideMenu'];

@@ -48,7 +48,8 @@ iva serve          # to iViewer on a real device (GUI File URL http://<this mach
   Dial, Knob, Thermostat, ColorPicker, RadioGroup, CheckBox, SelectBox,
   TextField, SearchSelect, TimePicker, DatePicker, NumberField, DataList,
   WeekDays, AlarmCard, PinPad, Header, SideMenu, ConfirmDialog, DataTable,
-  AlarmTable, AlarmBanner, Breadcrumbs, Loader, Pager, Trend, Chart, ...);
+  AlarmTable, AlarmBanner, Breadcrumbs, Loader, Pager, Trend, Chart,
+  DragDrop, ...);
   see iva's docs/ui.md.
 - Charts, 3D, any page a script makes: `<WebApp entry="./web/app.js">` - the
   module (and the npm packages it imports; three, chart.js, uplot come with

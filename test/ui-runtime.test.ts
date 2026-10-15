@@ -229,3 +229,45 @@ test('Pager: the page and its dot from a join, steps stop at the ends', () => {
   IvaUI.pagerGo('p', 0);
   assert.deepEqual([joins.d1, joins.d11, joins.d3], [1, 1, 0]);
 });
+
+test('DragDrop: the item under the finger follows it, a target that takes it lights up, a drop writes its label and calls back', () => {
+  const { CF, IvaUI, joins } = panel();
+  // where things are (a page's coordinates): the area at 100, 50; items in a row; targets below
+  const rects: Record<string, { x: number; y: number; w: number; h: number }> = {
+    s1: { x: 100, y: 50, w: 600, h: 300 },
+    d1: { x: 100, y: 50, w: 100, h: 90 }, d2: { x: 220, y: 50, w: 100, h: 90 },
+    d11: { x: 100, y: 200, w: 200, h: 100 }, d12: { x: 320, y: 200, w: 200, h: 100 },
+  };
+  CF.getProperties = (js: string[], cb: (p: unknown[]) => void) => cb(js.map((j) => ({ join: j, ...rects[j] })));
+  const moves: any[] = [];
+  CF.setProperties = (p: any, _d?: number, _t?: number, _c?: string, done?: () => void) => {
+    moves.push(p);
+    if (done) done();
+  };
+  const drops: string[][] = [];
+  IvaUI.dragdrop('audio', {
+    area: 's1', items: [{ id: 'tv', join: 'd1' }, { id: 'radio', join: 'd2' }],
+    targets: [{ id: 'living', hover: 'd11', value: 's21', hint: 's31' }, { id: 'bed', hover: 'd12', value: 's22', hint: 's32', accept: ['radio'] }],
+    labels: { tv: 'TV', radio: 'Radio' }, placeholder: 'Drop here',
+  }, (item: string, target: string) => drops.push([item, target]));
+  assert.equal(joins.s31, 'Drop here');
+  // a press on nothing: no drag
+  IvaUI.ddBegin('audio', 590, 20);
+  IvaUI.ddMove('audio', 100, 200);
+  IvaUI.ddEnd('audio');
+  assert.equal(moves.length, 0);
+  // TV (area 10, 10) over the bedroom, which takes radio only: no light
+  IvaUI.ddBegin('audio', 10, 10);
+  assert.deepEqual(moves[0], { join: 'd1', opacity: 0.8, scale: 1.08 });
+  IvaUI.ddMove('audio', 300, 200);
+  assert.deepEqual(moves[1], { join: 'd1', x: 390, y: 240 });
+  assert.equal(joins.d12, undefined);
+  // over the living room: lit
+  IvaUI.ddMove('audio', 50, 180);
+  assert.equal(joins.d11, 1);
+  IvaUI.ddEnd('audio');
+  assert.deepEqual(drops, [['tv', 'living']]);
+  assert.deepEqual([joins.s21, joins.s31], ['TV', '']);
+  // it went back to where it was
+  assert.ok(moves.some((m) => m.join === 'd1' && m.x === 100 && m.y === 50));
+});
