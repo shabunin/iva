@@ -152,6 +152,8 @@ function liveScript(base: string, version: string, servers: PanelServer[], syste
     return send.apply(CF, arguments);
   };
   out("started: iViewer " + (CF.version || "?") + ", " + servers.length + " server(s)");
+  // the page shown: where the panel was, should it stop
+  CF.watch(CF.PageFlipEvent, function (from, to) { out("page: " + to); });
   servers.forEach(function (s) {
     CF.watch(CF.ConnectionStatusChangeEvent, s.name, function (system, connected, remote) {
       out(s.name + ": " + (connected ? "connected" : "not connected") + (remote ? " (" + remote + ")" : ""));

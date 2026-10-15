@@ -81,7 +81,7 @@ test('live: the panel\'s log in the console - CF.log, what its servers get and s
     const sent: string[] = [];
     const watchers: { event: string; cb: (...a: any[]) => void }[] = [];
     const CF: any = {
-      ConnectionStatusChangeEvent: 'conn', FeedbackMatchedEvent: 'fb', version: '5.0.7', modules: [],
+      ConnectionStatusChangeEvent: 'conn', FeedbackMatchedEvent: 'fb', PageFlipEvent: 'page', version: '5.0.7', modules: [],
       log: () => {}, send: () => {}, loadGUI: () => {},
       watch: (event: string, ...a: any[]) => watchers.push({ event, cb: a[a.length - 1] === true ? a[a.length - 2] : a[a.length - 1] }),
       request: (url: string, cb: (...a: any[]) => void) => {
@@ -95,13 +95,15 @@ test('live: the panel\'s log in the console - CF.log, what its servers get and s
     CF.log('hello from the panel');
     watchers.find((w) => w.event === 'fb')!.cb('request', 'GET /iva-color/000000 HTTP/1.1\r\nHost: x\r\n\r\n');
     CF.send('IvaWeb', 'HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
-    for (let i = 0; i < 50 && !lines.some((l) => /IvaWeb sends/.test(l)); i++) await new Promise((r) => setTimeout(r, 20));
+    watchers.find((w) => w.event === 'page')!.cb('Overview', 'Dials');
+    for (let i = 0; i < 50 && !lines.some((l) => /page: Dials/.test(l)); i++) await new Promise((r) => setTimeout(r, 20));
     const panel = lines.filter((l) => l.startsWith('panel '));
     assert.ok(panel.some((l) => /started: iViewer 5\.0\.7, 1 server/.test(l)), panel.join('\n'));
     assert.ok(panel.some((l) => /hello from the panel/.test(l)));
     assert.ok(panel.some((l) => /scripts started/.test(l)));
     assert.ok(panel.some((l) => /IvaWeb got GET \/iva-color\/000000 HTTP\/1\.1/.test(l)));
     assert.ok(panel.some((l) => /IvaWeb sends HTTP\/1\.1 200 OK/.test(l)));
+    assert.ok(panel.some((l) => /page: Dials/.test(l)));
   } finally {
     await s.close();
   }
