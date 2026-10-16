@@ -464,6 +464,8 @@ export interface PageProps extends Pick<StyleProps, 'bg' | 'image' | 'theme'>, X
   name: string;
   /** the page shown at start (default: the first page) */
   start?: boolean;
+  /** how it comes when flipped to (default: at once): fade, moveIn / push / reveal from a side */
+  transition?: Transition;
   tags?: string | string[];
   children?: Child;
 }
@@ -673,7 +675,26 @@ export interface VideoProps extends Geom, XmlProp {
   auth?: { user?: string; password?: string; realm?: string; host?: string; method?: 'basic' | 'digest'; proxy?: string };
 }
 /** js code, or set a join: { join: 'd10', value: 1 } ([x], [y] tokens allowed) */
-export type GestureAction = string | { js?: string; join?: string | JoinRef; value?: string | number };
+/**
+ * What a gesture phase does: a script, or any of - a join set to a value
+ * (its [x] [y] [deltax] [scale] [rotation] [velocity] ... tokens and {{math}}
+ * in), a token set (on `tokenJoin`, else a global one), a command, a macro,
+ * a page flipped to (in `transition`, which also goes for the subpages it
+ * shows or hides), after `delay` ms.
+ */
+export type GestureAction = string | {
+  js?: string;
+  join?: string | JoinRef;
+  value?: string | number;
+  token?: string;
+  tokenJoin?: string | JoinRef;
+  cmd?: string;
+  macro?: string;
+  page?: string;
+  transition?: Transition;
+  /** ms */
+  delay?: number;
+};
 export interface GestureProps extends XmlProp {
   type: 'tap' | 'swipe' | 'pan' | 'press' | 'rotate' | 'pinch';
   name?: string;
@@ -877,7 +898,7 @@ const PLACEMENT = ['x', 'y', 'join', 'visible', 'in', 'out', 'topmost', 'fixed',
  * @internal */
 export const PROPS: Record<string, string[]> = {
   Project: ['name', 'device', 'orientation', 'width', 'height', 'otherSize', 'autoposition', 'sizes', 'joinBase', 'assets', 'properties', 'licenses', 'themes', 'theme', 'folders', 'httpPort'],
-  Page: ['name', 'start', 'bg', 'image', 'theme', 'tags'],
+  Page: ['name', 'start', 'bg', 'image', 'theme', 'tags', 'transition'],
   Landscape: ['bg', 'image', 'theme'],
   Portrait: ['bg', 'image', 'theme'],
   Subpage: ['name', 'w', 'h', 'clip', 'define', 'bg', 'image', 'radius', 'borderWidth', 'borderColor', 'theme', ...PLACEMENT],

@@ -9,7 +9,7 @@ injected); `import { Button } from 'iva'` works too.
 | JSX | `.gui` | Key props |
 |---|---|---|
 | `<Project>` | `<gui>` + `<properties>` | `name`; `device` (`iPad`, `iPad Pro 11`, `iPad Pro 12.9`, `iPad Air 10.5`, `iPhone X`, `iPhone XS Max`, `iPhone 8`, `iPhone 8 Plus`, `iPhone 5`, `iPhone 4`) + `orientation`, or `width` / `height` (wider than tall → landscape is the main orientation); `otherSize`, `autoposition`, `joinBase`, `assets` (a folder shipped whole; images found there by bare name; default `./assets`), `properties` (raw XML after `<size>`), `licenses` (the devices licensed to run it, iViewer's registration data: `{ 'Kitchen iPad': '8437F51D…' }`, the code iViewer shows on the device), `themes` + `theme` (looks switched at runtime, below), `folders` (default true: the build's assets/ - the .gui's image folder: iva's drawings in a folder per component type - dials/<its label>/, knobs/, pickers/, buttons/, boxes/, rows/, banners/, sliders/, backgrounds/, icons/ - readably named, and scripts/, where iViewer looks for the .gui's scripts; false: everything beside the .gui, in the image folder its `properties` name, if any), `httpPort` (the panel's web server: web apps, swatches; default the first free from 8900), `sizes` (other screens it's built for, `'1920x1080'`, a phone's `'1400x1400@3x'`: [Screen sizes](#screen-sizes)) |
-| `<Page>` | `<page>` + `<portrait>`/`<landscape>` | `name`, `start`, `bg`, `image`, `theme`, `tags`. Items go into the main orientation (the other is written empty, as GUI Designer does) |
+| `<Page>` | `<page>` + `<portrait>`/`<landscape>` | `name`, `start`, `bg`, `image`, `theme`, `tags`, `transition` (how it comes when flipped to: `{ type: 'fade'\|'moveIn'\|'push'\|'reveal', from, time, ease }`; none: at once). Items go into the main orientation (the other is written empty, as GUI Designer does) |
 | `<Landscape>` / `<Portrait>` | `<landscape>` / `<portrait>` | `bg`, `image`, `theme`. With these, the page has exactly the orientations given, in that order |
 | `<Subpage>` | `<subpage name w h>` (definition) + placement | `name`, `w`, `h`, `clip`, `bg`/`image`/`theme`, `radius` / `borderWidth` / `borderColor` (drawn). Inside a page it is defined *and* placed (`x`, `y`, `join`, `visible`, `in`, `out`, `topmost` (above everything: placed last), `fixed` (at x / y whatever `<Group>` it is in), `clickthrough`), or only defined with `define`; in `<Project>` it is only defined |
 | `<SubpageRef>` | `<subpage name x y j …>` | `name` + the placement props: places a subpage defined elsewhere |
@@ -28,7 +28,7 @@ injected); `import { Button } from 'iva'` works too.
 | `<Web>` | `<web>` | `join` serial (the URL: setting it loads it), `titleJoin` serial, `backJoin`, `forwardJoin`, `refreshJoin`, `stopJoin` digital | `url`: a URL, a file of the project (`page.html`, in `assets/`), or `panel:/path` (a page of the panel's own web server) |
 | `<Video>` | `<video>` | `join`, `playJoin`, `stopJoin` (numbers) | `url`, `format` (`mjpeg`·`mpeg4`), `autoplay`, `controls`, `bg`, `cache`, `auth={{user, password, …}}` |
 | `<WebApp>` | `<web>` + a server `<system>` + `apps/<name>.js` | `joins={{ name: d('x'), … }}`: what the page sees and sets, by name | a web page the panel serves itself (charts, 3D - [docs/web.md](web.md)): `entry` (your module, bundled with its npm imports; or `iva:trend` / `iva:chart`), `name` (its path on the panel's web server: `/<name>/`; one port for all, `<Project httpPort>`), `options` (JSON for the page), `handlers` (panel functions it may call), `record={{ every, keep }}`, `bg`, `title` |
-| `<Gesture>` | `<gesture>` + `<action phase>` | in actions: `join: 'd10'` / `d(10)` | `type` (`tap`·`swipe`·`pan`·`press`·`rotate`·`pinch`), `touches`, `taps`, `direction`, `onBegin` / `onChange` / `onEnd` (js string or `{ js, join, value }`) |
+| `<Gesture>` | `<gesture>` + `<action phase>` | in actions: `join: 'd10'` / `d(10)` | `type` (`tap`·`swipe`·`pan`·`press`·`rotate`·`pinch`), `touches`, `taps`, `direction`, `onBegin` / `onChange` / `onEnd`: a js string, or `{ js, join, value, token, tokenJoin, cmd, macro, page, transition, delay }` (a list of them too); `value` takes the gesture's `[x]` `[y]` `[startx]` `[deltax]` `[scale]` `[rotation]` `[velocity]` … and `{{math}}` |
 
 All items take `x`, `y` (default 0), `w`, `h` (required) and `tags`.
 
@@ -262,6 +262,29 @@ call - a toggle (there and back), a value from the panel - is a script's: the
 gallery's Animations page (`examples/gallery/pages/Animations.jsx`) has both.
 Subpages animate on their own: `in` / `out` on `<Subpage>` / `<SubpageRef>`
 (fade, moveIn / push / reveal from a side, a time, an ease).
+
+## Gestures and transitions in the runtime
+
+As CommandFusion's docs describe them: a `tap` fires on release (still and
+quick; `taps` 2: a double tap - a single-tap gesture fires on each tap of it
+too), a `press` on touch-down, a `swipe` as soon as it's far enough one way
+(once a touch); instant ones run their end actions right after their begin
+ones. `pan` begins once the finger has moved a few points (its `startx` /
+`starty`: where it touched down), changes as it moves, ends on release;
+`pinch` and `rotate` take two fingers (`scale` from their first distance,
+`rotation` in radians since it began). A script gets `gesture`, `join`,
+`tokens`, `list` and `listIndex`; in a list item, a join an action sets is
+the item's. A gesture on a page or subpage leaves its buttons working.
+
+A page comes in its own transition (a gesture action's wins); a subpage in
+its `in` / `out` ones, sliding from the panel's edge on the side named and
+back out the same way. None, or a time of 0: at once.
+
+`{{ }}` is iViewer's math: `+ - * / % ^`, comparisons, `and` / `or` / `xor`,
+`t ? a : b`, and `dtor rtod sin cos tan asin acos atan sinh cosh tanh log ln
+log2 log10 exp sqrt abs sign trunc rint round ceil floor min max sum avg
+if(t, a, b)` - in join values, tokens, `CF.setJoin` strings and feedback
+transforms (`value`: what was captured).
 
 ## GUI linking
 

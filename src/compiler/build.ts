@@ -162,6 +162,13 @@ export function flat(children: Child[], out: (VNode | string)[] = []): (VNode | 
   return out;
 }
 
+/** a transition as the .gui writes it: transition / subtype / time / ease (Ease Both as GUI Designer: easeInEaseOut) */
+const transitionAttrs = (t: Transition) => ({
+  transition: t.type === 'none' ? 'None' : t.type,
+  subtype: t.from ? `from${t.from[0].toUpperCase()}${t.from.slice(1)}` : 'None',
+  time: t.time ?? 0.3,
+  ease: t.ease === 'easeInOut' ? 'easeInEaseOut' : t.ease === 'linear' ? '' : (t.ease ?? ''),
+});
 const tagsAttr = (t: unknown) => (t === undefined ? undefined : Array.isArray(t) ? t.join(' ') : String(t));
 const bool = (v: unknown, dflt = false) => ((v ?? dflt) ? '1' : '0');
 const hasStyle = (p: Record<string, unknown>) => STYLE_PROPS.some((k) => k !== 'theme' && p[k] !== undefined);
@@ -848,8 +855,9 @@ export class Builder {
       const empty = this.E(this.primary === 'landscape' ? 'portrait' : 'landscape', {});
       orients = this.primary === 'landscape' ? [empty, main] : [main, empty];
     }
+    const t = p.transition ? transitionAttrs(p.transition) : { transition: '', subtype: '', time: 0, ease: '' };
     this.pages.push(this.withXml(this.E('page', {
-      name: p.name, j: 0, tags: tagsAttr(p.tags), transition: '', subtype: '', time: 0, ease: '', start: p.start ? 1 : undefined,
+      name: p.name, j: 0, tags: tagsAttr(p.tags), ...t, start: p.start ? 1 : undefined,
     }, orients), node));
     this.pageName = '';
   }
@@ -1276,10 +1284,7 @@ export class Builder {
 
   private placeSubpage(node: VNode, name: string): XNode {
     const p = node.props;
-    const tr = (t: Transition | undefined) => {
-      if (t === undefined) return { transition: 'None', subtype: 'None', time: 0, ease: '' };
-      return { transition: t.type === 'none' ? 'None' : t.type, subtype: t.from ? `from${t.from[0].toUpperCase()}${t.from.slice(1)}` : 'None', time: t.time ?? 0.3, ease: t.ease ?? '' };
-    };
+    const tr = (t: Transition | undefined) => (t === undefined ? { transition: 'None', subtype: 'None', time: 0, ease: '' } : transitionAttrs(t));
     const i = tr(p.in);
     const o = tr(p.out);
     return this.E('subpage', {
@@ -1299,9 +1304,20 @@ export class Builder {
         const x = this.E('action', { phase });
         if (typeof a === 'string') x.attrs.push(['js', a]);
         else {
+          // GUI Designer's: phase delay flip command macro js j token target value transition subtype time ease
+          if (a.delay !== undefined) x.attrs.push(['delay', String(a.delay)]);
+          if (a.page !== undefined) x.attrs.push(['flip', a.page]);
+          if (a.cmd !== undefined) x.attrs.push(['command', a.cmd]);
+          if (a.macro !== undefined) x.attrs.push(['macro', a.macro]);
           if (a.js !== undefined) x.attrs.push(['js', a.js]);
           this.targetAttr(x, 'j', a.join === undefined ? undefined : typedJoin(a.join));
+          if (a.token !== undefined) {
+            x.attrs.push(['token', a.token.startsWith('[') ? a.token : `[${a.token}]`]);
+            if (a.tokenJoin !== undefined) this.targetAttr(x, 'target', typedJoin(a.tokenJoin));
+            else x.attrs.push(['target', 'e0']);
+          }
           if (a.value !== undefined) x.attrs.push(['value', String(a.value)]);
+          if (a.transition !== undefined) for (const [k, v] of Object.entries(transitionAttrs(a.transition))) x.attrs.push([k, String(v)]);
         }
         actions.push(x);
       }

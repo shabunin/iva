@@ -541,3 +541,23 @@ test('setProps(): a button animates an element by its join; a join no element ha
     <Button y={120} w={200} h={60} onPress={setProps(d('cub'), { opacity: 0 })} />`));
   assert.deepEqual(typo.warnings.map((w) => w.replace(/^.*?<Button>: /, '')), [`setProps: no element has the join d('cub') (did you mean "cube"?)`]);
 });
+
+test("a page's transition, and gesture actions with all of GUI Designer's parts", async () => {
+  const { xml: gui } = await build(`export default (
+  <Project name="T" width={1024} height={768}>
+    <Page name="Main">
+      <Image w={200} h={200} src="#ff0000">
+        <Gesture type="tap" taps={2} onBegin={{ page: 'Two', transition: { type: 'push', from: 'right', time: 0.5, ease: 'easeInOut' } }} />
+        <Gesture type="pan" onChange={[{ join: 'a:level', value: '{{[x] * 10}}' }, { token: 'where', value: '[x],[y]', delay: 100 }, { cmd: 'Go', macro: 'All' }]} />
+      </Image>
+    </Page>
+    <Page name="Two" transition={{ type: 'reveal', from: 'top', time: 0.6, ease: 'easeIn' }} />
+    <System name="Loop" host="127.0.0.1" port={1}><Command name="Go" send="go" /></System>
+  </Project>
+);`);
+  assert.match(gui, /<page name="Two" j="0" transition="reveal" subtype="fromTop" time="0.6" ease="easeIn"/);
+  assert.match(gui, /<action phase="begin" flip="Two" transition="push" subtype="fromRight" time="0.5" ease="easeInEaseOut" \/>/);
+  assert.match(gui, /<action phase="change" j="a\d+" value="\{\{\[x\] \* 10\}\}" \/>/);
+  assert.match(gui, /<action phase="change" delay="100" token="\[where\]" target="e0" value="\[x\],\[y\]" \/>/);
+  assert.match(gui, /<action phase="change" command="Go" macro="All" \/>/);
+});
