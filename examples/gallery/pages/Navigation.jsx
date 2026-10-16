@@ -1,5 +1,5 @@
 import { ui, t, narrow } from '../ui.js';
-import Shell from '../components/Shell.jsx';
+import Shell, { enter, tab } from '../components/Shell.jsx';
 
 const note = (y, text, w = 360) => <Text x={28} y={y} w={w} h={52} text={text} color={t.muted} font={t.font} fontSize={16} wrap />;
 
@@ -76,13 +76,13 @@ const C = ui.grid({ crumbs: [404, 190], navCard: [404, 214] }, [['crumbs'], ['na
 
 // a phone: a screen each - the pager's pages are subpages, which a list (a ScrollArea) doesn't show on the device
 export default narrow ? (
-  <ui.Screens name="Navigation" shell={<Shell section="Navigation & feedback" />} screens={[
+  <ui.Screens name="Navigation" transition={enter} tabTransition={tab} shell={<Shell section="Navigation & feedback" />} screens={[
     { title: 'Dialogs', content: <>{menu(D.menu)}{confirm(D.confirm)}{loader(D.loader)}{dialogs}</> },
     { title: 'Breadcrumbs', content: <>{crumbs(C.crumbs)}{navCard(C.navCard)}</> },
     { title: 'Pager', content: pager(ui.screenArea) },
   ]} />
 ) : (
-  <Page name="Navigation" bg={t.page}>
+  <Page name="Navigation" bg={t.page} transition={enter}>
     {menu(L.menu)}
     {confirm(L.confirm)}
     {loader(L.loader)}

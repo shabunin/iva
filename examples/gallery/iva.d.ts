@@ -283,8 +283,10 @@ declare module 'iva' {
   export interface StyleProps extends XmlProp {
       /** background colour: '#203040', 'rgba(0,0,0,0.5)', '#20304080' */
       bg?: string;
-      /** background image (a file, relative to the .jsx) */
-      image?: string;
+      /** background image (a file, relative to the .jsx; or a drawing: draw.box(...)) */
+      image?: string | DrawRef;
+      /** a page's / subpage's background image tiled at its own size (GUI Designer's Tiled), not stretched */
+      tile?: boolean;
       /** 9-slice the image: px from each edge, `12` or `[top, right, bottom, left]` */
       slice?: number | [number, number, number, number];
       color?: string;
@@ -297,6 +299,8 @@ declare module 'iva' {
       fontSize?: number;
       bold?: boolean;
       italic?: boolean;
+      /** text underlined (text-decoration) */
+      underline?: boolean;
       align?: 'left' | 'center' | 'right';
       valign?: 'top' | 'middle' | 'bottom';
       /** text shadow: CSS text, or { color, x, y, blur } */
@@ -414,7 +418,7 @@ declare module 'iva' {
       httpPort?: number;
       children?: Child;
   }
-  export interface PageProps extends Pick<StyleProps, 'bg' | 'image' | 'theme'>, XmlProp {
+  export interface PageProps extends Pick<StyleProps, 'bg' | 'image' | 'tile' | 'theme'>, XmlProp {
       name: string;
       /** the page shown at start (default: the first page) */
       start?: boolean;
@@ -423,10 +427,10 @@ declare module 'iva' {
       tags?: string | string[];
       children?: Child;
   }
-  export interface OrientationProps extends Pick<StyleProps, 'bg' | 'image' | 'theme'>, XmlProp {
+  export interface OrientationProps extends Pick<StyleProps, 'bg' | 'image' | 'tile' | 'theme'>, XmlProp {
       children?: Child;
   }
-  export interface SubpageProps extends Placement, Pick<StyleProps, 'bg' | 'image' | 'radius' | 'borderWidth' | 'borderColor' | 'theme'>, XmlProp {
+  export interface SubpageProps extends Placement, Pick<StyleProps, 'bg' | 'image' | 'tile' | 'radius' | 'borderWidth' | 'borderColor' | 'theme'>, XmlProp {
       name: string;
       /** inside a page: only define it (list rows, ...), don't place it */
       define?: boolean;
@@ -882,7 +886,7 @@ declare module 'iva/ui' {
    * happen on the panel (value labels, steppers, one-of-several, the clock,
    * the side menu) is a small script, iva-ui.js, that comes with them.
    */
-  import { type ButtonProps, type Child, type Join, type VNode } from 'iva';
+  import { type ButtonProps, type Child, type Join, type Transition, type VNode } from 'iva';
   export interface UiTheme {
       /** page background */
       page: string;
@@ -1261,6 +1265,10 @@ declare module 'iva/ui' {
       shell?: Child;
       /** the pages' background (default: the theme's page colour) */
       bg?: string;
+      /** how the section's first page comes when flipped to (a page transition: { type, from, time, ease }) */
+      transition?: Transition;
+      /** how its other tabs' pages come (default: as the first) */
+      tabTransition?: Transition;
   }
   export interface WeekDaysProps {
       /** analog join: the bitmask (Mon 1, Tue 2, Wed 4 ... Sun 64) */

@@ -1,5 +1,5 @@
 import { ui, t, narrow } from '../ui.js';
-import Shell from '../components/Shell.jsx';
+import Shell, { enter, tab } from '../components/Shell.jsx';
 
 // Animations two ways: setProps() actions in the JSX - one CF.setProperties call, then the next in its
 // callback - and, for what keeps state (a toggle, where an element started), a script's functions
@@ -181,14 +181,14 @@ const L = ui.grid({
 const A = ui.screenArea;
 
 export default narrow ? (
-  <ui.Screens name="Animations" shell={<Shell section="Animations" />} screens={[
+  <ui.Screens name="Animations" transition={enter} tabTransition={tab} shell={<Shell section="Animations" />} screens={[
     { title: 'Properties', content: <>{propsCard(A, true)}{script}</> },
     { title: 'Curves', content: curvesCard(A, true) },
     { title: 'Subpages', content: <>{transitionsCard(A, true)}{sheetDef}</> },
     { title: 'Chains', content: chainsCard(A, true) },
   ]} />
 ) : (
-  <Page name="Animations" bg={t.page}>
+  <Page name="Animations" bg={t.page} transition={enter}>
     {propsCard(L.props)}
     {curvesCard(L.curves)}
     {transitionsCard(L.transitions)}

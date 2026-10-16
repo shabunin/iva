@@ -1,5 +1,5 @@
 import { ui, t, narrow } from '../ui.js';
-import Shell from '../components/Shell.jsx';
+import Shell, { enter } from '../components/Shell.jsx';
 
 const L = ui.grid({
   toggle: [392, 260],
@@ -21,7 +21,7 @@ const scenes = [
 ];
 
 export default (
-  <Page name="Controls" bg={t.page}>
+  <Page name="Controls" bg={t.page} transition={enter}>
     <ui.ScrollArea>
       <ui.Card title="Toggle" {...L.toggle}>
         <ui.Toggle x={28} y={64} label="Light" join="light" />

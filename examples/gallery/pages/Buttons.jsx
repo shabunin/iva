@@ -1,5 +1,5 @@
 import { ui, t } from '../ui.js';
-import Shell from '../components/Shell.jsx';
+import Shell, { enter } from '../components/Shell.jsx';
 
 // laid out at 1280x800; a bigger panel: the cards grow, their content in the middle; a narrow one: one under
 // another, laid out again where they need to be (a height for the width)
@@ -18,7 +18,7 @@ const statsWrap = L.stats.w < 612;
 const iconGap = Math.min(68, Math.floor((L.stats.w - 56 - 38) / 7));
 
 export default (
-  <Page name="Buttons" bg={t.page}>
+  <Page name="Buttons" bg={t.page} transition={enter}>
     <ui.ScrollArea>
       <ui.Card title="IconButton" {...L.buttons}>
         {note(L.buttons, 56, 'icon + text · icon only · text only')}

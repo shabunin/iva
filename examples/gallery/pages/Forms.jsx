@@ -1,5 +1,5 @@
 import { ui, t, narrow } from '../ui.js';
-import Shell from '../components/Shell.jsx';
+import Shell, { enter } from '../components/Shell.jsx';
 
 const rooms = ['Kitchen', 'Living room', 'Bedroom'];
 const cities = ['Amsterdam', 'Athens', 'Barcelona', 'Berlin', 'Bern', 'Brussels', 'Budapest', 'Copenhagen', 'Dublin', 'Helsinki', 'Lisbon', 'London',
@@ -31,7 +31,7 @@ const shows = (y, join, type) => {
 };
 
 export default (
-  <Page name="Forms" bg={t.page}>
+  <Page name="Forms" bg={t.page} transition={enter}>
     <ui.ScrollArea>
       <ui.Card title="RadioGroup" {...L.radio}>
         <ui.RadioGroup x={28} y={60} w={L.radio.w - 52} options={rooms} join="room" value={1} />

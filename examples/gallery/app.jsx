@@ -11,6 +11,7 @@ import Tables from './pages/Tables.jsx';
 import Charts from './pages/Charts.jsx';
 import DragDrop from './pages/DragDrop.jsx';
 import Animations from './pages/Animations.jsx';
+import Gestures from './pages/Gestures.jsx';
 import Navigation from './pages/Navigation.jsx';
 
 export default (
@@ -31,6 +32,7 @@ export default (
     {Charts}
     {DragDrop}
     {Animations}
+    {Gestures}
     {Navigation}
   </Project>
 );

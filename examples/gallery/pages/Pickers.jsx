@@ -1,5 +1,5 @@
 import { ui, t, narrow } from '../ui.js';
-import Shell from '../components/Shell.jsx';
+import Shell, { enter } from '../components/Shell.jsx';
 
 const L = ui.grid({
   time: [400, 344], date: [400, 344], number: [416, 344],
@@ -26,7 +26,7 @@ const shows = (y, label, join, max = 65535) => {
 };
 
 export default (
-  <Page name="Pickers" bg={t.page}>
+  <Page name="Pickers" bg={t.page} transition={enter}>
     <ui.ScrollArea>
       <ui.Card title="TimePicker" {...L.time}>
         {note(52, '24 h')}

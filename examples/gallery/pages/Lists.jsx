@@ -1,5 +1,5 @@
 import { ui, t, narrow } from '../ui.js';
-import Shell from '../components/Shell.jsx';
+import Shell, { enter, tab } from '../components/Shell.jsx';
 
 /** @type {import('iva/ui').DataListItem[]} */
 const devices = [
@@ -50,25 +50,69 @@ const scrollBox = (c, title) => {
   );
 };
 
+/**
+ * A list a script changes (scripts/lists.js): an item comes in at the top - opening in the middle, the
+ * others sliding down - and goes off to the left (insertTransition / deleteTransition); a swipe left on
+ * one shows Delete. Title items use the list's title subpage; an item's toggle stays with it.
+ */
+const liveCard = (c, compact) => {
+  const m = compact ? 16 : 28;
+  const top = compact ? 8 : 48;
+  const bh = compact ? 40 : 48;
+  const by = top + (compact ? 38 : 50);
+  const listY = by + bh + 10;
+  const lw = c.w - 2 * m;
+  const bw = Math.floor((lw - 16) / 3);
+  const row = (
+    <Subpage name="gallery_live_row" w={lw} h={56}>
+      <Box x={0} y={3} w={lw} h={50} radius={t.radius} bg={t.raised} />
+      <Text x={16} y={6} w={lw - 140} h={24} join={1} font={t.font} fontSize={18} />
+      <Text x={16} y={29} w={lw - 140} h={20} join={2} color={t.muted} font={t.font} fontSize={13} />
+      <ui.Toggle x={lw - 112} y={4} w={104} h={48} join={3} />
+    </Subpage>
+  );
+  const title = (
+    <Subpage name="gallery_live_title" w={lw} h={40}>
+      <Text x={8} y={8} w={lw - 16} h={28} join={1} color={t.accent} font={t.font} fontSize={15} bold />
+    </Subpage>
+  );
+  return (
+    <ui.Card title={compact ? undefined : 'Live list'} {...c}>
+      <Text x={m} y={top} w={lw} h={compact ? 34 : 44} wrap valign="top" color={t.muted} font={t.font} fontSize={compact ? 13 : 15}
+            text="Items come in (opening) and go (to the left) as a script adds and removes them; swipe one left to delete it." />
+      <ui.IconButton x={m} y={by} w={bw} h={bh} icon="plus" text="Add" js="GalleryList.add()" />
+      <ui.IconButton x={m + bw + 8} y={by} w={bw} h={bh} icon="heading" text="Title" js="GalleryList.title()" />
+      <ui.IconButton x={m + 2 * (bw + 8)} y={by} w={bw} h={bh} icon="minus" text="Last" js="GalleryList.remove()" />
+      <List x={m} y={listY} w={lw} h={c.h - listY - 16} join="liveRooms" item={row} title={title}
+            swipeDelete insertTransition="middle" deleteTransition="left" />
+      <Script src="../scripts/lists.js" />
+      <OnStart js="GalleryList.fill();" />
+    </ui.Card>
+  );
+};
+
 // the list and the scroll box take the height there is
 const L = ui.grid({
-  list: { w: 600, h: 696, grow: true },
-  rows: [632, 340],
-  scroll: { w: 632, h: 340, grow: true },
-}, [['list', ['rows', 'scroll']]]);
+  list: { w: 400, h: 696, grow: true },
+  rows: [416, 340],
+  scroll: { w: 416, h: 340, grow: true },
+  live: { w: 400, h: 696, grow: true },
+}, [['list', ['rows', 'scroll'], 'live']]);
 
 // a phone: a screen each - a list in a list (a ScrollArea) shows nothing on the device
 export default narrow ? (
-  <ui.Screens name="Lists" shell={<Shell section="Lists" />} screens={[
+  <ui.Screens name="Lists" transition={enter} tabTransition={tab} shell={<Shell section="Lists" />} screens={[
     { title: 'DataList', content: dataList(ui.screenArea) },
     { title: 'ListRow', content: listRows(ui.screenArea) },
     { title: 'ScrollBox', content: scrollBox(ui.screenArea) },
+    { title: 'Live', content: liveCard(ui.screenArea, true) },
   ]} />
 ) : (
-  <Page name="Lists" bg={t.page}>
+  <Page name="Lists" bg={t.page} transition={enter}>
     {dataList(L.list, 'DataList')}
     {listRows(L.rows, 'ListRow')}
     {scrollBox(L.scroll, 'ScrollBox')}
+    {liveCard(L.live)}
     <Shell section="Lists" />
   </Page>
 );

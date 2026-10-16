@@ -1,5 +1,5 @@
 import { ui, t, narrow } from '../ui.js';
-import Shell from '../components/Shell.jsx';
+import Shell, { enter, tab } from '../components/Shell.jsx';
 
 const tiles = [
   ['couch', 'Living room', '2 lights on'], ['utensils', 'Kitchen', 'Off'], ['bed', 'Bedroom', '21.0 °C'],
@@ -49,32 +49,73 @@ const rooms = (c, title) => {
   );
 };
 
-// two stacks and a card; the web view takes the height there is
+/**
+ * A camera's picture a second: an image of a URL - the gallery's own server's (<HttpServer>, scripts/net.js)
+ * - loaded again every second (refresh), never from a cache (noCache); another camera clears it at once
+ * (clearOnURLChange) and a spinner shows till its first picture comes (downloadIndicator). Below: an HTTP
+ * system - a command is a GET of its path, the answer's body goes to its feedback.
+ */
+const camUrl = (n) => `http://127.0.0.1:8898/camera/${n}`;
+const camera = (c, compact) => {
+  const m = compact ? 16 : 28;
+  const top = compact ? 8 : 52;
+  const iw = compact ? 268 : 256;
+  const ih = Math.round((iw * 9) / 16);
+  const bx = m + iw + 14;
+  const bw = c.w - bx - m;
+  const bh = 44;
+  const below = top + ih + (compact ? 10 : 10);
+  return (
+    <ui.Card title={compact ? undefined : 'Camera & HTTP'} {...c}>
+      <Box x={m} y={top} w={iw} h={ih} radius={t.radius} bg={t.page} />
+      <Image x={m} y={top} w={iw} h={ih} join={s('camUrl')} src={camUrl(1)} refresh={1000} noCache downloadIndicator clearOnURLChange />
+      <ui.IconButton x={bx} y={top} w={bw} h={bh} icon="video" text="Cam 1" js={`CF.setJoin(Joins.s.camUrl, '${camUrl(1)}')`} />
+      <ui.IconButton x={bx} y={top + bh + 8} w={bw} h={bh} icon="video" text="Cam 2" js={`CF.setJoin(Joins.s.camUrl, '${camUrl(2)}')`} />
+      <ui.IconButton x={bx} y={top + 2 * (bh + 8)} w={bw} h={bh} icon="cloud-arrow-down" text="GET" cmd="GalleryNow" />
+      <Text x={m} y={below} w={150} h={24} text="HTTP GET /now:" color={t.muted} font={t.font} fontSize={compact ? 14 : 15} />
+      <Text x={m + 150} y={below} w={c.w - 2 * m - 150} h={24} join={s('apiNow')} text="(press GET)" font={t.font} fontSize={compact ? 14 : 15} />
+      <Text x={m} y={below + 26} w={c.w - 2 * m} h={compact ? 34 : 18} wrap valign="top" color={t.muted} font={t.font} fontSize={12}
+            text={compact ? 'The picture: refresh 1 s, no cache; another camera clears it, a spinner till it comes.' : 'Refresh 1 s, no cache; a new camera: cleared, a spinner.'} />
+      <System name="GalleryApi" protocol="http" host="127.0.0.1" port={8899} connectJoin={d('apiUp')}>
+        <Command name="GalleryNow" send="/now" />
+        <Feedback name="apiNow" regex="now=(.*)"><Capture join={s('apiNow')} /></Feedback>
+      </System>
+      <HttpServer name="galleryCams" port={8898} handler="galleryCamera" />
+      <HttpServer name="galleryApiServer" port={8899} handler="galleryApi" />
+      <Script src="../scripts/net.js" />
+    </ui.Card>
+  );
+};
+
+// three stacks: the web view takes the height there is
 const L = ui.grid({
   dimmer: [400, 200],
   blinds: [400, 260],
+  web: { w: 400, h: 204, grow: true },
   color: [450, 420],
-  web: { w: 450, h: 240, grow: true },
+  camera: [450, 260],
   rooms: [366, 572],
-}, [[['dimmer', 'blinds'], ['color', 'web'], 'rooms']]);
+}, [[['dimmer', 'blinds', 'web'], ['color', 'camera'], 'rooms']]);
 // a phone's first screen: the two cards one under another (they scroll)
 const P = ui.grid({ dimmer: [400, 200], blinds: [400, 260] }, [['dimmer'], ['blinds']], ui.screenArea);
 
 // a phone: a screen each - the colour wheel is a subpage, which a list (a ScrollArea) doesn't show on the device
 export default narrow ? (
-  <ui.Screens name="Devices" shell={<Shell section="Devices" />} screens={[
+  <ui.Screens name="Devices" transition={enter} tabTransition={tab} shell={<Shell section="Devices" />} screens={[
     { title: 'Lights', content: <>{dimmer(P.dimmer)}{blinds(P.blinds)}{start}</> },
     { title: 'Colour', content: color(ui.screenArea) },
     { title: 'Web', content: web(ui.screenArea) },
     { title: 'Rooms', content: rooms(ui.screenArea) },
+    { title: 'Camera', content: camera(ui.screenArea, true) },
   ]} />
 ) : (
-  <Page name="Devices" bg={t.page}>
+  <Page name="Devices" bg={t.page} transition={enter}>
     {dimmer(L.dimmer)}
     {blinds(L.blinds)}
     {color(L.color, 'ColorPicker')}
     {web(L.web, 'Web')}
     {rooms(L.rooms, 'Rooms')}
+    {camera(L.camera)}
     {start}
     <Shell section="Devices" />
   </Page>

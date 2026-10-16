@@ -1,5 +1,5 @@
 import { ui, t, narrow } from '../ui.js';
-import Shell from '../components/Shell.jsx';
+import Shell, { enter, tab } from '../components/Shell.jsx';
 
 const L = ui.grid({
   dial: [608, 360],
@@ -12,7 +12,7 @@ const A = ui.screenArea;
 
 // a phone: a screen each - a gesture in a list (a ScrollArea) doesn't fire on the device
 export default narrow ? (
-  <ui.Screens name="Dials" shell={<Shell section="Dials" />} screens={[
+  <ui.Screens name="Dials" transition={enter} tabTransition={tab} shell={<Shell section="Dials" />} screens={[
     {
       title: 'Dial',
       content: (
@@ -54,7 +54,7 @@ export default narrow ? (
     },
   ]} />
 ) : (
-  <Page name="Dials" bg={t.page}>
+  <Page name="Dials" bg={t.page} transition={enter}>
     <ui.Card title="Dial" {...L.dial}>
       {note(28, 52, 'touch or drag the ring')}
       <ui.Dial x={28} y={92} size={240} join="level" value={65} label="Level" />

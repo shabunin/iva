@@ -1,5 +1,5 @@
 import { ui, t, narrow } from '../ui.js';
-import Shell from '../components/Shell.jsx';
+import Shell, { enter, tab } from '../components/Shell.jsx';
 
 const note = (x, y, w, text) => <Text x={x} y={y} w={w} h={24} text={text} color={t.muted} font={t.font} fontSize={16} />;
 
@@ -75,14 +75,14 @@ const plant = <Script src="../scripts/plant.js" />;
 
 // a phone: a screen each, the charts as big as the screen
 export default narrow ? (
-  <ui.Screens name="Charts" shell={<Shell section="Charts & 3D" />} screens={[
+  <ui.Screens name="Charts" transition={enter} tabTransition={tab} shell={<Shell section="Charts & 3D" />} screens={[
     { title: 'Trend', content: <>{trend(A)}{plant}</> },
     { title: 'Doughnut', content: doughnut(A) },
     { title: 'Bars', content: bars(A) },
     { title: '3D', content: house(A) },
   ]} />
 ) : (
-  <Page name="Charts" bg={t.page}>
+  <Page name="Charts" bg={t.page} transition={enter}>
     {plant}
     {trend(L.trend, 'Trend · uPlot')}
     {doughnut(L.doughnut, 'Doughnut · live joins')}

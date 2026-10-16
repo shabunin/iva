@@ -1,5 +1,5 @@
 import { ui, t, narrow } from '../ui.js';
-import Shell from '../components/Shell.jsx';
+import Shell, { enter, tab } from '../components/Shell.jsx';
 
 // rows written here; on a panel they often come from a serial join (source=..., JSON) a script or a feedback fills
 const plant = [
@@ -52,7 +52,7 @@ const A = ui.screenArea;
 
 // a phone: a screen each - a list in a list (a ScrollArea) shows nothing on the device
 export default narrow ? (
-  <ui.Screens name="Tables" shell={<Shell section="Tables" />} screens={[
+  <ui.Screens name="Tables" transition={enter} tabTransition={tab} shell={<Shell section="Tables" />} screens={[
     { title: 'DataTable', content: table(A) },
     { title: 'Alarms', content: <ui.Card {...A}>{alarmTable(14, 14, A.w - 28, A.h - 28)}</ui.Card> },
     {
@@ -68,7 +68,7 @@ export default narrow ? (
     },
   ]} />
 ) : (
-  <Page name="Tables" bg={t.page}>
+  <Page name="Tables" bg={t.page} transition={enter}>
     {table(L.table, 'DataTable')}
     <ui.Card title="AlarmTable · AlarmBanner" {...L.alarms}>
       <ui.AlarmBanner x={28} y={52} w={L.alarms.w - 388} h={48} alarms="plant" />

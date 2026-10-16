@@ -1,5 +1,5 @@
 import { ui, t, narrow } from '../ui.js';
-import Shell, { sections } from '../components/Shell.jsx';
+import Shell, { sections, home } from '../components/Shell.jsx';
 
 const cards = sections.filter((s) => s.sub);
 // a wide panel: four across; a square one: three, taller - as many rows as fill it; a phone: two across
@@ -12,7 +12,10 @@ const rows = Math.ceil(cards.length / cols);
 const ch = narrow ? 190 : Math.max(180, Math.floor((H - top - 20 - (rows - 1) * 20) / rows));
 
 export default (
-  <Page name="Overview" bg={t.page}>
+  <Page name="Overview" bg={t.page} transition={home}>
+    {/* a tiled background (GUI Designer's Tiled): a dot again and again, over the page's colour (which a
+        look switches: a drawn image) - the same in both looks */}
+    <Subpage name="gallery_dots" x={0} y={0} w={W} h={H} image="../assets/tile-dots.png" tile clickthrough />
     <Text x={20} y={88} w={W - 40} h={narrow ? 56 : 36} wrap valign="top" text="Every iva/ui component with its variations. Tap a section, or open the menu." color={t.muted} font={t.font} fontSize={19} />
     {/* the cards scroll when there are more than fit */}
     <ui.ScrollBox x={20} y={top} w={W - 35} h={H - top - 16}>

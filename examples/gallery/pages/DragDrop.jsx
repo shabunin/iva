@@ -1,5 +1,5 @@
 import { ui, t, narrow } from '../ui.js';
-import Shell from '../components/Shell.jsx';
+import Shell, { enter, tab } from '../components/Shell.jsx';
 
 const note = (x, y, w, text) => <Text x={x} y={y} w={w} h={24} text={text} color={t.muted} font={t.font} fontSize={16} />;
 
@@ -36,7 +36,7 @@ const ph = 262;
 
 // a phone: a screen each - a gesture in a list (a ScrollArea) doesn't fire on the device
 export default narrow ? (
-  <ui.Screens name="DragDrop" shell={<Shell section="Drag & drop" />} screens={[
+  <ui.Screens name="DragDrop" transition={enter} tabTransition={tab} shell={<Shell section="Drag & drop" />} screens={[
     {
       title: 'Drag & drop',
       content: (
@@ -59,7 +59,7 @@ export default narrow ? (
     },
   ]} />
 ) : (
-  <Page name="DragDrop" bg={t.page}>
+  <Page name="DragDrop" bg={t.page} transition={enter}>
     <ui.Card title="DragDrop · a source onto a room" {...L.area}>
       <ui.DragDrop x={28} y={56} w={L.area.w - 56} h={240} name="audio" items={sources} targets={rooms} placeholder="Nothing playing" targetW={230}
                    onDrop={onDrop} />

@@ -1,5 +1,5 @@
 import { ui, t } from '../ui.js';
-import Shell from '../components/Shell.jsx';
+import Shell, { enter } from '../components/Shell.jsx';
 
 const L = ui.grid({
   // narrow: the summaries under the days, the code's texts under the pad
@@ -16,7 +16,7 @@ const px = pinWrap ? 28 : 300;
 const py = pinWrap ? 476 : 64;
 
 export default (
-  <Page name="Schedule" bg={t.page}>
+  <Page name="Schedule" bg={t.page} transition={enter}>
     <ui.ScrollArea>
       <ui.Card title="WeekDays" {...L.days}>
         {note(28, 52, daysWrap ? 'Monday first - a bitmask: Mon 1 ... Sun 64' : 'Monday first - the join is a bitmask: Mon 1, Tue 2 ... Sun 64')}
