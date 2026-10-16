@@ -1,7 +1,7 @@
 import { Container } from 'pixi.js';
 import { animate } from 'motion';
 import { CFNode } from '../parser';
-import { CFRenderer, animTarget, killTweensOf, trackAnimation } from '../renderer';
+import { CFRenderer, animTarget, killTweensOf, trackAnimation, animates, transitionEase, transitionSide, type Transition } from '../renderer';
 import { joinStore } from '../joinStore';
 
 export function renderSubpage(
@@ -12,24 +12,29 @@ export function renderSubpage(
     const subName = node.name;
     if (subName && renderer.project.subpages[subName]) {
         const def = renderer.project.subpages[subName];
-        const subCont = renderer.createSubpage(def);
+        const subCont = renderer.createSubpage(def, undefined, undefined, node.j && node.j !== '0' ? cfJoin('d', node.j) : undefined);
         container.addChild(subCont);
-        
-        const transition1 = node.attributes.transition1;
-        const subtype1 = node.attributes.subtype1;
-        const time1 = parseFloat(node.attributes.time1 || "0");
-        const ease1 = node.attributes.ease1;
-        
-        const transition2 = node.attributes.transition2;
-        const subtype2 = node.attributes.subtype2;
-        const time2 = parseFloat(node.attributes.time2 || "0");
-        const ease2 = node.attributes.ease2;
+
+        const a = node.attributes;
+        // shown in transition1, hidden in transition2 (a gesture action's own wins)
+        const showing: Transition = { type: a.transition1, subtype: a.subtype1, time: parseFloat(a.time1 || '0') || 0, ease: a.ease1 };
+        const hiding: Transition = { type: a.transition2, subtype: a.subtype2, time: parseFloat(a.time2 || '0') || 0, ease: a.ease2 };
+
+        /** where it's going: shown or hidden (hiding, it's still visible till its transition ends) */
+        let shown = false;
+        /** the latest change: an older hide's end doesn't hide it once shown again */
+        let change = 0;
 
         const animateSubpage = (isVisible: boolean, instant: boolean = false) => {
+            // already going that way: as it is
+            if (!instant && isVisible === shown) return;
+            const n = ++change;
             killTweensOf(subCont);
             killTweensOf(subCont.scale);
+            shown = isVisible;
+            const t = renderer.transitionOverride ?? (isVisible ? showing : hiding);
 
-            if (instant) {
+            if (instant || !animates(t)) {
                 subCont.visible = isVisible;
                 subCont.alpha = 1;
                 subCont.x = 0;
@@ -37,32 +42,10 @@ export function renderSubpage(
                 subCont.scale.set(1);
                 return;
             }
-
-            if (isVisible) {
-                // ENTRY
-                if (!subCont.visible) {
-                    subCont.visible = true;
-                    if (time1 > 0 && transition1 && transition1 !== "None") {
-                        applyTransition(subCont, true, transition1, subtype1, time1, ease1, renderer);
-                    } else {
-                        subCont.alpha = 1;
-                        subCont.x = 0;
-                        subCont.y = 0;
-                        subCont.scale.set(1);
-                    }
-                }
-            } else {
-                // EXIT
-                if (subCont.visible) {
-                    if (time2 > 0 && transition2 && transition2 !== "None") {
-                        applyTransition(subCont, false, transition2, subtype2, time2, ease2, renderer).then(() => {
-                            subCont.visible = false;
-                        });
-                    } else {
-                        subCont.visible = false;
-                    }
-                }
-            }
+            subCont.visible = true;
+            applyTransition(subCont, isVisible, t, renderer).then(() => {
+                if (!isVisible && change === n) subCont.visible = false;
+            });
         };
 
         const dJoin = node.j;
@@ -81,12 +64,24 @@ export function renderSubpage(
     }
 }
 
-function applyTransition(target: Container, isEntry: boolean, transition: string, subtype: string, time: number, easeStr: string, renderer: CFRenderer): Promise<void> {
+/** a join as scripts see it: 'd5', or in a list item 'l10:3:d5' */
+function cfJoin(type: string, j: string): string {
+    const parts = j.split(':');
+    const own = parts.pop()!;
+    return [...parts, `${type}${own}`].join(':');
+}
+
+/**
+ * A subpage coming or going (isEntry) in a transition: fade; moveIn, push,
+ * reveal - in from just outside the panel's edge on the subtype's side, and
+ * out the same way (as GUI Designer's pairs have it: moveIn fromLeft both
+ * ways, easeOut in and easeIn out); scale.
+ */
+function applyTransition(target: Container, isEntry: boolean, t: Transition, renderer: CFRenderer): Promise<void> {
     return new Promise((resolve) => {
-        let ease: 'linear' | 'easeIn' | 'easeOut' | 'easeInOut' = "linear";
-        if (easeStr === "easeIn") ease = "easeIn";
-        else if (easeStr === "easeOut") ease = "easeOut";
-        else if (easeStr === "easeInOut") ease = "easeInOut";
+        const ease = transitionEase(t.ease);
+        const time = t.time ?? 0;
+        const transition = (t.type ?? '').toLowerCase();
 
         target.alpha = 1;
         target.x = 0;
@@ -96,8 +91,7 @@ function applyTransition(target: Container, isEntry: boolean, transition: string
         let fromProps: any = {};
         let toProps: any = {};
 
-        const tLower = transition.toLowerCase();
-        if (tLower === "movein" || tLower === "reveal" || tLower === "push") {
+        if (transition === "movein" || transition === "reveal" || transition === "push") {
             // from just outside the panel's edge, as on a device (where the subpage sits on the panel)
             const parent = target.parent;
             const at = parent ? parent.toGlobal({ x: 0, y: 0 }) : { x: 0, y: 0 };
@@ -108,8 +102,9 @@ function applyTransition(target: Container, isEntry: boolean, transition: string
             const top = at.y / scale;
             const w = target.width || 0;
             const h = target.height || 0;
-            const dx = subtype === "fromLeft" ? -(left + w) : subtype === "fromRight" ? W - left : 0;
-            const dy = subtype === "fromTop" ? -(top + h) : subtype === "fromBottom" ? H - top : 0;
+            const side = transitionSide(t.subtype);
+            const dx = side.x < 0 ? -(left + w) : side.x > 0 ? W - left : 0;
+            const dy = side.y < 0 ? -(top + h) : side.y > 0 ? H - top : 0;
             
             if (isEntry) {
                 fromProps = { x: dx, y: dy };
@@ -118,21 +113,22 @@ function applyTransition(target: Container, isEntry: boolean, transition: string
                 fromProps = { x: 0, y: 0 };
                 toProps = { x: dx, y: dy };
             }
-        } else if (tLower === "fade") {
-            if (isEntry) {
-                fromProps = { alpha: 0 };
-                toProps = { alpha: 1 };
-            } else {
-                fromProps = { alpha: 1 };
-                toProps = { alpha: 0 };
-            }
-        } else if (tLower === "scale") {
+        } else if (transition === "scale") {
             if (isEntry) {
                 fromProps = { scaleX: 0.01, scaleY: 0.01 };
                 toProps = { scaleX: 1, scaleY: 1 };
             } else {
                 fromProps = { scaleX: 1, scaleY: 1 };
                 toProps = { scaleX: 0.01, scaleY: 0.01 };
+            }
+        } else {
+            // fade (and what else a .gui may name)
+            if (isEntry) {
+                fromProps = { alpha: 0 };
+                toProps = { alpha: 1 };
+            } else {
+                fromProps = { alpha: 1 };
+                toProps = { alpha: 0 };
             }
         }
 

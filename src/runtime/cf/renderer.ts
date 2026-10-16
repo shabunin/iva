@@ -30,6 +30,36 @@ export function easeOf(curve: unknown): 'linear' | 'easeIn' | 'easeOut' | 'easeI
   return c.endsWith('easeinout') ? 'easeInOut' : c.endsWith('easein') ? 'easeIn' : c.endsWith('easeout') ? 'easeOut' : 'linear';
 }
 
+/** a page's or subpage's transition, as the .gui gives it (GUI Designer's: fade, moveIn, push, reveal) */
+export interface Transition {
+  type?: string;
+  /** fromLeft, fromRight, fromTop, fromBottom: where what moves comes from */
+  subtype?: string;
+  /** seconds */
+  time?: number;
+  /** easeIn, easeOut, easeInEaseOut (Ease Both), none: linear */
+  ease?: string;
+}
+
+/** a transition's easing: Ease In, Ease Out, Ease Both (easeInEaseOut), else linear */
+export function transitionEase(ease?: string): 'linear' | 'easeIn' | 'easeOut' | 'easeInOut' {
+  const s = (ease ?? '').toLowerCase().replace(/[^a-z]/g, '');
+  if (s.includes('both') || (s.includes('easein') && s.includes('out'))) return 'easeInOut';
+  if (s.includes('easein')) return 'easeIn';
+  if (s.includes('out')) return 'easeOut';
+  return 'linear';
+}
+
+/** where a transition's motion comes from, as a unit step (fromLeft: from the left, moving right) */
+export function transitionSide(subtype?: string): { x: number; y: number } {
+  const s = (subtype ?? '').toLowerCase();
+  return s === 'fromright' ? { x: 1, y: 0 } : s === 'fromtop' ? { x: 0, y: -1 } : s === 'frombottom' ? { x: 0, y: 1 } : { x: -1, y: 0 };
+}
+
+/** a transition that animates (a type, a time); None, '' or 0 s: at once */
+export const animates = (t?: Transition): t is Transition =>
+  !!t && !!t.type && !/^none$/i.test(t.type) && (t.time ?? 0) > 0;
+
 /**
  * The scale an element is drawn at: its own (scale / xscale / yscale) and its
  * turn about the X and Y axes (xrotation / yrotation: iViewer's 3D rotations,
@@ -737,7 +767,15 @@ export class CFRenderer {
     if (node.children) {
       const gestures = node.children.filter(c => c.type === "gesture");
       if (gestures.length > 0) {
-        bindGestures(container, gestures);
+        // the object's join as scripts see it (an image's serial one), in its list item
+        const kind = node.type === 'img' || node.type === 'txt' ? 's' : 'd';
+        const own = madeFrom.j && madeFrom.j !== '0' ? `${kind}${madeFrom.j}` : null;
+        const inList = !!listPrefix && listIndex !== undefined && listIndex !== -1;
+        bindGestures(container, gestures, this, {
+          join: own && inList ? `${listPrefix}:${listIndex}:${own}` : own,
+          list: inList ? listPrefix : null,
+          listIndex: inList ? listIndex : null,
+        });
       }
     }
 
@@ -763,7 +801,8 @@ export class CFRenderer {
     return container;
   }
 
-  createSubpage(def: CFSubpage, listPrefix?: string, listIndex?: number): Container {
+  /** A subpage's content; `join`: its placement's ('d5'), for its gestures' scripts. */
+  createSubpage(def: CFSubpage, listPrefix?: string, listIndex?: number, join?: string): Container {
     const container = new Container();
 
     // Set hitArea so gestures are caught everywhere in the subpage bounds
@@ -783,7 +822,8 @@ export class CFRenderer {
     // Nodes
     const gestureNodes = def.nodes.filter(n => n.type === 'gesture');
     if (gestureNodes.length > 0) {
-      bindGestures(container, gestureNodes);
+      const inList = !!listPrefix && listIndex !== undefined && listIndex !== -1;
+      bindGestures(container, gestureNodes, this, { join: join ?? null, list: inList ? listPrefix : null, listIndex: inList ? listIndex : null });
     }
 
     def.nodes.forEach(n => {
@@ -853,11 +893,15 @@ export class CFRenderer {
     }
   }
 
-  navigate(pageName: string, forceOrientation?: 'landscape' | 'portrait', isBack: boolean = false) {
+  /**
+   * Show a page: in the transition given (a gesture action's), else in the
+   * page's own (its transition / subtype / time / ease); None: at once.
+   */
+  navigate(pageName: string, forceOrientation?: 'landscape' | 'portrait', isBack: boolean = false, transition?: Transition) {
     if (pageName.toLowerCase() === "return") {
       const prevPage = this.pageHistory.pop();
       if (prevPage) {
-        this.navigate(prevPage, forceOrientation, true);
+        this.navigate(prevPage, forceOrientation, true, transition);
       } else {
         console.warn("Page history is empty, cannot return.");
       }
@@ -954,7 +998,8 @@ export class CFRenderer {
 
     const gestureNodes = nodes.filter(n => n.type === 'gesture');
     if (gestureNodes.length > 0) {
-      bindGestures(newContainer, gestureNodes);
+      const j = pageObj.attributes?.j;
+      bindGestures(newContainer, gestureNodes, this, { join: j && j !== '0' ? `d${j}` : null });
     }
 
     nodes.forEach(n => {
@@ -963,25 +1008,72 @@ export class CFRenderer {
       }
     });
 
-    if (this.currentContainer) {
-      const old = this.currentContainer;
-      newContainer.alpha = 0;
-      this.app.stage.addChild(newContainer);
-      this.layoutDebugLabels(newContainer);
-
-      killTweensOf(old);
-      trackAnimation(old, animate(animTarget(old), { alpha: 0 }, { duration: 0.3 })).finished.then(() => {
-        if (!old.destroyed) {
-          this.app.stage.removeChild(old);
-          old.destroy({ children: true });
-        }
-      }, () => {});
-      trackAnimation(newContainer, animate(animTarget(newContainer), { alpha: 1 }, { duration: 0.3 }));
-    } else {
-      this.app.stage.addChild(newContainer);
-      this.layoutDebugLabels(newContainer);
-    }
+    const a = pageObj.attributes ?? {};
+    const own: Transition = { type: a.transition, subtype: a.subtype, time: parseFloat(a.time || '0') || 0, ease: a.ease };
+    this.flip(this.currentContainer, newContainer, transition ?? own, pageWidth, pageHeight);
+    this.layoutDebugLabels(newContainer);
     this.currentContainer = newContainer;
+  }
+
+  /** a gesture action's transition: for the subpages it shows or hides as it runs */
+  transitionOverride?: Transition;
+
+  /** pages on their way out (a transition): gone at once when the next flip comes */
+  private leaving = new Set<Container>();
+
+  /**
+   * One page to the next, as iViewer's transitions go: fade - the new one
+   * fades in over the old; moveIn - it slides in over it from the subtype's
+   * side; push - it slides in pushing the old one out the other side;
+   * reveal - the old one slides away, showing the new one under it.
+   */
+  private flip(old: Container | null | undefined, page: Container, t: Transition, W: number, H: number) {
+    const stage = this.app.stage;
+    for (const gone of this.leaving) {
+      killTweensOf(gone);
+      if (!gone.destroyed) gone.destroy({ children: true });
+    }
+    this.leaving.clear();
+    if (old) {
+      killTweensOf(old);
+      old.alpha = 1;
+      old.x = 0;
+      old.y = 0;
+    }
+    const type = (t.type ?? '').toLowerCase();
+    if (!old || !animates(t)) {
+      stage.addChild(page);
+      if (old && !old.destroyed) old.destroy({ children: true });
+      return;
+    }
+    // the page going: no touches on it meanwhile
+    old.eventMode = 'none';
+    old.interactiveChildren = false;
+    this.leaving.add(old);
+    const done = () => {
+      this.leaving.delete(old);
+      if (!old.destroyed) old.destroy({ children: true });
+    };
+    const opts = { duration: t.time!, ease: transitionEase(t.ease) };
+    const side = transitionSide(t.subtype);
+    const from = { x: side.x * W, y: side.y * H };
+    if (type === 'reveal') {
+      stage.addChildAt(page, stage.getChildIndex(old));
+      trackAnimation(old, animate(animTarget(old), { x: -from.x, y: -from.y }, opts)).finished.then(done, done);
+      return;
+    }
+    stage.addChild(page);
+    if (type === 'movein' || type === 'push') {
+      page.x = from.x;
+      page.y = from.y;
+      trackAnimation(page, animate(animTarget(page), { x: 0, y: 0 }, opts));
+      if (type === 'push') trackAnimation(old, animate(animTarget(old), { x: -from.x, y: -from.y }, opts)).finished.then(done, done);
+      else setTimeout(done, t.time! * 1000);
+      return;
+    }
+    // fade (and what else a .gui may name)
+    page.alpha = 0;
+    trackAnimation(page, animate(animTarget(page), { alpha: 1 }, opts)).finished.then(done, done);
   }
 
   async start() {
