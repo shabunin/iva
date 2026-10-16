@@ -41,6 +41,31 @@ export function drawnScale(scale: { x: number; y: number }, rotation: { x: numbe
   return { x: f(scale.x * Math.cos(rotation.y * rad)), y: f(scale.y * Math.cos(rotation.x * rad)) };
 }
 
+/** each element's guarded stand-in (animTarget): one each, so motion still sees one element - a new animation of a value replaces the running one */
+const guarded = new WeakMap<object, object>();
+
+/**
+ * An element (or its .scale) as an animation's target: what the animation
+ * writes once the element is destroyed is dropped. An animation still
+ * running when its page went (a flip, a tab of ui.Screens) wrote into the
+ * destroyed element and threw inside motion's frame loop - which then stopped
+ * every animation: transitions stuck at their first step, flips never done,
+ * the GUI hung.
+ */
+export function animTarget<T extends object>(target: T, owner: { destroyed?: boolean } = target as { destroyed?: boolean }): T {
+  let stand = guarded.get(target);
+  if (!stand) {
+    stand = new Proxy(target, {
+      set(obj, prop, value) {
+        if (!owner.destroyed) Reflect.set(obj, prop, value);
+        return true;
+      },
+    });
+    guarded.set(target, stand);
+  }
+  return stand as T;
+}
+
 export function trackAnimation<T extends object>(target: T, a: AnimationPlaybackControlsWithThen) {
   activeAnimations.add(a);
   let set = animsByTarget.get(target);
@@ -330,9 +355,9 @@ export class CFRenderer {
 
         if (duration > 0 || delay > 0) {
           if (Object.keys(targetProps).length > 0) {
-            trackAnimation(c, animate(c, targetProps, { duration, delay, ease }));
+            trackAnimation(c, animate(animTarget(c), targetProps, { duration, delay, ease }));
           }
-          if (scaled) trackAnimation(c.scale, animate(c.scale, { x: to.x, y: to.y }, { duration, delay, ease }));
+          if (scaled) trackAnimation(c.scale, animate(animTarget(c.scale, c), { x: to.x, y: to.y }, { duration, delay, ease }));
         } else {
           if (targetProps.angle !== undefined) c.angle = targetProps.angle;
           if (targetProps.alpha !== undefined) c.alpha = targetProps.alpha;
@@ -961,13 +986,13 @@ export class CFRenderer {
       this.layoutDebugLabels(newContainer);
 
       killTweensOf(old);
-      trackAnimation(old, animate(old, { alpha: 0 }, { duration: 0.3 })).finished.then(() => {
+      trackAnimation(old, animate(animTarget(old), { alpha: 0 }, { duration: 0.3 })).finished.then(() => {
         if (!old.destroyed) {
           this.app.stage.removeChild(old);
           old.destroy({ children: true });
         }
       }, () => {});
-      trackAnimation(newContainer, animate(newContainer, { alpha: 1 }, { duration: 0.3 }));
+      trackAnimation(newContainer, animate(animTarget(newContainer), { alpha: 1 }, { duration: 0.3 }));
     } else {
       this.app.stage.addChild(newContainer);
       this.layoutDebugLabels(newContainer);

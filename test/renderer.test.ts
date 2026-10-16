@@ -48,3 +48,20 @@ test('xrotation / yrotation (3D) drawn as a scale: an edge at 90°, the back mir
   assert.deepEqual(drawnScale({ x: 1.5, y: 1 }, { x: 0, y: 180 }), { x: -1.5, y: 1 });
   assert.equal(Math.round(drawnScale({ x: 1, y: 2 }, { x: 60, y: 0 }).y * 100) / 100, 1);
 });
+
+test("an animation's target: writes dropped once its element is destroyed (a page flipped away mid-animation), one stand-in an element", async () => {
+  const { animTarget } = await import('../src/runtime/cf/renderer.ts');
+  const el = { destroyed: false, x: 0, scale: { x: 1, y: 1 } };
+  const t = animTarget(el);
+  assert.equal(animTarget(el), t, 'the same stand-in: a new animation of a value replaces the running one');
+  t.x = 10;
+  assert.equal(el.x, 10);
+  const sc = animTarget(el.scale, el);
+  el.destroyed = true;
+  // what Pixi does to a destroyed container: its position is gone - a write would throw
+  Object.defineProperty(el, 'x', { set() { throw new TypeError("Cannot set properties of null (setting 'x')"); } });
+  assert.doesNotThrow(() => Object.assign(t, { x: 20 }));
+  sc.x = 3;
+  assert.equal(el.scale.x, 1);
+  assert.equal(t.destroyed, true, 'reads go through');
+});

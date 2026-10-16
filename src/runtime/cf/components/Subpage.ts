@@ -1,7 +1,7 @@
 import { Container } from 'pixi.js';
 import { animate } from 'motion';
 import { CFNode } from '../parser';
-import { CFRenderer, killTweensOf, trackAnimation } from '../renderer';
+import { CFRenderer, animTarget, killTweensOf, trackAnimation } from '../renderer';
 import { joinStore } from '../joinStore';
 
 export function renderSubpage(
@@ -149,10 +149,10 @@ function applyTransition(target: Container, isEntry: boolean, transition: string
         if (toProps.alpha !== undefined) props.alpha = toProps.alpha;
 
         if (Object.keys(props).length > 0) {
-            trackAnimation(target, animate(target, props, { duration: time, ease }));
+            trackAnimation(target, animate(animTarget(target), props, { duration: time, ease }));
         }
         if (toProps.scaleX !== undefined) {
-            trackAnimation(target.scale, animate(target.scale, { x: toProps.scaleX, y: toProps.scaleY }, { duration: time, ease }));
+            trackAnimation(target.scale, animate(animTarget(target.scale, target), { x: toProps.scaleX, y: toProps.scaleY }, { duration: time, ease }));
         }
 
         // "scale"-only transitions leave `props` empty — resolve on a plain
