@@ -530,10 +530,13 @@ export interface ImageProps extends Geom, XmlProp {
   /** serial join holding the image file / URL */
   join?: Join;
   clickthrough?: boolean;
-  /** reload a URL every N ms */
+  /** a URL's picture loaded again every N ms while it shows (a camera's snapshots), past any cache */
   refresh?: number;
+  /** Allow Caching off: every load of a URL a download (else it's kept, and shown again from there) */
   noCache?: boolean;
+  /** a spinner while a URL's picture comes */
   downloadIndicator?: boolean;
+  /** a new URL clears the picture at once (else the one there stays till the new one's in) */
   clearOnURLChange?: boolean;
   children?: Child;
 }

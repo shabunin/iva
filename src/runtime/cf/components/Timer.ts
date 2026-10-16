@@ -3,6 +3,7 @@ import { CFNode } from '../parser';
 import { CFRenderer } from '../renderer';
 import { joinStore } from '../joinStore';
 import { TimerClock } from '../timerClock';
+import { isShown } from '../shown';
 
 /**
  * A page's or subpage's timer: <timer j="3800" interval="5000" repeatCount="0">
@@ -19,17 +20,6 @@ export function renderTimer(node: CFNode, container: Container, renderer: CFRend
     const interval = () => {
         const v = join && joinStore.has(join, 'a') ? Number(joinStore.get(join, 'a')) : 0;
         return v > 0 ? v : fixed;
-    };
-    /**
-     * Its page is the page shown (not one fading out after a flip) and
-     * nothing between hidden (a hidden subpage: its content off).
-     */
-    const shown = () => {
-        let p: Container | null = container;
-        for (; p && p.parent !== renderer.app.stage; p = p.parent) {
-            if (!p.visible) return false;
-        }
-        return !!p && p.visible && p === renderer.currentContainer;
     };
     const run = () => {
         for (const a of actions) {
@@ -50,6 +40,6 @@ export function renderTimer(node: CFNode, container: Container, renderer: CFRend
             return;
         }
         // asleep (the app in the background): as not shown - it starts over on waking
-        if (clock.tick(performance.now(), shown() && !renderer.cfApi?.suspended, interval())) run();
+        if (clock.tick(performance.now(), isShown(container, renderer) && !renderer.cfApi?.suspended, interval())) run();
     }, 50);
 }
