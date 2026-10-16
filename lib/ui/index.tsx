@@ -843,8 +843,17 @@ export interface SideMenuProps {
   /** digital join: open (default 'menu') */
   menu?: Join;
   w?: number;
-  /** slide in from the left (default: fade in) */
+  /** slide in from the left and back out (default); false: fade */
   slide?: boolean;
+  /**
+   * open by a swipe from the left edge, closed by one to the left (default
+   * true); in iva's panel it follows the finger as it's dragged
+   */
+  swipe?: boolean;
+  /** where the edge a swipe opens it from starts (under the header: default 72) */
+  top?: number;
+  /** how wide that edge is (default 16) */
+  edge?: number;
 }
 export interface ConfirmDialogProps {
   /** digital join: shown while on */
@@ -1739,18 +1748,48 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     );
   }
 
-  function SideMenu({ title, subtitle, items, menu = 'menu', w = 314, slide = false }: SideMenuProps): VNode {
+  /**
+   * The side menu: over a dimmed page, sliding in from the left (the header's
+   * button sets its join). A swipe from the left edge opens it, one to the
+   * left (or a tap on the dimmed page) closes it. In iva's panel it follows
+   * the finger, dragged open from the edge or closed from anywhere on it;
+   * iViewer moves a subpage only by its transitions, so there the swipes
+   * open and close it.
+   */
+  function SideMenu({ title, subtitle, items, menu = 'menu', w = 314, slide = true, swipe = true, top: from = 72, edge = 16 }: SideMenuProps): VNode {
     const { width: W, height: H } = t.panel;
-    const close = `IvaUI.off(${jsJoin('d', menu)})`;
+    const join = jsJoin('d', menu);
+    const close = `IvaUI.off(${join})`;
     const itemJoin = (page: string): JoinRef => d(`ui_menu_${page.replace(/[^\w]/g, '_')}`);
     const top = title ? 100 : 16;
+    const key = keyOf(menu);
+    // the panel's and the shade's tags: what a drag moves (CF.setProperties)
+    const panel = `ui_${key}_panel`;
+    const shade = `ui_${key}_shade`;
+    // opening: from the edge; moving: on the panel itself (its coordinates go with it)
+    const drag = (phase: string, opening: boolean, moving: boolean) =>
+      `IvaUI.menuDrag({ join: ${join}, w: ${w}, panel: ${JSON.stringify(panel)}, shade: ${JSON.stringify(shade)} }, '${phase}', gesture, ${opening}, ${moving})`;
+    /** a swipe (the way in and out where nothing drags); a pan (dragged) */
+    const gestures = (opening: boolean, moving = false) => swipe && (
+      <>
+        <Gesture type="swipe" direction={opening ? 'right' : 'left'} onBegin={`IvaUI.menuSwipe(${join}, ${opening ? 1 : 0})`} />
+        <Gesture type="pan" onBegin={drag('begin', opening, moving)} onChange={drag('change', opening, moving)} onEnd={drag('end', opening, moving)} />
+      </>
+    );
+    const fade = { type: 'fade' as const, time: 0.2 };
     return (
       <Group>
-        <Subpage name="ui_menu_scrim" w={W} h={H} join={menu} bg="#000000a0" in={{ type: 'fade', time: 0.2 }} out={{ type: 'fade', time: 0.2 }}>
-          <Button w={W} h={H} feedback="none" js={close} />
+        {swipe && (
+          <Image x={0} y={from} w={edge} h={H - from} src={draw.box({ w: 4, h: 4, fill: '#00000000', name: clearOf(4, 4) })}>{gestures(true)}</Image>
+        )}
+        <Subpage name="ui_menu_scrim" w={W} h={H} join={menu} tags={shade} bg="#000000a0" in={fade} out={fade}>
+          {/* a tap on the dimmed page closes it (a gesture: a drag here isn't a tap) */}
+          <Gesture type="tap" onBegin={close} />
+          {gestures(false)}
         </Subpage>
-        <Subpage name="ui_menu" w={w} h={H} join={menu} bg={t.bar} in={slide ? { type: 'moveIn', from: 'left', time: 0.25 } : { type: 'fade', time: 0.2 }}
-                 out={{ type: 'fade', time: 0.2 }}>
+        <Subpage name="ui_menu" w={w} h={H} join={menu} tags={panel} bg={t.bar}
+                 in={slide ? { type: 'moveIn', from: 'left', time: 0.25, ease: 'easeOut' } : fade}
+                 out={slide ? { type: 'moveIn', from: 'left', time: 0.2, ease: 'easeIn' } : fade}>
           {title && <Text x={26} y={18} w={w - 52} h={40} text={title} font={font} fontSize={28} />}
           {subtitle && <Text x={26} y={56} w={w - 52} h={24} text={subtitle} color={t.muted} font={font} fontSize={16} />}
           {title && <Box x={20} y={88} w={w - 40} h={1} bg={t.raised} />}
@@ -1762,6 +1801,7 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
                       radius={t.radius} bg={t.bar} active={{ bg: t.raised }} font={font} fontSize={20} />
             ))}
           </ScrollBox>
+          {gestures(false, true)}
         </Subpage>
         {runtime}
         <OnStart js={`IvaUI.menu({ ${items.map((it) => `${JSON.stringify(it.page)}: ${jsJoin('d', itemJoin(it.page))}`).join(', ')} });`} />

@@ -23,6 +23,10 @@ var IvaUI = (function () {
   var alarmSets = {};
   var pagers = {};
   var drags = {};
+  // the side menu being dragged (menuDrag), when it was swiped open, its put-back-in-place timer
+  var menuDragging = null;
+  var menuSwiped = 0;
+  var menuReset = null;
   // listInfo's scroll position over the GUI's pixels: 1, or the screen's scale where iViewer scales the
   // GUI up (a phone), or whatever it counts in - learnt from a list a script turned (unanimated) to a row
   var listScale = 0;
@@ -1037,7 +1041,73 @@ var IvaUI = (function () {
       if (dd.drop) dd.drop(c.item.id, t.id);
     },
     /** a digital join off */
-    off: function (join) { CF.setJoin(join, 0); }
+    off: function (join) { CF.setJoin(join, 0); },
+
+    /**
+     * The side menu swiped open (on) or closed (off) - unless it's being dragged (a swipe is a drag
+     * too: the drag does it).
+     */
+    menuSwipe: function (join, on) {
+      if (menuDragging) return;
+      if (on) menuSwiped = new Date().getTime();
+      CF.setJoin(join, on);
+    },
+    /**
+     * The side menu dragged: o { join, w, panel, shade } - its join, its width, its panel's and shade's
+     * tags; a pan's phase ('begin', 'change', 'end') and the gesture; opening: from the edge (else: on
+     * it, to close); moving: the pan is the panel's own, whose coordinates move with it (the finger's
+     * way is its delta plus the panel's). Only what CommandFusion's API does with a subpage: its x
+     * and opacity (CF.setProperties, by its tag) and its join - shown off the screen first, so its own
+     * transition goes on out of sight; hidden once it's off the screen. Only across: a drag up or down
+     * is its list's. Let go: open or closed, whichever it's nearer, or the way it was flung.
+     */
+    menuDrag: function (o, phase, g, opening, moving) {
+      var at = function (x, time, done) {
+        CF.setProperties([{ join: o.panel, x: x }, { join: o.shade, opacity: (x + o.w) / o.w }], 0, time || 0, CF.AnimationCurveEaseOut, done);
+      };
+      var now = new Date().getTime();
+      if (phase === 'begin') {
+        clearTimeout(menuReset);
+        menuDragging = { o: o, from: opening ? -o.w : 0, x: opening ? -o.w : 0, opening: opening, live: false, t: now, dx: 0, v: 0 };
+        return;
+      }
+      var d = menuDragging;
+      if (!d || d.o.join !== o.join) return;
+      // the finger's way across: in the panel's own coordinates, plus how far the panel has gone
+      var dx = g.deltax + (moving ? d.x - d.from : 0);
+      if (!d.live) {
+        var ax = Math.abs(dx), ay = Math.abs(g.deltay);
+        if (ay > ax || ax < 8) {
+          if (ay > 12 || phase === 'end') menuDragging = null;
+          return;
+        }
+        d.live = true;
+        if (d.opening && now - menuSwiped < 500) d.from = d.x = 0;
+        else if (d.opening) {
+          at(-o.w);
+          CF.setJoin(o.join, 1);
+        }
+      }
+      // how fast it goes (points a second, smoothed)
+      var dt = Math.max(1, now - d.t);
+      d.v = 0.6 * d.v + 0.4 * ((dx - d.dx) * 1000) / dt;
+      d.t = now;
+      d.dx = dx;
+      var x = Math.max(-o.w, Math.min(0, d.from + dx));
+      d.x = x;
+      at(x);
+      if (phase !== 'end') return;
+      menuDragging = null;
+      var v = moving ? d.v : (g.velocityx || d.v);
+      var open = v > 400 ? true : v < -400 ? false : x > -o.w / 2;
+      var to = open ? 0 : -o.w;
+      at(to, Math.max(0.1, (0.25 * Math.abs(to - x)) / o.w), function () {
+        if (open) return;
+        // off the screen: hidden (its transition out of sight), back in place once it's gone
+        CF.setJoin(o.join, 0);
+        menuReset = setTimeout(function () { at(0); }, 350);
+      });
+    }
   };
 })();
 /** An AlarmTable's alarms, for scripts: IvaAlarms.raise('plant', { id: 'p1', text: 'Pump fault', source: 'P1', severity: 'alarm' }). */

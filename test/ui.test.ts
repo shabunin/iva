@@ -314,3 +314,30 @@ test('grid(): rows stretched across, the height left to what grows (else to all)
   assert.deepEqual([narrow.a, narrow.b].map((x) => [x.x, x.y, x.w, x.h]), [[0, 0, 435, 300], [0, 316, 435, 500]]);
   assert.throws(() => layoutGrid<'a' | 'b'>({ a: [1, 1], b: [1, 1] }, [['a']], area), /b in no row/);
 });
+
+test('SideMenu: slides in and out from the left; a swipe from the left edge opens it, a swipe or a drag on it (or a tap on the shade) closes it', async () => {
+  const dir = tmpDir('iva-menu-');
+  fs.writeFileSync(path.join(dir, 'app.jsx'), `import { SideMenu, Header } from 'iva/ui';
+export default (
+  <Project name="T" width={1280} height={800}>
+    <Page name="P">
+      <Header title="T" />
+      <SideMenu title="T" items={[{ icon: 'house', text: 'Home', page: 'P' }]} />
+    </Page>
+  </Project>
+);
+`);
+  const r = await compile(path.join(dir, 'app.jsx'));
+  const xml = r.xml;
+  // the panel: in and out from the left, a tag a drag moves it by; the shade the same
+  assert.match(xml, /<subpage name="ui_menu" x="0" y="0" j="(\d+)" transition1="moveIn" subtype1="fromLeft" time1="0.25" ease1="easeOut" transition2="moveIn" subtype2="fromLeft" time2="0.2" ease2="easeIn"[^>]*tags="ui_menu_panel"/);
+  assert.match(xml, /<subpage name="ui_menu_scrim" x="0" y="0" j="\d+"[^>]*tags="ui_menu_shade"/);
+  // the left edge under the header: a swipe right opens it, a pan drags it
+  const edge = /<img x="0" y="72" w="16" h="728"[^>]*>[\s\S]*?<\/img>/.exec(xml)?.[0] ?? '';
+  assert.match(edge, /<gesture name="swipe gesture" type="swipe" direction="right"[^>]*>\s*<action phase="begin" js="IvaUI.menuSwipe\(/);
+  assert.match(edge, /<gesture name="pan gesture" type="pan"[^>]*>[\s\S]*IvaUI.menuDrag\(\{ join: [^}]*w: 314, panel: &quot;ui_menu_panel&quot;, shade: &quot;ui_menu_shade&quot; \}, 'begin', gesture, true, false\)/);
+  // the shade: a tap closes it (a gesture, so a drag there isn't one)
+  const shade = xml.slice(xml.indexOf('<subpage name="ui_menu_scrim" w='), xml.indexOf('</subpage>', xml.indexOf('<subpage name="ui_menu_scrim" w=')));
+  assert.match(shade, /<gesture name="tap gesture" type="tap"[^>]*>\s*<action phase="begin" js="IvaUI.off\(/);
+  assert.doesNotMatch(shade, /<btn /);
+});

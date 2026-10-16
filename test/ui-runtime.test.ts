@@ -546,3 +546,66 @@ test('Dial on the device: a finger\'s moves - a value at most every 40 ms and th
   d.run();
   assert.equal(d.joins.a1, 65535);
 });
+
+test('side menu: dragged from the edge - shown off the screen, following the finger, open or closed as let go; a swipe meanwhile is the drag\'s', () => {
+  const { CF, IvaUI, joins } = panel();
+  const props: { changes: any; time: number }[] = [];
+  CF.setProperties = (changes: any, _delay = 0, time = 0, _curve?: unknown, done?: () => void) => {
+    props.push({ changes, time });
+    done?.();
+  };
+  const o = { join: 'd100', w: 300, panel: 'ui_menu_panel', shade: 'ui_menu_shade' };
+  const at = (x: number) => [{ join: 'ui_menu_panel', x }, { join: 'ui_menu_shade', opacity: (x + 300) / 300 }];
+
+  IvaUI.menuDrag(o, 'begin', { deltax: 0, deltay: 0 }, true);
+  IvaUI.menuSwipe('d100', 1);
+  assert.equal(joins.d100, undefined, 'a swipe while dragging: the drag does it');
+  IvaUI.menuDrag(o, 'change', { deltax: 5, deltay: 1 }, true);
+  assert.equal(joins.d100, undefined, 'not across enough yet');
+  IvaUI.menuDrag(o, 'change', { deltax: 60, deltay: 4 }, true);
+  // off the screen first, then shown (its transition out of sight), then where the finger is
+  assert.deepEqual(props[0].changes, at(-300));
+  assert.equal(joins.d100, 1);
+  assert.deepEqual(props.at(-1)!.changes, at(-240));
+  // let go a third of the way, slowly: closed again - hidden off the screen, then put back in place
+  IvaUI.menuDrag(o, 'end', { deltax: 100, deltay: 4, velocityx: 50 }, true);
+  assert.equal(joins.d100, 0);
+  assert.deepEqual(props.at(-1)!.changes, at(0));
+
+  // from the edge, flung: open
+  props.length = 0;
+  IvaUI.menuDrag(o, 'begin', { deltax: 0, deltay: 0 }, true);
+  IvaUI.menuDrag(o, 'end', { deltax: 70, deltay: 2, velocityx: 900 }, true);
+  assert.equal(joins.d100, 1);
+  assert.deepEqual(props.at(-1)!.changes, at(0));
+  assert.ok(props.at(-1)!.time > 0, 'slides the rest of the way');
+
+  // open, dragged to the left: closed
+  IvaUI.menuDrag(o, 'begin', { deltax: 0, deltay: 0 }, false);
+  IvaUI.menuDrag(o, 'change', { deltax: -50, deltay: 3 }, false);
+  assert.deepEqual(props.at(-1)!.changes, at(-50));
+  IvaUI.menuDrag(o, 'end', { deltax: -200, deltay: 5, velocityx: -100 }, false);
+  assert.equal(joins.d100, 0);
+
+  // dragged on the panel itself: its coordinates go with it - the finger's way is the delta plus the panel's
+  CF.setJoin('d100', 1);
+  IvaUI.menuDrag(o, 'begin', { deltax: 0, deltay: 0 }, false, true);
+  IvaUI.menuDrag(o, 'change', { deltax: -30, deltay: 1 }, false, true);
+  assert.deepEqual(props.at(-1)!.changes, at(-30));
+  // the finger 80 to the left: 50 in the panel's coordinates (it went 30 with it)
+  IvaUI.menuDrag(o, 'change', { deltax: -50, deltay: 1 }, false, true);
+  assert.deepEqual(props.at(-1)!.changes, at(-80));
+  IvaUI.menuDrag(o, 'end', { deltax: -100, deltay: 2 }, false, true);
+  assert.deepEqual(props.at(-3)!.changes, at(-180));
+  assert.equal(joins.d100, 0, 'more than half way: closed');
+
+  // up and down on it: its list's, not a drag
+  props.length = 0;
+  IvaUI.menuDrag(o, 'begin', { deltax: 0, deltay: 0 }, false);
+  IvaUI.menuDrag(o, 'change', { deltax: 3, deltay: 30 }, false);
+  IvaUI.menuDrag(o, 'end', { deltax: -40, deltay: 90 }, false);
+  assert.deepEqual(props, []);
+  // a swipe with no drag going on: as iViewer sees it
+  IvaUI.menuSwipe('d100', 1);
+  assert.equal(joins.d100, 1);
+});
