@@ -682,7 +682,7 @@ export class Builder {
     }
     if (!opts.always && !hasStyle(p) && !opts.active) return '';
     const base = { ...opts.extra, ...pickStyle(p) };
-    const img = (src: string) => this.image(node, src);
+    const img = (src: string | DrawRef) => this.image(node, src);
     const warn = this.warner(node);
     const size = typeof p.w === 'number' && typeof p.h === 'number' ? { w: p.w, h: p.h } : undefined;
     const states = [styleCss(type, this.drawn(node, type, base, size, opts.icons?.[0]), img, warn)];
@@ -730,7 +730,7 @@ export class Builder {
       }
       return;
     }
-    const img = (src: string) => this.image(node, src);
+    const img = (src: string | DrawRef) => this.image(node, src);
     const warn = this.warner(node);
     const base = pickStyle(p);
     const states = [styleCss(p.type, this.drawn(node, p.type, base), img, warn)];

@@ -311,8 +311,10 @@ export function setProps(target: PropsTarget, props: Properties, opts: SetPropsO
 export interface StyleProps extends XmlProp {
   /** background colour: '#203040', 'rgba(0,0,0,0.5)', '#20304080' */
   bg?: string;
-  /** background image (a file, relative to the .jsx) */
-  image?: string;
+  /** background image (a file, relative to the .jsx; or a drawing: draw.box(...)) */
+  image?: string | DrawRef;
+  /** a page's / subpage's background image tiled at its own size (GUI Designer's Tiled), not stretched */
+  tile?: boolean;
   /** 9-slice the image: px from each edge, `12` or `[top, right, bottom, left]` */
   slice?: number | [number, number, number, number];
   color?: string;
@@ -325,6 +327,8 @@ export interface StyleProps extends XmlProp {
   fontSize?: number;
   bold?: boolean;
   italic?: boolean;
+  /** text underlined (text-decoration) */
+  underline?: boolean;
   align?: 'left' | 'center' | 'right';
   valign?: 'top' | 'middle' | 'bottom';
   /** text shadow: CSS text, or { color, x, y, blur } */
@@ -342,7 +346,7 @@ export interface StyleProps extends XmlProp {
   theme?: string;
 }
 
-const STYLE = ['bg', 'image', 'slice', 'color', 'font', 'fontStyle', 'fontName', 'fontSize', 'bold', 'italic', 'align', 'valign', 'shadow', 'opacity', 'padding', 'radius', 'borderWidth', 'borderColor', 'css', 'theme'];
+const STYLE = ['bg', 'image', 'tile', 'slice', 'color', 'font', 'fontStyle', 'fontName', 'fontSize', 'bold', 'italic', 'underline', 'align', 'valign', 'shadow', 'opacity', 'padding', 'radius', 'borderWidth', 'borderColor', 'css', 'theme'];
 const GEOM = ['x', 'y', 'w', 'h'];
 const METER = ['bg', 'image', 'fill', 'fillImage', 'radius', 'theme'];
 
@@ -460,7 +464,7 @@ export interface ProjectProps extends XmlProp {
   httpPort?: number;
   children?: Child;
 }
-export interface PageProps extends Pick<StyleProps, 'bg' | 'image' | 'theme'>, XmlProp {
+export interface PageProps extends Pick<StyleProps, 'bg' | 'image' | 'tile' | 'theme'>, XmlProp {
   name: string;
   /** the page shown at start (default: the first page) */
   start?: boolean;
@@ -469,10 +473,10 @@ export interface PageProps extends Pick<StyleProps, 'bg' | 'image' | 'theme'>, X
   tags?: string | string[];
   children?: Child;
 }
-export interface OrientationProps extends Pick<StyleProps, 'bg' | 'image' | 'theme'>, XmlProp {
+export interface OrientationProps extends Pick<StyleProps, 'bg' | 'image' | 'tile' | 'theme'>, XmlProp {
   children?: Child;
 }
-export interface SubpageProps extends Placement, Pick<StyleProps, 'bg' | 'image' | 'radius' | 'borderWidth' | 'borderColor' | 'theme'>, XmlProp {
+export interface SubpageProps extends Placement, Pick<StyleProps, 'bg' | 'image' | 'tile' | 'radius' | 'borderWidth' | 'borderColor' | 'theme'>, XmlProp {
   name: string;
   /** inside a page: only define it (list rows, ...), don't place it */
   define?: boolean;
@@ -905,10 +909,10 @@ const PLACEMENT = ['x', 'y', 'join', 'visible', 'in', 'out', 'topmost', 'fixed',
  * @internal */
 export const PROPS: Record<string, string[]> = {
   Project: ['name', 'device', 'orientation', 'width', 'height', 'otherSize', 'autoposition', 'sizes', 'joinBase', 'assets', 'properties', 'licenses', 'themes', 'theme', 'folders', 'httpPort'],
-  Page: ['name', 'start', 'bg', 'image', 'theme', 'tags', 'transition'],
-  Landscape: ['bg', 'image', 'theme'],
-  Portrait: ['bg', 'image', 'theme'],
-  Subpage: ['name', 'w', 'h', 'clip', 'define', 'bg', 'image', 'radius', 'borderWidth', 'borderColor', 'theme', ...PLACEMENT],
+  Page: ['name', 'start', 'bg', 'image', 'tile', 'theme', 'tags', 'transition'],
+  Landscape: ['bg', 'image', 'tile', 'theme'],
+  Portrait: ['bg', 'image', 'tile', 'theme'],
+  Subpage: ['name', 'w', 'h', 'clip', 'define', 'bg', 'image', 'tile', 'radius', 'borderWidth', 'borderColor', 'theme', ...PLACEMENT],
   SubpageRef: ['name', ...PLACEMENT],
   Button: [...GEOM, 'tags', 'join', 'feedback', 'text', 'activeText', 'textJoin', 'activeTextJoin', 'icon', 'activeIcon', 'active',
     'iconAlign', 'page', 'href', 'cmd', 'js', 'repeat', 'onPress', 'onRelease', 'onHold', 'holdTime', ...STYLE],

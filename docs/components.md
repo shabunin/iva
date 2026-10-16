@@ -74,8 +74,9 @@ which `CF.send()`s it (or not) - `CF.send()` never goes through it. UDP:
 
 ## Style props → themes
 
-`bg`, `image` (+ `slice` for 9-slice), `color`, `font`, `fontStyle`, `fontName`,
-`fontSize`, `bold`, `italic`, `align`, `valign`, `shadow`, `opacity`,
+`bg`, `image` (+ `slice` for 9-slice; a page's or subpage's: `tile` - at its own size again
+and again, GUI Designer's Tiled - else stretched), `color`, `font`, `fontStyle`, `fontName`,
+`fontSize`, `bold`, `italic`, `underline`, `align`, `valign`, `shadow`, `opacity`,
 `padding`, `borderWidth`, `borderColor`, `css` (raw extra CSS).
 
 Fonts: `font` is the family as iOS / Android name it (`'Helvetica Neue'`,

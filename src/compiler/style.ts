@@ -42,8 +42,8 @@ export function fontName(family: string, style: string): { name?: string; proble
   return { problem: `"${family}" isn't a font iOS / Android devices have${didYouMean(family, families)}; give fontName too if you ship it` };
 }
 
-/** Resolves an image prop to the name the .gui refers to it by. */
-export type ImageResolver = (src: string) => string;
+/** Resolves an image prop (a file, or a drawing) to the name the .gui refers to it by. */
+export type ImageResolver = (src: NonNullable<StyleProps['image']>) => string;
 
 /**
  * CSS declarations for a style, laid out the way GUI Designer writes them
@@ -68,7 +68,8 @@ export function styleCss(type: ThemeType, st: StyleProps, image: ImageResolver, 
       const url = `url(${image(st.image)})`;
       if (slice) add('-webkit-border-image', `${url} ${slice.join(' ')}`);
       else add('background-image', url);
-      if (type === 'background') add('background-repeat', 'no-repeat');
+      // GUI Designer's Tiled: at its own size from the top left, again and again (else stretched)
+      if (type === 'background') add('background-repeat', st.tile ? 'repeat' : 'no-repeat');
     }
   };
 
@@ -108,7 +109,7 @@ export function styleCss(type: ThemeType, st: StyleProps, image: ImageResolver, 
       add('font-weight', bold ? 'bold' : 'normal');
       // GUI Designer's spelling
       add('font-style', italic ? 'italics' : 'none');
-      add('text-decoration', 'none');
+      add('text-decoration', st.underline ? 'underline' : 'none');
     };
     // buttons: face, then alignment; text and inputs: the other way round (as GUI Designer writes them)
     if (type === 'button') (face(), align());
