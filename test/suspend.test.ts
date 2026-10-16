@@ -74,6 +74,21 @@ test('the screen unlocking shows and hides the page a few times: one wake, once 
   assert.deepEqual(events, ['suspended', 'resumed']);
 });
 
+test('the panel app paused and resumed six times as the screen unlocks (Android): its systems stopped once, started once it stays in front', async () => {
+  const cf = new CFAPI();
+  const events: string[] = [];
+  cf.controlSystems = { Web: fakeSystem('Web', events) };
+  cf.setAsleep(true);
+  for (let i = 0; i < 6; i++) {
+    cf.setAsleep(false);
+    cf.setAsleep(true);
+  }
+  cf.setAsleep(false);
+  assert.deepEqual(events, ['stop Web']);
+  await new Promise((r) => setTimeout(r, 300));
+  assert.deepEqual(events, ['stop Web', 'start Web']);
+});
+
 test('"Disconnect on Exit/Sleep" off: the systems stay connected while the GUI sleeps', () => {
   const cf = new CFAPI();
   const events: string[] = [];

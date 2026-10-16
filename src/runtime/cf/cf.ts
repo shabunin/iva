@@ -211,13 +211,21 @@ export class CFAPI implements CFContext {
      * The page hidden - the app in the background, the screen off - and shown
      * again: the GUI asleep and awake, as iViewer's (suspend, resume).
      */
-    private onVisibility = () => {
-        clearTimeout(this.waking);
-        if (document.visibilityState === 'hidden') this.suspend();
-        // awake once it stays shown: the screen unlocking shows and hides it a few times in a second
-        else this.waking = setTimeout(() => this.resume(), 250);
-    };
+    private onVisibility = () => this.setAsleep(document.visibilityState === 'hidden');
     private waking: ReturnType<typeof setTimeout> | undefined;
+
+    /**
+     * Asleep at once; awake once it stays so a moment: the screen unlocking
+     * shows and hides the app a few times in a second (Android pauses and
+     * resumes it six times in 0.2 s) - not each time stopped and started.
+     * What the page's visibility says, and what an app around it says (the
+     * panel app: its activity paused and resumed).
+     */
+    setAsleep(asleep: boolean) {
+        clearTimeout(this.waking);
+        if (asleep) this.suspend();
+        else this.waking = setTimeout(() => this.resume(), 250);
+    }
 
     /** asleep (in the background): its page timers don't run */
     suspended = false;

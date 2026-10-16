@@ -240,13 +240,12 @@ document.addEventListener('visibilitychange', () => {
  * Exit/Sleep), its servers' ports let go. The app tells the page before it
  * stops its timers: left to learn it's hidden, it may not before Android
  * freezes the app, whose servers would keep their ports with no one to
- * answer (iViewer couldn't open its own there).
+ * answer (iViewer couldn't open its own there). Awake once it stays so a
+ * moment (CF's setAsleep): unlocking the screen pauses and resumes the app
+ * a few times in a fraction of a second.
  */
 (window as unknown as { ivaPanelSleep: (asleep: boolean) => void }).ivaPanelSleep = (asleep) => {
-  const cf = current?.renderer.cfApi;
-  if (!cf) return;
-  if (asleep) cf.suspend();
-  else cf.resume();
+  current?.renderer.cfApi?.setAsleep(asleep);
 };
 
 /** the GUI didn't load: again in 5 s - not while the settings are open (the page would go from under the typing) */
