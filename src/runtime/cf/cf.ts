@@ -402,8 +402,10 @@ export class CFAPI implements CFContext {
                 if (Array.isArray(w.joins) && !w.joins.includes(joinArg)) return;
                 if (typeof w.joins === 'string' && w.joins !== joinArg) return;
             }
+            // a system's connection: the systems watched (by name), as for joins
             if ((eventName === this.InputFieldEditedEvent ||
-                 eventName === this.ListWillStartScrollingEvent || 
+                 eventName === this.ConnectionStatusChangeEvent ||
+                 eventName === this.ListWillStartScrollingEvent ||
                  eventName === this.ListDidScrollEvent || 
                  eventName === this.ListDidEndScrollingEvent) && w.joins && args.length >= 1) {
                 const joinArg = args[0];

@@ -355,6 +355,25 @@ test('TCP server: Max Connections turns the one too many away', () => {
   sys.stop();
 });
 
+test('ConnectionStatusChangeEvent: a watcher of a system (or systems) hears only theirs', () => {
+  servers.length = 0;
+  const { cf, sys, events } = gui({ accept: '1', origin: '5000' });
+  const other = new ControlSystem(cf, { type: 'system', attributes: { name: 'Other', ip: '0.0.0.0', port: '5001', accept: '1', origin: '5001' }, children: [] } as any);
+  cf.controlSystems.Other = other;
+  const heard: string[] = [];
+  cf.watch(cf.ConnectionStatusChangeEvent, 'Dev', (name: string, up: boolean) => heard.push(`Dev's: ${name} ${up}`));
+  cf.watch(cf.ConnectionStatusChangeEvent, ['Other'], (name: string, up: boolean) => heard.push(`Other's: ${name} ${up}`));
+  sys.start();
+  other.start();
+  servers[0].emit('connection', new FakeSocket());
+  servers[1].emit('connection', new FakeSocket());
+  assert.deepEqual(heard, ["Dev's: Dev true", "Other's: Other true"]);
+  // one watching every system hears both
+  assert.deepEqual(events, ['Dev up', 'Other up']);
+  sys.stop();
+  other.stop();
+});
+
 test('UDP: origin 0 is the remote port (GUI Designer), -1 any; Accept Broadcast Messages on', async () => {
   udps.length = 0;
   const { sys } = gui({ protocol: 'udp', port: '19999', origin: '0', acceptBroadcasts: '1' });
