@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import net from 'node:net';
 import http from 'node:http';
@@ -6,6 +6,7 @@ import { once } from 'node:events';
 import { WebSocketServer } from 'ws';
 import { HostSession } from '../src/server/host/session.ts';
 import { TauriTcpSocket } from '../src/runtime/host/net/socket.ts';
+import { TauriTcpServer } from '../src/runtime/host/net/server.ts';
 
 /** a host session behind /__iva/host, as iva dev has it; the page's side finds it at `location` */
 async function backend() {
@@ -35,8 +36,14 @@ async function backend() {
   };
 }
 
+// one backend for the file: the page's link to it is one for the process (it doesn't reconnect)
+let stopBackend = () => {};
+before(async () => {
+  stopBackend = await backend();
+});
+after(() => stopBackend());
+
 test('a socket given up while it connects (the GUI gone to sleep) leaves no connection behind, and no connect', async () => {
-  const stop = await backend();
   const peer = net.createServer();
   peer.listen(0, '127.0.0.1');
   await once(peer, 'listening');
@@ -56,6 +63,29 @@ test('a socket given up while it connects (the GUI gone to sleep) leaves no conn
     assert.equal(connected, false);
   } finally {
     peer.close();
-    stop();
+  }
+});
+
+test('a server given up while it opens (the GUI asleep and awake again in a moment) lets its port go once open, never listening', async () => {
+  {
+    const probe = net.createServer();
+    probe.listen(0, '127.0.0.1');
+    await once(probe, 'listening');
+    const port = (probe.address() as net.AddressInfo).port;
+    probe.close();
+    await once(probe, 'close');
+
+    const srv = new TauriTcpServer();
+    let listening = false;
+    srv.on('listening', () => (listening = true));
+    srv.listen(port, '127.0.0.1');
+    const closed = new Promise<Error | undefined>((resolve) => srv.close(resolve));
+    assert.equal(await Promise.race([closed, new Promise((_, reject) => setTimeout(() => reject(new Error('never closed')), 3000))]), undefined);
+    // the port free: another server has it
+    const again = net.createServer();
+    again.listen(port, '127.0.0.1');
+    await Promise.race([once(again, 'listening'), once(again, 'error').then(([e]) => Promise.reject(e))]);
+    again.close();
+    assert.equal(listening, false);
   }
 });

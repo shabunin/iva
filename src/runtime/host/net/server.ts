@@ -32,6 +32,8 @@ export class TauriTcpServer extends EventEmitter implements ITcpServer {
     public dropMaxConnection: boolean = false;
 
     private serverId: string | null = null;
+    /** listen asked for, its answer not in yet */
+    private opening: boolean = false;
     private activeConnections: Set<TauriTcpSocket> = new Set();
     private isClosing: boolean = false;
     private closeCallback: ((err?: Error) => void) | null = null;
@@ -93,10 +95,11 @@ export class TauriTcpServer extends EventEmitter implements ITcpServer {
             this.once('listening', listener);
         }
 
+        this.opening = true;
         invoke<TcpListenResult>('tcp_listen', { host, port })
             .then(result => {
+                this.opening = false;
                 this.serverId = result.id;
-                this.listening = true;
                 this.localAddress = result.local_address;
                 this.localPort = result.local_port;
                 this.localFamily = result.family;
@@ -104,17 +107,31 @@ export class TauriTcpServer extends EventEmitter implements ITcpServer {
                 activeServers.set(result.id, this);
                 ensureGlobalServerListener();
 
+                // closed while it opened (the GUI asleep and awake again in a moment): closed now -
+                // not left holding its port with no one to answer
+                if (this.isClosing) {
+                    this.closeOnHost();
+                    return;
+                }
+                this.listening = true;
                 this.emit('listening');
             })
             .catch((err) => {
-                this.emit(
-                    'error',
-                    mapHostError(err, {
-                        syscall: 'listen',
-                        address: host,
-                        port,
-                    })
-                );
+                this.opening = false;
+                const mapped = mapHostError(err, {
+                    syscall: 'listen',
+                    address: host,
+                    port,
+                });
+                // closed meanwhile: what close() was told
+                if (this.isClosing) {
+                    const cb = this.closeCallback;
+                    this.closeCallback = null;
+                    this.isClosing = false;
+                    cb?.(mapped);
+                    return;
+                }
+                this.emit('error', mapped);
             });
 
         return this;
@@ -127,6 +144,11 @@ export class TauriTcpServer extends EventEmitter implements ITcpServer {
                 if (payload.data) {
                     const clientId = new TextDecoder().decode(new Uint8Array(payload.data));
 
+                    // closing: no new connections (one made as it closed is let go)
+                    if (this.isClosing) {
+                        invoke('tcp_destroy', { id: clientId }).catch(() => {});
+                        return;
+                    }
                     if (this.activeConnections.size >= this.maxConnections) {
                         invoke('tcp_destroy', { id: clientId }).catch(console.error);
                         if (this.dropMaxConnection) {
@@ -178,6 +200,12 @@ export class TauriTcpServer extends EventEmitter implements ITcpServer {
     }
 
     close(callback?: (err?: Error) => void): this {
+        if (!this.serverId && this.opening) {
+            // listening any moment: closed then
+            this.isClosing = true;
+            this.closeCallback = callback || null;
+            return this;
+        }
         if (!this.serverId) {
             if (callback) {
                 setTimeout(
@@ -190,14 +218,18 @@ export class TauriTcpServer extends EventEmitter implements ITcpServer {
 
         this.isClosing = true;
         this.closeCallback = callback || null;
+        this.closeOnHost();
+        return this;
+    }
 
+    private closeOnHost() {
         invoke('tcp_server_close', { id: this.serverId }).catch((err) => {
             const mapped = mapHostError(err, { syscall: 'close' });
-            if (callback) callback(mapped);
+            const cb = this.closeCallback;
+            this.closeCallback = null;
+            if (cb) cb(mapped);
             else this.emit('error', mapped);
         });
-
-        return this;
     }
 
     private checkPendingClose() {
