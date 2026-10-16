@@ -561,3 +561,9 @@ test("a page's transition, and gesture actions with all of GUI Designer's parts"
   assert.match(gui, /<action phase="change" delay="100" token="\[where\]" target="e0" value="\[x\],\[y\]" \/>/);
   assert.match(gui, /<action phase="change" command="Go" macro="All" \/>/);
 });
+
+test("a list's swipe delete and its insert / delete transitions, as iViewer reads them", async () => {
+  const { xml } = await build(wrap(`<List w={300} h={400} join="rooms" swipeDelete insertTransition="middle" deleteTransition="left"
+    item={<Subpage name="Row" w={300} h={50}><Text w={300} h={50} join={1} /></Subpage>} />`));
+  assert.match(xml, /<list j="\d+"[^>]* swipedelete="1"[^>]* insertTransition="Middle" deleteTransition="Left"/);
+});

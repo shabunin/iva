@@ -583,6 +583,8 @@ export interface GaugeProps extends Geom, MeterStyle, XmlProp {
   /** analog join */
   join?: Join;
 }
+/** an item coming or going, as a table's rows do; the items after it slide */
+export type ListTransition = 'fade' | 'left' | 'right' | 'top' | 'bottom' | 'middle' | 'none';
 export interface ListProps extends Geom, Pick<StyleProps, 'bg' | 'theme'>, XmlProp {
   /** list join */
   join?: Join;
@@ -592,7 +594,12 @@ export interface ListProps extends Geom, Pick<StyleProps, 'bg' | 'theme'>, XmlPr
   header?: string | VNode;
   title?: string | VNode;
   footer?: string | VNode;
+  /** a swipe left on an item shows Delete; tapped, the item goes (in deleteTransition) */
   swipeDelete?: boolean;
+  /** how an item CF.listAdd puts in comes (iViewer's own attribute, not GUI Designer's): default fade */
+  insertTransition?: ListTransition;
+  /** how an item CF.listRemove (or a swipe delete) takes out goes: default fade */
+  deleteTransition?: ListTransition;
   scrollCmd?: string;
   scrollInterval?: number;
   listEndCmd?: string;
@@ -910,7 +917,7 @@ export const PROPS: Record<string, string[]> = {
   Slider: [...GEOM, 'tags', 'join', 'pressJoin', 'min', 'max', 'decimals', 'invert', 'feedback', 'thumb', 'activeThumb', 'thumbColor', 'thumbSize',
     'dragCmd', 'pressCmd', 'releaseCmd', ...METER],
   Gauge: [...GEOM, 'tags', 'join', ...METER],
-  List: [...GEOM, 'tags', 'join', 'orientation', 'item', 'header', 'title', 'footer', 'swipeDelete', 'scrollCmd', 'scrollInterval', 'listEndCmd', 'listEndOffset', 'bg', 'theme'],
+  List: [...GEOM, 'tags', 'join', 'orientation', 'item', 'header', 'title', 'footer', 'swipeDelete', 'insertTransition', 'deleteTransition', 'scrollCmd', 'scrollInterval', 'listEndCmd', 'listEndOffset', 'bg', 'theme'],
   Input: [...GEOM, 'tags', 'join', 'text', 'password', 'autoFocus', 'cmd', 'macro', 'changeCmd', 'changeMacro', ...STYLE],
   Web: [...GEOM, 'tags', 'url', 'join', 'titleJoin', 'backJoin', 'forwardJoin', 'refreshJoin', 'stopJoin'],
   Video: [...GEOM, 'tags', 'url', 'join', 'playJoin', 'stopJoin', 'format', 'autoplay', 'controls', 'bg', 'cache', 'auth'],

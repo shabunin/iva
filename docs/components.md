@@ -23,7 +23,7 @@ injected); `import { Button } from 'iva'` works too.
 | `<Image>` | `<img>` | `join` serial (file / URL) | `src` (a file, a URL, or `fa('name', { color, size })`), `clickthrough`, `refresh` (ms: a URL loaded again while it shows), `noCache` (Allow Caching off), `downloadIndicator` (a spinner while it comes), `clearOnURLChange`; children: `<Gesture>` |
 | `<Slider>` | `<slider>` + `<indicator>`×2 | `join` analog; `pressJoin` digital | `min`, `max`, `decimals`, `invert`, `feedback`, `dragCmd` / `pressCmd` / `releaseCmd`; looks: `bg`/`image` (track), `fill`/`fillImage`, `radius`, `thumb`/`activeThumb` or `thumbColor` + `thumbSize` |
 | `<Gauge>` | `<gauge>` | `join` analog | `bg`/`image`, `fill`/`fillImage`, `radius`, `theme` |
-| `<List>` | `<list>` | `join` list | `item` (subpage name or an inline `<Subpage>`), `header`, `title`, `footer`, `orientation`, `swipeDelete`, `scrollCmd`, `scrollInterval`, `listEndCmd`, `listEndOffset`, `bg` |
+| `<List>` | `<list>` | `join` list | `item` (subpage name or an inline `<Subpage>`), `header`, `title` (for items `CF.listAdd` gives `title: true`), `footer`, `orientation`, `swipeDelete` (a swipe left shows Delete), `insertTransition` / `deleteTransition` (`fade` (default), `left`, `right`, `top`, `bottom`, `middle`, `none`: how an item comes and goes, the others sliding), `scrollCmd`, `scrollInterval`, `listEndCmd`, `listEndOffset`, `bg` |
 | `<Input>` | `<input>` | `join` serial (`s=`): typing writes it, setting it sets the text | `text` (initial), `password`, `autoFocus`, `cmd` / `macro` (sent on Return; `[inputval]` is the text), `changeCmd` / `changeMacro` (on each change), style props |
 | `<Web>` | `<web>` | `join` serial (the URL: setting it loads it), `titleJoin` serial, `backJoin`, `forwardJoin`, `refreshJoin`, `stopJoin` digital | `url`: a URL, a file of the project (`page.html`, in `assets/`), or `panel:/path` (a page of the panel's own web server) |
 | `<Video>` | `<video>` | `join`, `playJoin`, `stopJoin` (numbers) | `url`, `format` (`mjpeg`·`mpeg4`), `autoplay`, `controls`, `bg`, `cache`, `auth={{user, password, …}}` |
@@ -279,6 +279,13 @@ the item's. A gesture on a page or subpage leaves its buttons working.
 A page comes in its own transition (a gesture action's wins); a subpage in
 its `in` / `out` ones, sliding from the panel's edge on the side named and
 back out the same way. None, or a time of 0: at once.
+
+A list's items come and go as `CF.listAdd` / `listRemove` put them in and
+take them out (in its insert / delete transition; the items after slide),
+without the list drawn again; an item's joins and tokens - a toggle the
+user flipped in it too - go with it as items before it come and go.
+`CF.listUpdate` changes no more than it names, with no `JoinChangeEvent`.
+A join value can be `{ value, tokens }`; the item's text takes its tokens.
 
 `{{ }}` is iViewer's math: `+ - * / % ^`, comparisons, `and` / `or` / `xor`,
 `t ? a : b`, and `dtor rtod sin cos tan asin acos atan sinh cosh tanh log ln

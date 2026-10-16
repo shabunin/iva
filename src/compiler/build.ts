@@ -169,6 +169,8 @@ const transitionAttrs = (t: Transition) => ({
   time: t.time ?? 0.3,
   ease: t.ease === 'easeInOut' ? 'easeInEaseOut' : t.ease === 'linear' ? '' : (t.ease ?? ''),
 });
+/** a list's insert / delete transition as iViewer reads it: Fade, Left, Right, Top, Bottom, Middle, None */
+const listTransition = (t: unknown) => (typeof t === 'string' && t ? t[0].toUpperCase() + t.slice(1) : undefined);
 const tagsAttr = (t: unknown) => (t === undefined ? undefined : Array.isArray(t) ? t.join(' ') : String(t));
 const bool = (v: unknown, dflt = false) => ((v ?? dflt) ? '1' : '0');
 const hasStyle = (p: Record<string, unknown>) => STYLE_PROPS.some((k) => k !== 'theme' && p[k] !== undefined);
@@ -1231,6 +1233,8 @@ export class Builder {
           j: this.join(node, 'join', 'l'), ...geom, headerSub: cells.header, titleSub: cells.title, contentSub: cells.row, footerSub: cells.footer,
           orientation: p.orientation === 'horizontal' ? 'h' : 'v', l: 0, swipedelete: bool(p.swipeDelete), t: this.styleTheme(node, 'list') || undefined,
           scrollCmd: p.scrollCmd, scrollInterval: p.scrollInterval, listEndCmd: p.listEndCmd, listEndOffset: p.listEndOffset, tags: tagsAttr(p.tags),
+          // iViewer's own (Fade, Left ... - as CommandFusion names them)
+          insertTransition: listTransition(p.insertTransition), deleteTransition: listTransition(p.deleteTransition),
         }, [], undefined, node);
       }
       case 'Input':
