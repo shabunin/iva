@@ -6,6 +6,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { startDeviceServer } from '../src/server/device.ts';
 import { readZip } from '../src/server/zip.ts';
+import { tmpDir } from './tmp.ts';
 
 const ECHO = path.resolve(import.meta.dirname, '../fixtures/local/echo-system/echo.gui');
 const quiet = () => {};
@@ -16,7 +17,7 @@ async function get(port: number, p: string, method = 'GET') {
 }
 
 test('serves a .gui the way GUI Designer\'s Upload Service does', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-serve-'));
+  const dir = tmpDir('iva-serve-');
   fs.copyFileSync(ECHO, path.join(dir, 'Echo.gui'));
   fs.writeFileSync(path.join(dir, 'Logo.PNG'), 'png');
   const s = await startDeviceServer({ target: path.join(dir, 'Echo.gui'), port: 0, host: '127.0.0.1', live: false, log: quiet });
@@ -41,7 +42,7 @@ test('serves a .gui the way GUI Designer\'s Upload Service does', async () => {
 });
 
 test('live: the served .gui reloads itself after a change', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-serve-'));
+  const dir = tmpDir('iva-serve-');
   const gui = path.join(dir, 'Echo.gui');
   fs.copyFileSync(ECHO, gui);
   const s = await startDeviceServer({ target: gui, port: 0, host: '127.0.0.1', live: true, log: quiet });
@@ -76,8 +77,8 @@ test('live: the panel\'s log in the console - CF.log, what its servers get and s
   try {
     const script = (await get(s.port, '/iva-live.js')).body;
     assert.doesNotThrow(() => new Function(script));
-    // the gallery's web server, found in the .gui: probed and watched
-    assert.match(script, /var servers = \[\{"name":"IvaWeb","port":8900,"feedback":\["request"\]\}\];/);
+    // the gallery's web servers (its web apps', its camera's, its API's), found in the .gui: probed and watched
+    assert.match(script, /var servers = \[\{"name":"IvaWeb","port":8900,"feedback":\["request"\]\},\{"name":"galleryCams","port":8898,"feedback":\["request"\]\},\{"name":"galleryApiServer","port":8899,"feedback":\["request"\]\}\];/);
     // a fake panel runs it: what it logs and its servers do reaches the console
     const sent: string[] = [];
     const watchers: { event: string; cb: (...a: any[]) => void }[] = [];
@@ -99,7 +100,7 @@ test('live: the panel\'s log in the console - CF.log, what its servers get and s
     watchers.find((w) => w.event === 'page')!.cb('Overview', 'Dials');
     for (let i = 0; i < 50 && !lines.some((l) => /page: Dials/.test(l)); i++) await new Promise((r) => setTimeout(r, 20));
     const panel = lines.filter((l) => l.startsWith('panel '));
-    assert.ok(panel.some((l) => /started: iViewer 5\.0\.7, 1 server/.test(l)), panel.join('\n'));
+    assert.ok(panel.some((l) => /started: iViewer 5\.0\.7, 3 server/.test(l)), panel.join('\n'));
     assert.ok(panel.some((l) => /hello from the panel/.test(l)));
     assert.ok(panel.some((l) => /scripts started/.test(l)));
     assert.ok(panel.some((l) => /IvaWeb got GET \/iva-color\/000000 HTTP\/1\.1/.test(l)));
@@ -160,7 +161,7 @@ test('the whole build in one zip for the panel to keep, and 304 for the build it
 });
 
 test('a request for // or worse is answered, not a crash', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-serve-'));
+  const dir = tmpDir('iva-serve-');
   fs.copyFileSync(ECHO, path.join(dir, 'Echo.gui'));
   const s = await startDeviceServer({ target: path.join(dir, 'Echo.gui'), port: 0, host: '127.0.0.1', live: false, log: quiet });
   try {

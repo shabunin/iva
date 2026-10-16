@@ -43,6 +43,8 @@ export interface Loaded {
 process.setSourceMapsEnabled?.(true);
 const TMP = path.join(os.tmpdir(), `iva-${process.pid}`);
 let seq = 0;
+// gone with the process (each would leave an empty folder behind)
+process.on('exit', () => fs.rmSync(TMP, { recursive: true, force: true }));
 
 export async function evaluate(entry: string): Promise<Loaded> {
   const dir = path.dirname(entry);

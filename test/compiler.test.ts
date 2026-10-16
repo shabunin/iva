@@ -7,6 +7,7 @@ import { DOMParser } from 'linkedom';
 import { buildFilesAll, compile, IvaError, writeBuild, writeBuilds } from '../src/compiler/index.ts';
 import { circle } from '../src/compiler/images.ts';
 import { parseGUI } from '../src/runtime/cf/parser.ts';
+import { tmpDir } from './tmp.ts';
 
 (globalThis as any).DOMParser = DOMParser;
 
@@ -14,7 +15,7 @@ const HELLO = path.resolve(import.meta.dirname, '../examples/hello/app.jsx');
 
 /** Compile a one-file project written inline. */
 async function build(jsx: string, files: Record<string, string | Buffer> = {}) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-test-'));
+  const dir = tmpDir('iva-test-');
   fs.writeFileSync(path.join(dir, 'app.jsx'), jsx);
   for (const [name, data] of Object.entries(files)) {
     fs.mkdirSync(path.dirname(path.join(dir, name)), { recursive: true });
@@ -411,7 +412,7 @@ test('the build: the .gui, assets/ (its image folder: drawings in a folder per c
   assert.match(r.xml, /<imagefolder>assets<\/imagefolder>/);
   assert.match(r.xml, /<script name="scripts\/main\.js" \/>/);
   assert.match(r.xml, /<sound name="beep" [^>]*>sounds\/beep\.mp3<\/sound>/);
-  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-dist-'));
+  const out = tmpDir('iva-dist-');
   writeBuild(r, out);
   assert.deepEqual(tree(out), ['T.gui', 'assets/boxes/100x50-r8-123456.png', 'assets/boxes/100x50-r8-123456@2x.png', 'assets/icons/lightbulb.png',
     'assets/icons/lightbulb@2x.png', 'assets/scripts/main.js', 'assets/sounds/beep.mp3', 'joins.json'].sort());
@@ -419,13 +420,13 @@ test('the build: the .gui, assets/ (its image folder: drawings in a folder per c
   const flat = await build(jsx(' folders={false}'), files);
   assert.match(flat.xml, /<imagefolder \/>/);
   assert.match(flat.xml, /<script name="main\.js" \/>/);
-  const out2 = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-dist-'));
+  const out2 = tmpDir('iva-dist-');
   writeBuild(flat, out2);
   assert.ok(tree(out2).includes('boxes/100x50-r8-123456.png') && tree(out2).includes('main.js') && tree(out2).includes('beep.mp3'));
 });
 
 test('screen sizes: screen() is the <Project>\'s size or the one asked for; <Project sizes> each in its own folder', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-sizes-'));
+  const dir = tmpDir('iva-sizes-');
   const entry = path.join(dir, 'app.jsx');
   fs.writeFileSync(entry, `const { width, height } = screen();
 export default (
@@ -447,7 +448,7 @@ export default (
   assert.match(tall.xml, /<portrait>\s*<img x="16" y="16" w="736" h="992"/);
   await assert.rejects(compile(entry, { size: 'big' }), /size: "big" isn't one/);
   // dist/: the project's own size, each other in its folder (as iViewer matches a screen); the archive: the main .gui first
-  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-sizes-dist-'));
+  const out = tmpDir('iva-sizes-dist-');
   const guis = writeBuilds([main, square, tall], out);
   assert.deepEqual(guis.map((g) => path.relative(out, g).split(path.sep).join('/')), ['T.gui', '1400w1400h/T.gui', '768w1024h/T.gui']);
   assert.ok(fs.existsSync(path.join(out, '1400w1400h', 'assets', 'bg.png')));
@@ -469,7 +470,7 @@ export default (
 });
 
 test('a phone\'s dense screen: 1400x1400@3x is laid out at 467x467 for iViewer to scale up, its drawings that sharp, in the screen\'s folder', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-dense-'));
+  const dir = tmpDir('iva-dense-');
   const entry = path.join(dir, 'app.jsx');
   fs.writeFileSync(entry, `const { width, scale } = screen();
 export default (
@@ -488,7 +489,7 @@ export default (
   assert.equal(box.data!.readUInt32BE(16), 435 * 3);
   assert.ok(!phone.assets.some((a) => a.name.includes('@2x')));
   assert.ok(main.assets.some((a) => a.name.includes('@2x')));
-  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-dense-dist-'));
+  const out = tmpDir('iva-dense-dist-');
   assert.deepEqual(writeBuilds([main, phone], out).map((g) => path.relative(out, g).split(path.sep).join('/')), ['T.gui', '1400w1400h/T.gui']);
   await assert.rejects(compile(entry, { size: '1400x1400@9x' }), /size: "1400x1400@9x" isn't one/);
 });
@@ -566,4 +567,16 @@ test("a list's swipe delete and its insert / delete transitions, as iViewer read
   const { xml } = await build(wrap(`<List w={300} h={400} join="rooms" swipeDelete insertTransition="middle" deleteTransition="left"
     item={<Subpage name="Row" w={300} h={50}><Text w={300} h={50} join={1} /></Subpage>} />`));
   assert.match(xml, /<list j="\d+"[^>]* swipedelete="1"[^>]* insertTransition="Middle" deleteTransition="Left"/);
+});
+
+test('style: a page tiles its background image (tile), a text underlines (underline)', async () => {
+  const { xml } = await build(`export default (
+  <Project name="T" width={1024} height={768}>
+    <Page name="Main" bg="#102030" image="dots.png" tile>
+      <Text w={200} h={40} underline>link</Text>
+    </Page>
+  </Project>
+);`, { 'dots.png': circle(8, '#ffffff') });
+  assert.match(xml, /background-image: url\(dots\.png\); background-repeat: repeat;/);
+  assert.match(xml, /text-decoration: underline;/);
 });

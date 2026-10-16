@@ -6,12 +6,13 @@ import path from 'node:path';
 import { compile } from '../src/compiler/index.ts';
 import { layoutGrid } from '../lib/ui/index.tsx';
 import { check } from '../src/check.ts';
+import { tmpDir } from './tmp.ts';
 
 const GALLERY = path.resolve(import.meta.dirname, '../examples/gallery/app.jsx');
 
 test('the iva/ui gallery builds: one runtime script, the shared subpages once', async () => {
   const r = await compile(GALLERY);
-  assert.deepEqual(r.scripts.map((s) => s.name), ['iva-joins.js', 'iva-ui.js', 'iva-http.js', 'plant.js', 'animations.js', 'iva-themes.js', 'iva-start.js']);
+  assert.deepEqual(r.scripts.map((s) => s.name), ['iva-joins.js', 'iva-ui.js', 'iva-http.js', 'net.js', 'lists.js', 'plant.js', 'animations.js', 'gestures.js', 'iva-themes.js', 'iva-start.js']);
   // every script the panel gets is valid JavaScript
   for (const sc of r.scripts) assert.doesNotThrow(() => new Function(sc.code!), sc.name);
   const start = r.scripts.find((s) => s.name === 'iva-start.js')!.code!;
@@ -28,7 +29,7 @@ test('the iva/ui gallery builds: one runtime script, the shared subpages once', 
 });
 
 test('iva/ui props are checked in the editor', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-ui-'));
+  const dir = tmpDir('iva-ui-');
   fs.writeFileSync(path.join(dir, 'app.jsx'), `import { Tile } from 'iva/ui';
 export default (
   <Project name="T" width={1280} height={800}>
@@ -41,7 +42,7 @@ export default (
 });
 
 test('Dial: a track with gestures, arc frames named for the look, a thumb, its setup', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-dial-'));
+  const dir = tmpDir('iva-dial-');
   fs.writeFileSync(path.join(dir, 'app.jsx'), `import { Dial, Knob } from 'iva/ui';
 export default (
   <Project name="T" width={1280} height={800}>
@@ -81,8 +82,8 @@ test('forms, lists, schedule: popups last, list rows defined, icons drawn at the
   const placed = [...forms.matchAll(/<subpage name="([^"]+)" x=/g)].map((m) => m[1]);
   // the select sheets / dropdowns after the page's other subpages (the menu is placed by the Shell at the end too)
   assert.ok(placed.indexOf('ui_select_fan') > placed.indexOf('ui_menu'), placed.join(', '));
-  assert.match(gui, /<subpage name="ui_dl_560_row" w="560"/);
-  assert.doesNotMatch(gui, /<subpage name="ui_dl_560_row" x=/);
+  assert.match(gui, /<subpage name="ui_dl_360_row" w="360"/);
+  assert.doesNotMatch(gui, /<subpage name="ui_dl_360_row" x=/);
   // a list's icons by name (else with their colour, their size): drawn at the size they're shown
   const icon = r.assets.find((a) => /^icons\/lightbulb-\w+-26\.png$/.test(a.name))!;
   assert.equal(icon.data!.readUInt32BE(16), 26);
@@ -94,7 +95,7 @@ test('forms, lists, schedule: popups last, list rows defined, icons drawn at the
 });
 
 test('ColorPicker, TextField, SearchSelect: wheel and marker in a subpage, swatches on the panel\'s web server, inputs', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-ui-'));
+  const dir = tmpDir('iva-ui-');
   fs.writeFileSync(path.join(dir, 'app.jsx'), `import { ColorPicker, TextField, SearchSelect } from 'iva/ui';
 export default (
   <Project name="T" width={1280} height={800}>
@@ -138,7 +139,7 @@ test('pickers: drum lists with their rows, popups last, a popup each for pickers
 });
 
 test('Tables and navigation: row subpages, tone images shipped, setup for each', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-tables-'));
+  const dir = tmpDir('iva-tables-');
   fs.writeFileSync(path.join(dir, 'app.jsx'), `import { DataTable, AlarmTable, AlarmBanner, Breadcrumbs, Loader, Pager } from 'iva/ui';
 export default (
   <Project name="T" width={1280} height={800}>
@@ -177,7 +178,7 @@ export default (
 });
 
 test('DragDrop: targets, then items over them, then the gesture layer over all; its setup', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-dd-'));
+  const dir = tmpDir('iva-dd-');
   fs.writeFileSync(path.join(dir, 'app.jsx'), `import { DragDrop } from 'iva/ui';
 export default (
   <Project name="T" width={1280} height={800}>
@@ -204,7 +205,7 @@ export default (
 });
 
 test('ScrollBox with children: a list whose header subpage they are (no rows to fill, the page\'s own joins); sheets on the page; ScrollArea', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-scroll-'));
+  const dir = tmpDir('iva-scroll-');
   fs.writeFileSync(path.join(dir, 'app.jsx'), `import { ScrollBox, ScrollArea, NavCard, SideMenu, SelectBox, Toggle } from 'iva/ui';
 export default (
   <Project name="T" width={1280} height={800}>
@@ -243,7 +244,7 @@ export default (
 });
 
 test('Screens: a page a tab, named after the section, tabs that flip to the others, content that scrolls if it can', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-screens-'));
+  const dir = tmpDir('iva-screens-');
   fs.writeFileSync(path.join(dir, 'app.jsx'), `import { ui } from 'iva/ui';
 const A = ui.screenArea;
 export default (
@@ -272,7 +273,7 @@ export default (
 });
 
 test('iva/ui at another screen size: the panel is screen() - the header and the side menu fit it', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-ui-size-'));
+  const dir = tmpDir('iva-ui-size-');
   fs.writeFileSync(path.join(dir, 'app.jsx'), `import { Header, SideMenu } from 'iva/ui';
 export default (
   <Project name="T" width={1280} height={800}>

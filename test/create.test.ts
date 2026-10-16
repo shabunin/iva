@@ -5,8 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { create, templates } from '../src/create.ts';
 import { check } from '../src/check.ts';
+import { tmpDir } from './tmp.ts';
 
-const tmp = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'iva-create-')), 'panel');
+const tmp = () => path.join(tmpDir('iva-create-'), 'panel');
 
 for (const template of templates()) {
   test(`template ${template}: created, checks clean, builds`, async () => {

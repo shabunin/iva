@@ -4,12 +4,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { watchInputs } from '../src/server/watch.ts';
+import { tmpDir } from './tmp.ts';
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 test('watchInputs: the files a build read and the assets folder, nothing else', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-watch-'));
-  const shared = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-shared-'));
+  const dir = tmpDir('iva-watch-');
+  const shared = tmpDir('iva-shared-');
   const app = path.join(dir, 'app.jsx');
   const comp = path.join(shared, 'Card.jsx');
   fs.mkdirSync(path.join(dir, 'assets'));

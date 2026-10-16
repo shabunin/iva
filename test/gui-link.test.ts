@@ -7,6 +7,7 @@ import path from 'node:path';
 import { loadRemoteManifest, resolveGuiLink } from '../src/server/project.ts';
 import { loadGUI, openURL } from '../src/runtime/cf/jsapi/utilities.ts';
 import { compile } from '../src/compiler/index.ts';
+import { tmpDir } from './tmp.ts';
 
 const guis = [
   { rel: 'GUILinking/gui-A.gui', name: 'GUILinking/gui-A.gui' },
@@ -26,7 +27,7 @@ test('a GUI link: the project\'s .gui of that name (its own folder first), else 
 });
 
 test('a .gui on a web server: its images and scripts next to it, through the proxy', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-remote-'));
+  const dir = tmpDir('iva-remote-');
   fs.writeFileSync(path.join(dir, 'clock.gui'), `﻿<gui><properties><project>Clock</project></properties>
 <themes><theme type="background" name="bg"><![CDATA[ .bg { background-image: url(face.png); } ]]></theme></themes>
 <scripts><script name="main.js" /><script name="gone.js" /></scripts>
@@ -68,7 +69,7 @@ test('CF.loadGUI, CF.openURL("cf://..."): the host loads it; iViewer 5 profiles 
 });
 
 test('<Button href>: a link, written as GUI Designer does (before flip)', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-href-'));
+  const dir = tmpDir('iva-href-');
   fs.writeFileSync(path.join(dir, 'app.jsx'), `export default (
   <Project name="T" width={1024} height={768}>
     <Page name="Main"><Button w={100} h={40} text="B" href="cf://192.168.0.10:8019/gui-B.gui" /></Page>

@@ -7,12 +7,13 @@ import { decompile } from '../src/decompiler/index.ts';
 import { compareGui } from '../src/decompiler/compare.ts';
 import { compile } from '../src/compiler/index.ts';
 import { findGuis } from '../src/server/project.ts';
+import { tmpDir } from './tmp.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const DEMOS = path.join(ROOT, 'fixtures/DemoUserInterfaces');
 
 async function roundTrip(gui: string) {
-  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-dec-'));
+  const out = tmpDir('iva-dec-');
   try {
     const d = await decompile(gui, out);
     const r = await compile(d.entry);
@@ -30,7 +31,7 @@ test('a hand-written .gui comes back the same', async () => {
 });
 
 test('what iva does not know survives: attributes, elements, sections, number formats', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iva-odd-'));
+  const dir = tmpDir('iva-odd-');
   const gui = fs.readFileSync(path.join(ROOT, 'fixtures/local/echo-system/echo.gui'), 'utf8')
     .replace('<btn j="0" x="80" y="80"', '<btn j="0" x="080" y="80" futureAttr="yes"')
     .replace('t="Big" wrap="False"', 't="Big" wrap="Maybe"')
