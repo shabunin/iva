@@ -69,6 +69,8 @@ export class TokenEngine {
                         const parsed = (ctx as any).parseJoin ? (ctx as any).parseJoin(join) : null;
                         if (parsed) {
                             const raw = joinStore.get(parsed.id, parsed.type);
+                            // a digital join as scripts see it: "1" / "0"
+                            if (typeof raw === 'boolean') return raw ? '1' : '0';
                             if (raw !== undefined) return String(raw);
                         }
                         return ''; 

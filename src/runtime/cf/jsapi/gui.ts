@@ -1,4 +1,5 @@
 import { joinStore } from '../joinStore';
+import { isJoinName } from '../guiIndex';
 import { CFContext, CFCallback } from './types';
 
 /** A join's value as iViewer hands it to scripts: always a string ("1" / "0" for a digital one); null when there's none. */
@@ -7,36 +8,45 @@ export function joinText(raw: unknown): string | null {
     return typeof raw === "boolean" ? (raw ? "1" : "0") : String(raw);
 }
 
+/** what the CF object knows of the GUI (cf.ts): the joins it has, their tags */
+interface GuiAware {
+    GlobalTokensJoin?: string;
+    hasJoin?(join: string): boolean;
+    tagsOf?(join: string): string[];
+    joinsTagged?(tag: string): string[];
+    guiIndex?(): import('../guiIndex').GuiIndex | null;
+}
+
+/**
+ * A join as getJoin / getJoins hand it (CommandFusion's docs): its value
+ * always a string; the global tokens' join an empty one; a join the GUI
+ * hasn't (or a list item it hasn't) a null value and null tokens.
+ */
+function joinInfo(ctx: CFContext, join: string): { value: string | null; tokens: Record<string, string> | null; tags: string[] } {
+    const api = ctx as CFContext & GuiAware;
+    if (join === api.GlobalTokensJoin) return { value: '', tokens: ctx.tokensStore[join] || {}, tags: [] };
+    const parsed = ctx.parseJoin(join);
+    if (!parsed || (api.hasJoin && !api.hasJoin(join))) return { value: null, tokens: null, tags: [] };
+    return { value: joinText(joinStore.get(parsed.id, parsed.type)) ?? '', tokens: ctx.tokensStore[join] || {}, tags: api.tagsOf?.(join) ?? [] };
+}
+
 export function getJoin(
     ctx: CFContext,
     join: string,
     callback?: (join: string, value: string | null, tokens: any, tags: string[]) => void
 ) {
-    const parsed = ctx.parseJoin(join);
-    let val: string | null = null;
-    if (parsed) val = joinText(joinStore.get(parsed.id, parsed.type));
-    const tokens = ctx.tokensStore[join] || {};
-    const tags: string[] = [];
-    if (callback) callback(join, val, tokens, tags);
-    return val;
+    const { value, tokens, tags } = joinInfo(ctx, join);
+    if (callback) callback(join, value, tokens, tags);
+    return value;
 }
 
 export function getJoins(
     ctx: CFContext,
     arrayOfJoins: string[],
-    callback?: (arrayOfJoinValues: Record<string, { value: string | null; tokens: Record<string, string>; tags: string[] }>) => void
+    callback?: (arrayOfJoinValues: Record<string, { value: string | null; tokens: Record<string, string> | null; tags: string[] }>) => void
 ) {
-    const result: Record<string, { value: string | null; tokens: Record<string, string>; tags: string[] }> = {};
-    for (const j of arrayOfJoins) {
-        const parsed = ctx.parseJoin(j);
-        let val: string | null = null;
-        if (parsed) val = joinText(joinStore.get(parsed.id, parsed.type));
-        result[j] = {
-            value: val,
-            tokens: ctx.tokensStore[j] || {},
-            tags: []
-        };
-    }
+    const result: Record<string, { value: string | null; tokens: Record<string, string> | null; tags: string[] }> = {};
+    for (const j of arrayOfJoins) result[j] = joinInfo(ctx, j);
     if (callback) callback(result);
     return result;
 }
@@ -72,15 +82,16 @@ export function setJoin(
 
 export function setJoins(
     ctx: CFContext,
-    joinsArray: { 
-        join: string; 
-        value?: string | number | boolean; 
-        tokens?: Record<string, string | number | boolean>;
+    joinsArray: {
+        join: string;
+        value?: string | number | boolean | null;
+        tokens?: Record<string, string | number | boolean> | null;
     }[],
     sendJoinChangeEvents: boolean = true
 ) {
     joinsArray.forEach(item => {
-        if (item.value !== undefined) {
+        // no value, or null: the join is left as it is (its tokens may still be set)
+        if (item.value !== undefined && item.value !== null) {
             setJoin(ctx, item.join, item.value, sendJoinChangeEvents);
         }
         if (item.tokens) {
@@ -95,11 +106,13 @@ export function setToken(
     ctx: CFContext,
     join: string,
     token: string,
-    value: string
+    value: string | number | boolean
 ) {
     if (!ctx.tokensStore[join]) {
         ctx.tokensStore[join] = {};
     }
+    // a string, gone through what a value does: join references ([@s1]), math ({{ }})
+    value = TokenEngine.replaceTokens(String(value), ctx);
     ctx.tokensStore[join][token] = value;
     const api = ctx as any;
     if (join === api.GlobalTokensJoin && api.persistedTokens?.has(token)) {
@@ -119,11 +132,36 @@ export function getProperties(
 ) {
     const isArray = Array.isArray(joinOrJoinsArray);
     const joins = isArray ? (joinOrJoinsArray as string[]) : [joinOrJoinsArray as string];
-    const result = joins.map(j => ctx.propertiesStore[j] || { join: j });
-    
+    const result = joins.map((j) => propertiesOf(ctx, j));
+
     if (callback) {
         callback(isArray ? result : result[0]);
     }
+}
+
+const PROPERTIES = ['x', 'y', 'w', 'h', 'xrotation', 'yrotation', 'zrotation', 'scale', 'opacity', 'theme'] as const;
+
+/**
+ * An element's properties as getProperties hands them (CommandFusion's
+ * docs): join, x, y, w, h, the rotations, scale, opacity, theme - what it
+ * hasn't null; no such element (or join 0): null. On screen: as it is now;
+ * elsewhere in the GUI: as the GUI places it.
+ */
+function propertiesOf(ctx: CFContext, join: string): Record<string, unknown> | null {
+    const api = ctx as CFContext & GuiAware;
+    if (/^[adsl]0$/.test(join) || (api.hasJoin && !api.hasJoin(join))) return null;
+    const stored = ctx.propertiesStore[join] as Record<string, unknown> | undefined;
+    const index = api.guiIndex?.();
+    const item = /^(l\d+):\d+:([ads]\d+)$/.exec(join);
+    const placed = item ? index?.listItems.get(item[1])?.get(item[2]) : index?.objects.get(join)?.[0];
+    if (!stored && !placed && index) return null;
+    const theme = (ctx.renderer as { themeOf?: Record<string, string> } | null)?.themeOf?.[join];
+    const fallback: Record<string, unknown> = placed
+        ? { x: placed.x, y: placed.y, w: placed.w, h: placed.h, xrotation: 0, yrotation: 0, zrotation: 0, scale: 1, opacity: 1, theme: placed.theme || null }
+        : {};
+    const out: Record<string, unknown> = { ...(stored ?? {}), join };
+    for (const k of PROPERTIES) if (out[k] === undefined) out[k] = k === 'theme' && theme !== undefined ? theme : fallback[k] ?? null;
+    return out;
 }
 
 export function setProperties(
@@ -136,8 +174,14 @@ export function setProperties(
     ...callbackParams: any[]
 ) {
     const changesArray = Array.isArray(changes) ? changes : [changes];
-    
-    changesArray.forEach(change => {
+    // a tag for a join: each join whose objects carry it changes too (what getProperties gives them)
+    const api = ctx as CFContext & GuiAware;
+    const byJoin = changesArray.flatMap((change) =>
+        change && change.join && api.joinsTagged && !isJoinName(change.join)
+            ? api.joinsTagged(change.join).map((join) => ({ ...change, join }))
+            : []);
+
+    [...changesArray, ...byJoin].forEach(change => {
         if (change && change.join) {
             if (!ctx.propertiesStore[change.join]) {
                 const props = {};

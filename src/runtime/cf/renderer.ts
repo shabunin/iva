@@ -1,4 +1,5 @@
 import { Application, Container, Sprite, Text, Graphics, Assets, TextStyle, Color, NineSliceSprite, Rectangle, TilingSprite, type Texture } from 'pixi.js';
+import { ownJoin } from './guiIndex';
 import { Slider, FancyButton, ScrollBox } from '@pixi/ui';
 import { animate, type AnimationPlaybackControlsWithThen } from 'motion';
 import { CFProject, CFNode, CFTheme, CFSubpage } from './parser';
@@ -502,11 +503,37 @@ export class CFRenderer {
     return foundKey || fileName;
   }
 
+  /** an object's tags now: the .gui's as scripts left them, and those they gave its join */
+  private objectTags(join: string, node: CFNode): string[] {
+    const guiTags = (node.attributes?.tags ?? '').split(/[\s,]+/).filter(Boolean);
+    return this.cfApi?.tagsOfObject ? this.cfApi.tagsOfObject(join || null, guiTags) : guiTags;
+  }
+
+  /** The tags of a join's objects on screen changed (CF.addTag / CF.removeTag): what a tag reaches, again. */
+  retag(join: string) {
+    for (const c of this.nodesMap[join] ?? []) {
+      if (c.destroyed) continue;
+      const made = (c as any).cfMade as { node: CFNode } | undefined;
+      const now = new Set(this.objectTags(join, made?.node ?? (c as any).cfNode));
+      for (const [tag, list] of Object.entries(this.tagsMap)) {
+        if (!now.has(tag) && list.includes(c)) this.tagsMap[tag] = list.filter((x) => x !== c);
+      }
+      for (const tag of now) if (!(this.tagsMap[tag] ??= []).includes(c)) this.tagsMap[tag].push(c);
+    }
+  }
+
+  /** A tag taken from every object (CF.removeTag(tag)). */
+  untag(tag: string) {
+    delete this.tagsMap[tag];
+  }
+
   createNode(node: CFNode, listPrefix?: string, listIndex?: number): Container {
     const madeFrom = node;
     node = { ...node }; // clone to avoid mutating original
-    // tags; a theme set at runtime on one of them (or on the join) wins over the .gui's
-    const tags = (node.attributes?.tags ?? '').split(/[\s,]+/).filter(Boolean);
+    // tags: the .gui's, less those scripts took, and those they gave its join (CF.addTag); a theme
+    // set at runtime on one of them (or on the join) wins over the .gui's
+    const own = ownJoin(node);
+    const tags = this.objectTags(own && listPrefix ? `${listPrefix}:${listIndex}:${own}` : own, node);
     for (const tag of tags) if (this.themeOf[tag]) node.t = this.themeOf[tag];
     let registeredJoin: string | null = null;
 

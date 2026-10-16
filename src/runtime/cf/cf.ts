@@ -1,4 +1,5 @@
-import { joinStore } from "./joinStore";
+import { joinStore, normalizeJoinString } from "./joinStore";
+import { indexGui, type GuiIndex, type GuiDescription } from "./guiIndex";
 import { CFRenderer } from "./renderer";
 import { CFCallback, CFContext, Watcher } from "./jsapi/types";
 import { EVENTS, CONSTANTS } from "./jsapi/constants";
@@ -135,7 +136,8 @@ export class CFAPI implements CFContext {
     systems: Record<string, any> = {};
     controlSystems: Record<string, any> = {};
 
-    gui = {
+    /** what CF.getGuiDescription hands (filled in from the GUI loaded) */
+    gui: GuiDescription = {
         name: "",
         url: "",
         portraitSize: { w: 0, h: 0 },
@@ -352,10 +354,11 @@ export class CFAPI implements CFContext {
 
         // Bridge internal joinStore changes to CF API JoinChangeEvent
         joinStore.onAny((id: string, type: string, val: any) => {
-            const j = type + id;
+            // the join as a script names it ("s1"; a list item's "l1:0:s1")
+            const j = normalizeJoinString(type, id);
             const tokens = this.tokensStore[j] || {};
             // a string, as iViewer hands values to scripts ("1" / "0" for a digital join)
-            this.dispatchEvent(this.JoinChangeEvent, j, joinText(val) ?? "", tokens, []);
+            this.dispatchEvent(this.JoinChangeEvent, j, joinText(val) ?? "", tokens, this.tagsOf(j));
         });
     }
 
@@ -464,8 +467,86 @@ export class CFAPI implements CFContext {
         return null;
     }
 
+    // ── what the GUI has: its joins, objects and tags (getJoin's null, tags, getProperties, getGuiDescription) ──
+
+    private indexed: { project: unknown; index: GuiIndex } | null = null;
+
+    /** The GUI's joins and objects; none before a GUI is loaded. */
+    guiIndex(): GuiIndex | null {
+        const project = this.renderer?.project;
+        if (!project) return null;
+        if (this.indexed?.project !== project) this.indexed = { project, index: indexGui(project) };
+        return this.indexed.index;
+    }
+
+    /**
+     * A join the GUI has: an object of it carries the join - a list item's
+     * ("l1:2:s1") if the list has that item and its subpage the join. (No GUI
+     * loaded: any.)
+     */
+    hasJoin(join: string): boolean {
+        const index = this.guiIndex();
+        if (!index) return true;
+        const item = /^(l\d+):(\d+):([ads]\d+)$/.exec(join);
+        if (item) return index.joins.has(item[1]) && Number(item[2]) < (this.listsStore[item[1]]?.length ?? 0) && !!index.listItems.get(item[1])?.has(item[3]);
+        return index.joins.has(join);
+    }
+
+    /** the tags scripts gave (CF.addTag) and took (CF.removeTag), by join; tags taken from every object */
+    private tagEdits = { added: new Map<string, Set<string>>(), removed: new Map<string, Set<string>>(), gone: new Set<string>() };
+
+    /** An object's tags: the GUI's (less those taken), and those scripts gave its join. */
+    tagsOfObject(join: string | null | undefined, guiTags: string[]): string[] {
+        const { added, removed, gone } = this.tagEdits;
+        const out = guiTags.filter((t) => !gone.has(t) && !(join && removed.get(join)?.has(t)));
+        if (join) for (const t of added.get(join) ?? []) if (!out.includes(t)) out.push(t);
+        return out;
+    }
+
+    /** A join's tags, as getJoin hands them: its objects'. */
+    tagsOf(join: string): string[] {
+        const guiTags = [...new Set((this.guiIndex()?.objects.get(join) ?? []).flatMap((o) => o.tags))];
+        return this.tagsOfObject(join, guiTags);
+    }
+
+    /** The joins whose objects carry a tag. */
+    joinsTagged(tag: string): string[] {
+        const joins = new Set<string>([...(this.guiIndex()?.objects.keys() ?? []), ...this.tagEdits.added.keys()]);
+        return [...joins].filter((j) => this.tagsOf(j).includes(tag));
+    }
+
+    /** CF.addTag(join or joins, tag): the objects on them carry it (once, however often added). */
+    addTag = (joins: string | string[], tag: string) => {
+        const { added, removed } = this.tagEdits;
+        for (const join of Array.isArray(joins) ? joins : [joins]) {
+            removed.get(join)?.delete(tag);
+            if (!added.has(join)) added.set(join, new Set());
+            added.get(join)!.add(tag);
+            this.renderer?.retag(join);
+        }
+    };
+
+    /** CF.removeTag(tag): from every object; CF.removeTag(join or joins, tag): from those. */
+    removeTag = (...args: [string] | [string | string[], string]) => {
+        const { added, removed, gone } = this.tagEdits;
+        if (args.length === 1) {
+            const tag = args[0] as string;
+            gone.add(tag);
+            for (const set of added.values()) set.delete(tag);
+            this.renderer?.untag(tag);
+            return;
+        }
+        const [joins, tag] = args;
+        for (const join of Array.isArray(joins) ? joins : [joins]) {
+            added.get(join)?.delete(tag);
+            if (!removed.has(join)) removed.set(join, new Set());
+            removed.get(join)!.add(tag);
+            this.renderer?.retag(join);
+        }
+    };
+
     // DELEGATE GUI FUNCTIONS
-    getJoin = (join: string, callback?: (join: string, value: string | number | null, tokens: any, tags: string[]) => void) => {
+    getJoin = (join: string, callback?: (join: string, value: string | null, tokens: any, tags: string[]) => void) => {
         return guiApi.getJoin(this, join, callback);
     };
 
@@ -477,11 +558,11 @@ export class CFAPI implements CFContext {
         guiApi.setJoin(this, join, value, sendJoinChangeEvent);
     };
 
-    setJoins = (joinsArray: { join: string; value: string | number | boolean }[], sendJoinChangeEvents: boolean = true) => {
+    setJoins = (joinsArray: { join: string; value?: string | number | boolean | null; tokens?: Record<string, string | number | boolean> | null }[], sendJoinChangeEvents: boolean = true) => {
         guiApi.setJoins(this, joinsArray, sendJoinChangeEvents);
     };
 
-    setToken = (join: string, token: string, value: string) => {
+    setToken = (join: string, token: string, value: string | number | boolean) => {
         guiApi.setToken(this, join, token, value);
     };
 
@@ -501,6 +582,8 @@ export class CFAPI implements CFContext {
     };
 
     getGuiDescription = (callback?: CFCallback) => {
+        const description = this.guiIndex()?.description;
+        if (description) this.gui = { ...description, url: this.guiURL };
         guiApi.getGuiDescription(this, callback);
     };
 
