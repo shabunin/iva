@@ -418,6 +418,8 @@ declare module 'iva' {
       name: string;
       /** the page shown at start (default: the first page) */
       start?: boolean;
+      /** how it comes when flipped to (default: at once): fade, moveIn / push / reveal from a side */
+      transition?: Transition;
       tags?: string | string[];
       children?: Child;
   }
@@ -484,10 +486,13 @@ declare module 'iva' {
       /** serial join holding the image file / URL */
       join?: Join;
       clickthrough?: boolean;
-      /** reload a URL every N ms */
+      /** a URL's picture loaded again every N ms while it shows (a camera's snapshots), past any cache */
       refresh?: number;
+      /** Allow Caching off: every load of a URL a download (else it's kept, and shown again from there) */
       noCache?: boolean;
+      /** a spinner while a URL's picture comes */
       downloadIndicator?: boolean;
+      /** a new URL clears the picture at once (else the one there stays till the new one's in) */
       clearOnURLChange?: boolean;
       children?: Child;
   }
@@ -532,6 +537,8 @@ declare module 'iva' {
       /** analog join */
       join?: Join;
   }
+  /** an item coming or going, as a table's rows do; the items after it slide */
+  export type ListTransition = 'fade' | 'left' | 'right' | 'top' | 'bottom' | 'middle' | 'none';
   export interface ListProps extends Geom, Pick<StyleProps, 'bg' | 'theme'>, XmlProp {
       /** list join */
       join?: Join;
@@ -541,7 +548,12 @@ declare module 'iva' {
       header?: string | VNode;
       title?: string | VNode;
       footer?: string | VNode;
+      /** a swipe left on an item shows Delete; tapped, the item goes (in deleteTransition) */
       swipeDelete?: boolean;
+      /** how an item CF.listAdd puts in comes (iViewer's own attribute, not GUI Designer's): default fade */
+      insertTransition?: ListTransition;
+      /** how an item CF.listRemove (or a swipe delete) takes out goes: default fade */
+      deleteTransition?: ListTransition;
       scrollCmd?: string;
       scrollInterval?: number;
       listEndCmd?: string;
@@ -635,10 +647,25 @@ declare module 'iva' {
       };
   }
   /** js code, or set a join: { join: 'd10', value: 1 } ([x], [y] tokens allowed) */
+  /**
+   * What a gesture phase does: a script, or any of - a join set to a value
+   * (its [x] [y] [deltax] [scale] [rotation] [velocity] ... tokens and {{math}}
+   * in), a token set (on `tokenJoin`, else a global one), a command, a macro,
+   * a page flipped to (in `transition`, which also goes for the subpages it
+   * shows or hides), after `delay` ms.
+   */
   export type GestureAction = string | {
       js?: string;
       join?: string | JoinRef;
       value?: string | number;
+      token?: string;
+      tokenJoin?: string | JoinRef;
+      cmd?: string;
+      macro?: string;
+      page?: string;
+      transition?: Transition;
+      /** ms */
+      delay?: number;
   };
   export interface GestureProps extends XmlProp {
       type: 'tap' | 'swipe' | 'pan' | 'press' | 'rotate' | 'pinch';
