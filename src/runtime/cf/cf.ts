@@ -481,8 +481,15 @@ export class CFAPI implements CFContext {
         guiApi.getProperties(this, joinOrJoinsArray, callback);
     };
 
-    setProperties = (changes: any, delay: number, duration: number, curve: string, callback?: CFCallback, ...callbackParams: any[]) => {
-        guiApi.setProperties(this, changes, delay, duration, curve, callback, ...callbackParams);
+    setProperties = (changes: any, ...args: [delay?: number, duration?: number, curve?: string, callback?: CFCallback, ...callbackParams: any[]]) => {
+        // as iViewer: one of these passed as null or undefined (an optional callback handed on with
+        // none) refuses the call - logged, nothing changed
+        const bad = args.slice(0, 4).findIndex((v) => v === null || v === undefined);
+        if (bad >= 0) {
+            this.log(`setProperties(): Invalid parameter ${bad + 2}: null is not allowed`);
+            return;
+        }
+        guiApi.setProperties(this, changes, ...(args as [number, number, string, CFCallback?, ...any[]]));
     };
 
     getGuiDescription = (callback?: CFCallback) => {

@@ -420,3 +420,23 @@ test('UDP: origin 0 is the remote port (GUI Designer), -1 any; Accept Broadcast 
   assert.equal(udps[1].port, 0);
   any.sys.stop();
 });
+
+test("CF.setProperties: a parameter passed as null or undefined (a callback handed on with none) is refused, as iViewer does - logged, nothing changed", () => {
+  const cf = new CFAPI();
+  const logged: string[] = [];
+  cf.log = (m: string) => void logged.push(m);
+  const none: (() => void) | undefined = undefined;
+  const menu = () => cf.propertiesStore.menu;
+  cf.setProperties({ join: 'menu', x: -40 }, 0, 0, 'ANIMATION_CURVE_EASE_OUT', none);
+  assert.deepEqual(logged, ['setProperties(): Invalid parameter 5: null is not allowed']);
+  assert.equal(menu(), undefined);
+  cf.setProperties({ join: 'menu', x: -40 }, null as any, 0.2);
+  assert.equal(logged[1], 'setProperties(): Invalid parameter 2: null is not allowed');
+  // left out: fine
+  cf.setProperties({ join: 'menu', x: -40 });
+  let done = 0;
+  cf.setProperties({ join: 'menu', opacity: 0.5 }, 0, 0, 'ANIMATION_CURVE_LINEAR', () => done++);
+  assert.equal(logged.length, 2);
+  assert.equal(menu().x, -40);
+  assert.equal(menu().opacity, 0.5);
+});
