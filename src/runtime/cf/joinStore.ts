@@ -152,6 +152,21 @@ export class JoinStore {
       // The store is decoupled from the CF API layer intentionally.
   }
 
+  /** the values of the joins whose keys start with `prefix` gone (a list's items past where it changed) */
+  forget(prefix: string) {
+      for (const key of [...this.joins.keys()]) if (key.startsWith(prefix)) this.joins.delete(key);
+  }
+
+  /** each value under another key (`to`: the new one, null: gone) - a list's items moving up or down; nothing fires */
+  rekey(to: (key: string) => string | null) {
+      const moved = new Map<string, JoinValue>();
+      for (const [key, value] of this.joins) {
+          const k = to(key);
+          if (k !== null) moved.set(k, value);
+      }
+      this.joins = moved;
+  }
+
   clear() {
       this.joins.clear();
       this.listeners.clear();

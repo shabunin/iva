@@ -18,7 +18,7 @@ test('text layout: alignment, padding, weight from the device font name, italics
 });
 
 import { crc, crcOf, hash } from '../src/runtime/cf/jsapi/utilities.ts';
-import { listRemove, listUpdate } from '../src/runtime/cf/jsapi/lists.ts';
+import { listAdd, listRemove, listUpdate } from '../src/runtime/cf/jsapi/lists.ts';
 import { getJoin, getJoins } from '../src/runtime/cf/jsapi/gui.ts';
 import { joinStore } from '../src/runtime/cf/joinStore.ts';
 import { TimerClock } from '../src/runtime/cf/timerClock.ts';
@@ -89,4 +89,25 @@ test('timers: an interval after showing, then every interval while shown, repeat
   assert.deepEqual(runs(new TimerClock(1), [[0, true, 0], [100, true, 0], [200, false, 0], [300, true, 0]]), [0, 300]);
   // the join changes the interval: 0 -> 500 starts it
   assert.deepEqual(runs(new TimerClock(0), [[0, true, 0], [100, true, 500], [599, true, 500], [600, true, 500]]), [600]);
+});
+
+test("lists: an item's joins and tokens go with it as items come and go (a toggle the user flipped stays its)", () => {
+  joinStore.clear();
+  const ctx: any = { listsStore: {}, tokensStore: {}, dispatchEvent() {}, TopPosition: 'TOP_POSITION', LastItem: 'LAST_ITEM', AllItems: 'ALL_ITEMS' };
+  listAdd(ctx, 'l7', [{ s1: 'a' }, { s1: 'b' }, { s1: { value: 'c [x]', tokens: { '[x]': '!' } } }]);
+  assert.equal(joinStore.get('l7:2:1', 's'), 'c [x]');
+  assert.deepEqual(ctx.tokensStore['l7:2:s1'], { '[x]': '!' });
+  // the user turns item 2's toggle on
+  joinStore.set('l7:2:5', 'd', true);
+  listRemove(ctx, 'l7', 0, 1);
+  assert.equal(joinStore.get('l7:1:5', 'd'), true);
+  assert.equal(joinStore.has('l7:2:5', 'd'), false);
+  assert.equal(joinStore.get('l7:1:1', 's'), 'c [x]');
+  assert.deepEqual(ctx.tokensStore['l7:1:s1'], { '[x]': '!' });
+  listAdd(ctx, 'l7', [{ s1: 'top' }], ctx.TopPosition);
+  assert.equal(joinStore.get('l7:0:1', 's'), 'top');
+  assert.equal(joinStore.get('l7:2:5', 'd'), true);
+  listRemove(ctx, 'l7');
+  assert.equal(joinStore.has('l7:0:1', 's'), false);
+  assert.deepEqual(Object.keys(ctx.tokensStore), []);
 });
