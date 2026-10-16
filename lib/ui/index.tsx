@@ -2548,7 +2548,8 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
         ))}
         {/* the layer the finger moves on: over everything (items and targets only show) */}
         <Image w={w} h={h} join={area} src={draw.box({ w, h, fill: '#00000000', name: clearOf(w, h) })}>
-          <Gesture type="pan" onBegin={gesture('ddBegin')} onChange={gesture('ddMove')} onEnd={`IvaUI.ddEnd(${JSON.stringify(key)})`} />
+          {/* a pan begins once the finger has moved a little: the item is the one where it touched down */}
+          <Gesture type="pan" onBegin={`IvaUI.ddBegin(${JSON.stringify(key)}, gesture.startx, gesture.starty)`} onChange={gesture('ddMove')} onEnd={`IvaUI.ddEnd(${JSON.stringify(key)})`} />
         </Image>
         {runtime}
         <OnStart js={`IvaUI.dragdrop(${JSON.stringify(key)}, ${o}, function (item, target) { ${onDrop ?? ''} });`}

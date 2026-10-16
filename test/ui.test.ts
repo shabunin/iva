@@ -196,7 +196,7 @@ export default (
   // targets (their buttons), the items' buttons after them, the layer with the pan last
   assert.ok(at(/<btn [^>]*x="20" y="164"/) < at(/<btn [^>]*x="20" y="40"/));
   assert.ok(at(/<btn [^>]*x="20" y="40"/) < at(/<img x="20" y="40" w="800" h="260"[^>]*>[^<]*<gesture [^>]*type="pan"/));
-  assert.match(page, /<action phase="begin" js="IvaUI\.ddBegin\(&quot;audio&quot;, gesture\.x, gesture\.y\)"/);
+  assert.match(page, /<action phase="begin" js="IvaUI\.ddBegin\(&quot;audio&quot;, gesture\.startx, gesture\.starty\)"/);
   const start = r.scripts.find((x) => x.name === 'iva-start.js')!.code!;
   assert.match(start, /IvaUI\.dragdrop\("audio", \{ area: Joins\.s\["ui_dd_audio"\], items: \[\{ id: "tv", join: Joins\.d\["ui_dd_audio_i_tv"\] \}/);
   assert.match(start, /\{ id: "bed", hover: Joins\.d\["ui_dd_audio_t_bed"\], accept: \["radio"\] \}/);
