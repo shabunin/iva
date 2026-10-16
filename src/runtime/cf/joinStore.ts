@@ -18,6 +18,19 @@ export function normalizeJoinString(type: string, id: string): string {
     return type + id;
 }
 
+/**
+ * A digital join's value as iViewer takes it: on if it isn't 0 - a string
+ * first made a number ("1" on, "0" off, "test" 0: off), as CF.setJoin's
+ * docs have it. A web app's or a feedback's "0" turns it off.
+ */
+export function digitalOf(value: JoinValue): boolean {
+  if (typeof value === 'string') {
+    const n = parseFloat(value);
+    return Number.isFinite(n) && n !== 0;
+  }
+  return !!value;
+}
+
 export class JoinStore {
   private joins: Map<string, JoinValue> = new Map();
   private listeners: Map<string, Set<(val: any) => void>> = new Map();
@@ -37,7 +50,7 @@ export class JoinStore {
       
       // Data type safety
       let safeValue = value;
-      if (type === "d") safeValue = !!value;
+      if (type === "d") safeValue = digitalOf(value);
       if (type === "a") safeValue = Number(value) || 0;
       if (type === "s") safeValue = String(value);
 
@@ -61,7 +74,7 @@ export class JoinStore {
       const key = this.getKey(id, type);
 
       let safeValue = value;
-      if (type === "d") safeValue = !!value;
+      if (type === "d") safeValue = digitalOf(value);
       if (type === "a") safeValue = Number(value) || 0;
       if (type === "s") safeValue = String(value);
 

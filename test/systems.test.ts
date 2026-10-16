@@ -458,3 +458,15 @@ test("CF.setProperties: a parameter passed as null or undefined (a callback hand
   assert.equal(menu().x, -40);
   assert.equal(menu().opacity, 0.5);
 });
+
+test("CF.setJoin on a digital join: a string made a number first, as iViewer does - '0' off, '1' on, 'test' off (a web app's panel.set(name, 0) comes as '0')", () => {
+  joinStore.clear();
+  const cf = new CFAPI();
+  const d = () => joinStore.get('7', 'd');
+  const seen: unknown[] = [];
+  for (const v of [1, '0', '1', 'test', '10', false, true, 0, ' 1', '0.0']) {
+    cf.setJoin('d7', v as any);
+    seen.push(d());
+  }
+  assert.deepEqual(seen, [true, false, true, false, true, false, true, false, true, false]);
+});
