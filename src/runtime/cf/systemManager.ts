@@ -508,11 +508,17 @@ export class ControlSystem {
     // ──────────────────────────────────────────────────────────────
 
     private _startTcpServer() {
-        this.tcpServer = net.createServer();
+        const server = net.createServer();
+        this.tcpServer = server;
         const bindPort = this.localPort > 0 ? this.localPort : this.port;
-        this.tcpServer.listen(bindPort, '0.0.0.0');
+        server.listen(bindPort, '0.0.0.0');
 
-        this.tcpServer.on('connection', (clientSocket: ITcpSocket) => {
+        server.on('connection', (clientSocket: ITcpSocket) => {
+            // a server let go (stopped, started again): what it still gets isn't this system's
+            if (this.tcpServer !== server) {
+                clientSocket.destroy();
+                return;
+            }
             // Max Connections (0: any number)
             if (this.maxConnections > 0 && this.tcpClients.length >= this.maxConnections) {
                 clientSocket.destroy();
@@ -556,7 +562,6 @@ export class ControlSystem {
             });
         });
 
-        const server = this.tcpServer;
         server.on('error', (err: any) => {
             console.warn(`[System ${this.name}] server error:`, err?.message ?? err);
             // not listening - its port taken (another app's server, one not let go yet): again in 3 s,

@@ -386,6 +386,24 @@ test('TCP server: its port taken (another app\'s server) - listened on again eve
   }
 });
 
+test('TCP server: one let go (stopped, started again) - a connection it still hands over is turned away', () => {
+  servers.length = 0;
+  const { sys } = gui({ accept: '1', origin: '5000' });
+  sys.start();
+  sys.stop();
+  sys.enabled = true;
+  sys.start();
+  const late = new FakeSocket();
+  servers[0].emit('connection', late);
+  assert.equal(late.destroyed, true);
+  assert.deepEqual(sys.connections, []);
+  const now = new FakeSocket();
+  servers[1].emit('connection', now);
+  assert.equal(now.destroyed, false);
+  assert.deepEqual(sys.connections, ['10.0.0.9:50000']);
+  sys.stop();
+});
+
 test('ConnectionStatusChangeEvent: a watcher of a system (or systems) hears only theirs', () => {
   servers.length = 0;
   const { cf, sys, events } = gui({ accept: '1', origin: '5000' });
