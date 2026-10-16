@@ -922,6 +922,8 @@ export class CFRenderer {
     if (this.currentPageName) {
       joinStore.clearScope(this.currentPageName);
     }
+    // the same page again (the device turned): no flip to animate
+    const again = this.currentPageName === pageName;
     this.currentPageName = pageName;
     this.currentScope = pageName;
     this.nodesMap = {};
@@ -1010,7 +1012,7 @@ export class CFRenderer {
 
     const a = pageObj.attributes ?? {};
     const own: Transition = { type: a.transition, subtype: a.subtype, time: parseFloat(a.time || '0') || 0, ease: a.ease };
-    this.flip(this.currentContainer, newContainer, transition ?? own, pageWidth, pageHeight);
+    this.flip(this.currentContainer, newContainer, again ? {} : transition ?? own, pageWidth, pageHeight);
     this.layoutDebugLabels(newContainer);
     this.currentContainer = newContainer;
   }
