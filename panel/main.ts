@@ -234,6 +234,21 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && Date.now() - checkedAt > 60_000) void checkServer();
 });
 
+/**
+ * Put away and back (Android: the activity's onPause, onResume): the GUI
+ * asleep and awake, as iViewer's - its systems disconnected (Disconnect on
+ * Exit/Sleep), its servers' ports let go. The app tells the page before it
+ * stops its timers: left to learn it's hidden, it may not before Android
+ * freezes the app, whose servers would keep their ports with no one to
+ * answer (iViewer couldn't open its own there).
+ */
+(window as unknown as { ivaPanelSleep: (asleep: boolean) => void }).ivaPanelSleep = (asleep) => {
+  const cf = current?.renderer.cfApi;
+  if (!cf) return;
+  if (asleep) cf.suspend();
+  else cf.resume();
+};
+
 /** the GUI didn't load: again in 5 s - not while the settings are open (the page would go from under the typing) */
 let failed = false;
 let retry = 0;

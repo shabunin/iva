@@ -24,16 +24,27 @@ class MainActivity : TauriActivity() {
     this.webView = webView
   }
 
-  // In the background the GUI sleeps, as iViewer's does: the page learns it's hidden (GUISuspended
-  // - its systems disconnect, its page timers stop), then its scripts' timers stop too.
+  // In the background the GUI sleeps, as iViewer's does: the page is told first (GUISuspended - its
+  // systems disconnect, its servers let their ports go, its page timers stop), then its scripts'
+  // timers stop too. Told, not left to learn it's hidden: it may not before Android freezes the app,
+  // and a frozen app's server keeps its port with no one to answer (iViewer couldn't open its own).
+  private var asleep = false
+
   override fun onPause() {
     super.onPause()
-    webView?.pauseTimers()
+    asleep = true
+    val view = webView ?: return
+    view.evaluateJavascript("window.ivaPanelSleep && window.ivaPanelSleep(true)") {
+      // (back meanwhile: left running)
+      if (asleep) view.pauseTimers()
+    }
   }
 
   override fun onResume() {
     super.onResume()
+    asleep = false
     webView?.resumeTimers()
+    webView?.evaluateJavascript("window.ivaPanelSleep && window.ivaPanelSleep(false)", null)
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
