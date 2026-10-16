@@ -1,9 +1,8 @@
 import { Container, Graphics, Rectangle, Text, TextStyle, type FederatedPointerEvent } from 'pixi.js';
 import { ScrollBox } from '@pixi/ui';
-import { animate } from 'motion';
 import { CFNode, CFSubpage } from '../parser';
 import { joinStore } from '../joinStore';
-import { CFRenderer, animTarget, killTweensOf, trackAnimation } from '../renderer';
+import { CFRenderer, animateFrom, killTweensOf, trackAnimation } from '../renderer';
 import { setItemJoins, type ListChange } from '../jsapi/lists';
 
 /**
@@ -179,7 +178,7 @@ export function renderList(
             if (now === r.pos) continue;
             killTweensOf(r.holder);
             if (animated && !placed.has(r)) {
-                trackAnimation(r.holder, animate(animTarget(r.holder), isVertical ? { y: r.pos } : { x: r.pos }, { duration: ROW_TIME, ease: 'easeInOut' }));
+                trackAnimation(r.holder, animateFrom(r.holder, isVertical ? { y: r.pos } : { x: r.pos }, { duration: ROW_TIME, ease: 'easeInOut' }));
             } else if (isVertical) r.holder.y = r.pos;
             else r.holder.x = r.pos;
         }
@@ -214,7 +213,7 @@ export function renderList(
                 inner.x = mid;
                 inner.scale.x = coming ? 0 : 1;
             }
-            const a = animate(animTarget(inner.scale, inner), isVertical ? { y: coming ? 1 : 0 } : { x: coming ? 1 : 0 }, { duration: ROW_TIME, ease: 'easeInOut' });
+            const a = animateFrom(inner.scale, isVertical ? { y: coming ? 1 : 0 } : { x: coming ? 1 : 0 }, { duration: ROW_TIME, ease: 'easeInOut' }, inner);
             trackAnimation(inner.scale, a).finished.then(finish, finish);
             return;
         }
@@ -226,7 +225,7 @@ export function renderList(
             : { y: isVertical ? size : span };
         const rest = { x: 0, y: 0, alpha: 1 };
         if (coming) Object.assign(inner, rest, away);
-        const a = animate(animTarget(inner), coming ? rest : { ...rest, ...away }, { duration: ROW_TIME, ease: 'easeInOut' });
+        const a = animateFrom(inner, coming ? rest : { ...rest, ...away }, { duration: ROW_TIME, ease: 'easeInOut' });
         trackAnimation(inner, a).finished.then(finish, finish);
     };
 

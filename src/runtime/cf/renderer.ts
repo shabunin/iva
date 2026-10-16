@@ -96,6 +96,19 @@ export function animTarget<T extends object>(target: T, owner: { destroyed?: boo
   return stand as T;
 }
 
+/**
+ * An element's values animated by motion, from what they are now: motion
+ * keeps its own idea of a value it has animated, which a direct write - an
+ * instant CF.setProperties, a transition putting an element where it starts,
+ * a dragged side menu - leaves stale: its next animation of that value would
+ * start from there, or not move at all.
+ */
+export function animateFrom<T extends object>(target: T, to: Record<string, number>, options: Record<string, unknown>, owner?: { destroyed?: boolean }) {
+  const keyframes: Record<string, [number, number]> = {};
+  for (const [k, v] of Object.entries(to)) keyframes[k] = [Number((target as Record<string, unknown>)[k]), v];
+  return animate(animTarget(target, owner) as any, keyframes as any, options as any) as AnimationPlaybackControlsWithThen;
+}
+
 export function trackAnimation<T extends object>(target: T, a: AnimationPlaybackControlsWithThen) {
   activeAnimations.add(a);
   let set = animsByTarget.get(target);
@@ -385,9 +398,9 @@ export class CFRenderer {
 
         if (duration > 0 || delay > 0) {
           if (Object.keys(targetProps).length > 0) {
-            trackAnimation(c, animate(animTarget(c), targetProps, { duration, delay, ease }));
+            trackAnimation(c, animateFrom(c, targetProps, { duration, delay, ease }));
           }
-          if (scaled) trackAnimation(c.scale, animate(animTarget(c.scale, c), { x: to.x, y: to.y }, { duration, delay, ease }));
+          if (scaled) trackAnimation(c.scale, animateFrom(c.scale, { x: to.x, y: to.y }, { duration, delay, ease }, c));
         } else {
           if (targetProps.angle !== undefined) c.angle = targetProps.angle;
           if (targetProps.alpha !== undefined) c.alpha = targetProps.alpha;
@@ -823,7 +836,7 @@ export class CFRenderer {
     const gestureNodes = def.nodes.filter(n => n.type === 'gesture');
     if (gestureNodes.length > 0) {
       const inList = !!listPrefix && listIndex !== undefined && listIndex !== -1;
-      bindGestures(container, gestureNodes, this, { join: join ?? null, list: inList ? listPrefix : null, listIndex: inList ? listIndex : null });
+      bindGestures(container, gestureNodes, this, { join: join ?? null, list: inList ? listPrefix : null, listIndex: inList ? listIndex : null, capture: true });
     }
 
     def.nodes.forEach(n => {
@@ -1001,7 +1014,7 @@ export class CFRenderer {
     const gestureNodes = nodes.filter(n => n.type === 'gesture');
     if (gestureNodes.length > 0) {
       const j = pageObj.attributes?.j;
-      bindGestures(newContainer, gestureNodes, this, { join: j && j !== '0' ? `d${j}` : null });
+      bindGestures(newContainer, gestureNodes, this, { join: j && j !== '0' ? `d${j}` : null, capture: true });
     }
 
     nodes.forEach(n => {
@@ -1061,21 +1074,21 @@ export class CFRenderer {
     const from = { x: side.x * W, y: side.y * H };
     if (type === 'reveal') {
       stage.addChildAt(page, stage.getChildIndex(old));
-      trackAnimation(old, animate(animTarget(old), { x: -from.x, y: -from.y }, opts)).finished.then(done, done);
+      trackAnimation(old, animateFrom(old, { x: -from.x, y: -from.y }, opts)).finished.then(done, done);
       return;
     }
     stage.addChild(page);
     if (type === 'movein' || type === 'push') {
       page.x = from.x;
       page.y = from.y;
-      trackAnimation(page, animate(animTarget(page), { x: 0, y: 0 }, opts));
-      if (type === 'push') trackAnimation(old, animate(animTarget(old), { x: -from.x, y: -from.y }, opts)).finished.then(done, done);
+      trackAnimation(page, animateFrom(page, { x: 0, y: 0 }, opts));
+      if (type === 'push') trackAnimation(old, animateFrom(old, { x: -from.x, y: -from.y }, opts)).finished.then(done, done);
       else setTimeout(done, t.time! * 1000);
       return;
     }
     // fade (and what else a .gui may name)
     page.alpha = 0;
-    trackAnimation(page, animate(animTarget(page), { alpha: 1 }, opts)).finished.then(done, done);
+    trackAnimation(page, animateFrom(page, { alpha: 1 }, opts)).finished.then(done, done);
   }
 
   async start() {

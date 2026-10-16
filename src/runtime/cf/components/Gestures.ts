@@ -134,8 +134,9 @@ export class GestureRecognizer {
         p.x = x;
         p.y = y;
         if (Math.hypot(x - p.sx, y - p.sy) > TAP_SLOP) this.touch.moved = true;
-        this.swipe(t);
+        // a pan begins before a swipe the same move makes (its handler knows a drag goes on)
         this.panMove(t);
+        this.swipe(t);
         this.twoMove(t);
     }
 
@@ -308,6 +309,14 @@ export interface GestureContext {
     join?: string | null;
     list?: string | null;
     listIndex?: number | null;
+    /**
+     * a page's or subpage's: every touch on it, on what's on it too - a list,
+     * a button - as a recognizer on iOS sees all touches in its view (the
+     * list or button still gets it: buttons in lists let go of a press that
+     * moves). An image's: only touches that reach it, and a drag on it is its
+     * own (a dial in a list: the list doesn't scroll).
+     */
+    capture?: boolean;
 }
 
 /** a gesture's [tokens]: [x], [y], [startx] ... [scale], [rotation], [velocity] (numbers to 4 decimals at most) */
@@ -422,8 +431,8 @@ export function bindGestures(container: Container, gestures: CFNode[], renderer?
         }
     };
 
-    container.on('pointerdown', (e: FederatedPointerEvent) => {
-        if (drags) e.stopPropagation();
+    container.on(ctx.capture ? 'pointerdowncapture' : 'pointerdown', (e: FederatedPointerEvent) => {
+        if (drags && !ctx.capture) e.stopPropagation();
         const p = container.toLocal(e.global);
         if (!events) {
             // no DOM to follow it on: what Pixi tells this container

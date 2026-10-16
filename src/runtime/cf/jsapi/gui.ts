@@ -53,23 +53,10 @@ export function setJoin(
     if (parsed) {
         let evaluatedValue = value;
         
-        // iViewer supports token replacement and math expressions in setJoin values
+        // iViewer supports token replacement and math expressions in setJoin values:
+        // tokens ([@a1] -> "18"), then {{ }} (iViewer's math, mathExpr)
         if (typeof evaluatedValue === 'string') {
-            // 1. Replace tokens (e.g. [@a1] -> "18")
             evaluatedValue = TokenEngine.replaceTokens(evaluatedValue, ctx);
-            
-            // 2. Evaluate math expressions {{ ... }}
-            if (evaluatedValue.includes('{{')) {
-                evaluatedValue = evaluatedValue.replace(/{{(.*?)}}/g, (match, expr) => {
-                    try {
-                        const fn = new Function(`return (${expr});`);
-                        return String(fn());
-                    } catch (e) {
-                        console.warn("Failed to evaluate math expression: " + expr, e);
-                        return match;
-                    }
-                });
-            }
         }
 
         if (sendJoinChangeEvent) {
