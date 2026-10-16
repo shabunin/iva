@@ -17,7 +17,7 @@
 import {
   Box, Button as IvaButton, Gesture, Group, Image, Input, List, OnStart, Page, Script, Slider as IvaSlider, Subpage, Text as IvaText, Web, WebApp,
   a, d, draw, drawnFile, drawnFileName, drawnSet, fa, js as jsAction, l, s, screen, variant,
-  type ButtonProps, type Child, type IconRef, type Join, type JoinRef, type TextProps, type VNode,
+  type ButtonProps, type Child, type IconRef, type Join, type JoinRef, type TextProps, type Transition, type VNode,
 } from 'iva';
 import { UI_RUNTIME } from './runtime.js';
 
@@ -406,6 +406,10 @@ export interface ScreensProps {
   shell?: Child;
   /** the pages' background (default: the theme's page colour) */
   bg?: string;
+  /** how the section's first page comes when flipped to (a page transition: { type, from, time, ease }) */
+  transition?: Transition;
+  /** how its other tabs' pages come (default: as the first) */
+  tabTransition?: Transition;
 }
 export interface WeekDaysProps {
   /** analog join: the bitmask (Mon 1, Tue 2, Wed 4 ... Sun 64) */
@@ -1587,14 +1591,14 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
    * (a phone), they get screens of their own; content that goes further down
    * than the screen scrolls, if it can.
    */
-  function Screens({ name, screens, shell, bg = t.page }: ScreensProps): VNode {
+  function Screens({ name, screens, shell, bg = t.page, transition, tabTransition = transition }: ScreensProps): VNode {
     const W = t.panel.width;
     const names = screens.map((sc, i) => (i ? `${name} / ${sc.title}` : name));
     const seg = (W - 32 - 8) / screens.length;
     return (
       <>
         {screens.map((sc, i) => (
-          <Page name={names[i]} bg={bg}>
+          <Page name={names[i]} bg={bg} transition={i ? tabTransition : transition}>
             <Box x={16} y={tabs.y} w={W - 32} h={tabs.h} bg={t.raised} radius={t.radius} />
             {screens.map((tab, k) => (
               <Button x={20 + Math.round(k * seg)} y={tabs.y + 4} w={Math.round((k + 1) * seg) - Math.round(k * seg)} h={tabs.h - 8} text={tab.title}
@@ -2459,8 +2463,9 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
         {back && <Button w={40} h={h} icon={fa('chevron-left', { size: 18 })} feedback="none" page="Return" color={t.accent} />}
         {placed.map((p, i) => (i < placed.length - 1 ? (
           <>
-            <Button x={p.x} w={p.w} h={h} text={p.label} page={p.page} js={p.js} feedback="none" align="left" color={t.accent}
-                    active={{ color: shade(t.accent, 0.4) }} font={font} fontSize={fontSize} />
+            {/* a link: underlined */}
+            <Button x={p.x} w={p.w} h={h} text={p.label} page={p.page} js={p.js} feedback="none" align="left" color={t.accent} underline
+                    active={{ color: shade(t.accent, 0.4), underline: true }} font={font} fontSize={fontSize} />
             <Text x={p.x + p.w + 4} w={18} h={h} text={separator} align="center" color={t.muted} font={font} fontSize={fontSize} />
           </>
         ) : (
