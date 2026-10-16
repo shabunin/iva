@@ -183,22 +183,24 @@ export function runCommand(
         if (!cmdNode.text) return;
     }
 
+    // The system it goes to: the one asked for, else the command's own
+    let targetSysName = systemName || cmdNode.attributes?.system || foundSysName || '';
+    if (targetSysName && targetSysName.includes('(')) {
+        targetSysName = targetSysName.substring(0, targetSysName.indexOf('(')).trim();
+    }
+    // What it sends: its value, tokens ([data], a list's [top] ...) and \x escapes in
+    const value = TokenEngine.replaceTokens(cmdNode.text || '', ctx, { data: data ?? '', ...tokenContext })
+        .replace(/\\x([0-9A-Fa-f]{2})/g, (_: string, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+
     // ── JS handler ────────────────────────────────────────────────
+    // its code run with `system` and `data` (what the command generated);
+    // "Javascript sends command value": the code sends it (or not), not the command
     if (cmdNode.js) {
         try {
-            const rawText = cmdNode.text || '';
-            const resolvedValue = TokenEngine.replaceTokens(rawText, ctx, { 
-                data: data ?? '', 
-                ...tokenContext 
-            });
-            const jsData = cmdNode.attributes?.jsSendsCommand === 'True' ? resolvedValue : (data ?? '');
-
-            const func = new Function('data', `try { ${cmdNode.js} } catch(e) { console.error(e); }`);
-            func.call(window, jsData);
+            new Function('system', 'data', `try { ${cmdNode.js} } catch(e) { console.error(e); }`).call(globalThis, targetSysName, value);
         } catch (e) {
             console.error('Error executing JS for command', command, e);
         }
-        // If jsSendsCommand is True, JS handles the network send
         if (cmdNode.attributes?.jsSendsCommand === 'True') return;
     }
 
@@ -225,23 +227,12 @@ export function runCommand(
     }
 
     // ── Text / network send ───────────────────────────────────────
-    const rawText = cmdNode.text || '';
-    if (!rawText && !(cmdNode.children?.length > 0)) return;
-
-    let msg = TokenEngine.replaceTokens(rawText, ctx, { data: data ?? '' });
-
-    msg = msg.replace(/\\x([0-9A-Fa-f]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
-
-    // Determine target system
-    let targetSysName = systemName || cmdNode.attributes?.system || foundSysName || '';
-
-    if (targetSysName && targetSysName.includes('(')) {
-        targetSysName = targetSysName.substring(0, targetSysName.indexOf('(')).trim();
-    }
+    if (!cmdNode.text && !(cmdNode.children?.length > 0)) return;
 
     const sys = api.controlSystems?.[targetSysName] ?? api.controlSystems?.[''];
     if (sys) {
-        sys.send(msg);
+        // through the system's send handler, in its text encoding
+        sys.deliver(value);
     } else {
         console.warn(`CF.runCommand: No system found for "${targetSysName}", command: "${command}"`);
     }

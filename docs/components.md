@@ -52,6 +52,26 @@ All items take `x`, `y` (default 0), `w`, `h` (required) and `tags`.
 | `<OnStart>` | a generated `iva-start.js` | `js`: code run once the panel has started (all of it in one `CF.modules` setup, each distinct piece once); `joins`: the joins it uses no element does |
 | `<Raw>` | the element as written | `xml`: one .gui element, verbatim (anywhere an item, a system / feedback / macro child, or a project section goes) |
 
+How the runtime runs a system, as CommandFusion's System Properties describe
+it: `alwaysOn` connects at the start and again 3 s after a drop;
+`transitory` connects when a command sends, and closes once nothing's gone
+through for `idleTimeout` ms (0: a second); `dialog` sends one packet at a
+time, the next once the answer (a message, split at the `eom`) is in or
+`dialogTimeout` is up. The `startupCmd` / `startupMacro` run on every
+connect, before what `offlineQueue` held. The connected join is high while
+connected, the disconnected one while not (from the start). `heartbeat`:
+`reply` sends `tx` whenever `rx` comes; `initiate` sends `tx` every 3 s and
+closes (to connect again) after 15 s without `rx`. `ssl`: over TLS
+(self-signed certificates accepted). `protocol="http"`: a command's value is
+the path of a GET on the system (`/transport?action=playpause`; with `ssl`,
+HTTPS), and the answer's body goes to the feedback. `textEncoding` (a name
+as the web's: `utf-8`, `windows-1251`, `koi8-r` ...) is how commands are
+sent and what comes is read; none: a byte a char, but UTF-8 where what
+comes is that, and a command with characters past a byte sent as UTF-8.
+`sendHandler`: what commands send goes to this code (`system`, `data`),
+which `CF.send()`s it (or not) - `CF.send()` never goes through it. UDP:
+`localPort` 0 is the remote's port (-1: any).
+
 ## Style props → themes
 
 `bg`, `image` (+ `slice` for 9-slice), `color`, `font`, `fontStyle`, `fontName`,
