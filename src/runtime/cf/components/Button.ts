@@ -3,7 +3,7 @@ import { placeText, textLayout, underline } from './textStyle';
 import { TokenEngine } from "../tokenEngine";
 import { Button } from '@pixi/ui';
 import { CFNode } from '../parser';
-import { joinStore } from '../joinStore';
+import { joinStore, normalizeJoinString } from '../joinStore';
 import { CFRenderer } from '../renderer';
 
 export function renderButton(
@@ -205,7 +205,14 @@ export function renderButton(
             let rawStr = String(dynamicText);
             // Replace tokens if string contains '['
             if (rawStr.includes('[')) {
-                txtObj.text = TokenEngine.replaceTokens(rawStr, renderer.cfApi as any, { list: (node as any).listJoin, index: (node as any).listIndex });
+                // the button's tokens (its join's, its text join's) first, then the global ones
+                const store = renderer.cfApi?.tokensStore;
+                const textJoin = isActive ? node.active_s : node.inactive_s;
+                const tokens = store && {
+                    ...(node.j && node.j !== '0' ? store[normalizeJoinString('d', node.j)] : undefined),
+                    ...(textJoin && textJoin !== '0' ? store[normalizeJoinString('s', textJoin)] : undefined),
+                };
+                txtObj.text = TokenEngine.replaceTokens(rawStr, renderer.cfApi as any, { list: (node as any).listJoin, index: (node as any).listIndex, tokens });
             } else {
                 txtObj.text = rawStr;
             }

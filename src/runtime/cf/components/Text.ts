@@ -2,7 +2,7 @@ import { Container, Text } from 'pixi.js';
 import { placeText, textLayout, underline } from './textStyle';
 import { TokenEngine } from '../tokenEngine';
 import { CFNode } from '../parser';
-import { joinStore } from '../joinStore';
+import { joinStore, normalizeJoinString } from '../joinStore';
 import { CFRenderer } from '../renderer';
 
 export function renderText(
@@ -24,7 +24,9 @@ export function renderText(
     const reflectState = () => {
         let rawText = (textJoin && joinStore.has(textJoin, "s")) ? String(joinStore.get(textJoin, "s")) : (node.content || "");
         if (rawText.includes('[')) {
-            txtObj.text = TokenEngine.replaceTokens(rawText, renderer.cfApi as any, { list: (node as any).listJoin, index: (node as any).listIndex });
+            // its join's tokens first (a list item's { value, tokens }), then the global ones
+            const tokens = textJoin ? renderer.cfApi?.tokensStore?.[normalizeJoinString('s', textJoin)] : undefined;
+            txtObj.text = TokenEngine.replaceTokens(rawText, renderer.cfApi as any, { list: (node as any).listJoin, index: (node as any).listIndex, tokens });
         } else {
             txtObj.text = rawText;
         }

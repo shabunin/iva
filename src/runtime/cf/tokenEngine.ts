@@ -4,6 +4,8 @@ import { evaluateMath } from './mathExpr';
 
 export interface TokenContext {
     data?: string;
+    /** the object's own tokens (its join's): before the global ones */
+    tokens?: Record<string, string>;
     list?: string;
     index?: number;
     top?: number;
@@ -82,7 +84,12 @@ export class TokenEngine {
                     }
                 }
 
-                // Fallback to Global Tokens
+                // The object's own tokens, then the global ones
+                const own = contextData?.tokens;
+                if (own) {
+                    if (own[match] !== undefined) return own[match];
+                    if (own[tokenContent] !== undefined) return own[tokenContent];
+                }
                 const globalTokens = ctx.tokensStore['e0'];
                 if (globalTokens) {
                     if (globalTokens[match] !== undefined) return globalTokens[match];
