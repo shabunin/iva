@@ -556,8 +556,18 @@ export class ControlSystem {
             });
         });
 
-        this.tcpServer.on('error', (err: any) => {
+        const server = this.tcpServer;
+        server.on('error', (err: any) => {
             console.warn(`[System ${this.name}] server error:`, err?.message ?? err);
+            // not listening - its port taken (another app's server, one not let go yet): again in 3 s,
+            // as Always On tries a connection again
+            if (this.tcpServer !== server || !this.enabled) return;
+            if (err?.syscall !== 'listen' && err?.code !== 'EADDRINUSE') return;
+            this.tcpServer = undefined;
+            clearTimeout(this.retryTimer);
+            this.retryTimer = setTimeout(() => {
+                if (this.enabled && !this.tcpServer) this._startTcpServer();
+            }, 3000);
         });
     }
 

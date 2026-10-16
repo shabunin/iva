@@ -355,6 +355,37 @@ test('TCP server: Max Connections turns the one too many away', () => {
   sys.stop();
 });
 
+test('TCP server: its port taken (another app\'s server) - listened on again every 3 s till it\'s free; not once stopped', () => {
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    servers.length = 0;
+    const { sys } = gui({ accept: '1', origin: '8900' });
+    const taken = () => Object.assign(new Error('Address already in use (os error 98)'), { code: 'EADDRINUSE', syscall: 'listen' });
+    sys.start();
+    servers[0].emit('error', taken());
+    mock.timers.tick(2999);
+    assert.equal(servers.length, 1);
+    mock.timers.tick(1);
+    assert.equal(servers.length, 2, 'tried again');
+    assert.equal(servers[1].port, 8900);
+    servers[1].emit('error', taken());
+    mock.timers.tick(3000);
+    // free now: listening, a connection served
+    servers[2].emit('connection', new FakeSocket());
+    assert.deepEqual(sys.connections, ['10.0.0.9:50000']);
+    sys.stop();
+    // taken, then stopped: left alone
+    sys.enabled = true;
+    sys.start();
+    servers[3].emit('error', taken());
+    sys.stop();
+    mock.timers.tick(10000);
+    assert.equal(servers.length, 4);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
 test('ConnectionStatusChangeEvent: a watcher of a system (or systems) hears only theirs', () => {
   servers.length = 0;
   const { cf, sys, events } = gui({ accept: '1', origin: '5000' });
