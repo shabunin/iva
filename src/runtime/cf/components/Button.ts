@@ -1,5 +1,5 @@
 import { Container, Sprite, Graphics, Text, NineSliceSprite, Assets, type FederatedPointerEvent } from "pixi.js";
-import { placeText, textLayout } from './textStyle';
+import { placeText, textLayout, underline } from './textStyle';
 import { TokenEngine } from "../tokenEngine";
 import { Button } from '@pixi/ui';
 import { CFNode } from '../parser';
@@ -141,6 +141,7 @@ export function renderButton(
     }
     
     btnContainer.addChild(txtObj);
+    if (layout0.underline || layout1.underline) underline(txtObj, btnContainer);
     container.addChild(btnContainer);
 
     const btn = new Button(btnContainer);

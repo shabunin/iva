@@ -1,4 +1,4 @@
-import { Text, TextStyle, type TextStyleOptions } from 'pixi.js';
+import { Text, TextStyle, Graphics, CanvasTextMetrics, type Container, type TextStyleOptions } from 'pixi.js';
 
 /**
  * Text as a theme lays it out (GUI Designer's CSS): font, weight, style,
@@ -10,7 +10,12 @@ export interface TextLayout {
     valign: 'top' | 'middle' | 'bottom';
     /** top, right, bottom, left */
     pad: [number, number, number, number];
+    /** text-decoration: underline */
+    underline: boolean;
 }
+
+/** the styles of themes that underline (text-decoration: underline) */
+const underlined = new WeakSet<TextStyle>();
 
 type Css = Record<string, string> | null | undefined;
 
@@ -69,12 +74,49 @@ export function textLayout(css: Css, w: number, wrap: boolean, align: TextLayout
     };
     const dropShadow = shadowOf(css);
     if (dropShadow) options.dropShadow = dropShadow;
+    const style = new TextStyle(options);
+    const underline = /\bunderline\b/i.test(css?.['text-decoration'] ?? '');
+    if (underline) underlined.add(style);
     return {
-        style: new TextStyle(options),
+        style,
         align: options.align as TextLayout['align'],
         valign: va === 'top' ? 'top' : va === 'bottom' ? 'bottom' : 'middle',
         pad,
+        underline,
     };
+}
+
+/**
+ * A line under each line of `text` in its colour while its style is one
+ * that underlines - drawn again as its text, style or place change (a
+ * button's other state). In `parent`, over the text.
+ */
+export function underline(text: Text, parent: Container) {
+    const line = new Graphics();
+    line.eventMode = 'none';
+    parent.addChildAt(line, parent.getChildIndex(text) + 1);
+    let drawn = '';
+    text.onRender = () => {
+        const on = underlined.has(text.style) && text.visible && !!text.text;
+        const now = on ? `${text.text}|${text.x}|${text.y}|${text.anchor.x}|${text.anchor.y}|${text.style.uid}` : '';
+        if (now === drawn) return;
+        drawn = now;
+        line.clear();
+        if (!on) return;
+        const m = CanvasTextMetrics.measureText(String(text.text), text.style);
+        const size = Number(text.style.fontSize) || 16;
+        const thick = Math.max(1, Math.round(size / 16));
+        const left = text.x - text.anchor.x * m.width;
+        const top = text.y - text.anchor.y * m.height;
+        m.lines.forEach((_, i) => {
+            const w = m.lineWidths[i];
+            const free = m.maxLineWidth - w;
+            const x = left + (text.style.align === 'right' ? free : text.style.align === 'center' ? free / 2 : 0);
+            line.rect(x, top + i * m.lineHeight + m.fontProperties.ascent + Math.max(1, size * 0.08), w, thick);
+        });
+        line.fill({ color: text.style.fill as string });
+    };
+    text.on('destroyed', () => line.destroy());
 }
 
 /** Place `text` in a w x h box as the layout says. */

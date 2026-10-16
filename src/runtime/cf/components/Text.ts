@@ -1,5 +1,5 @@
 import { Container, Text } from 'pixi.js';
-import { placeText, textLayout } from './textStyle';
+import { placeText, textLayout, underline } from './textStyle';
 import { TokenEngine } from '../tokenEngine';
 import { CFNode } from '../parser';
 import { joinStore } from '../joinStore';
@@ -34,6 +34,7 @@ export function renderText(
     placeText(txtObj, layout, node.w, node.h);
 
     container.addChild(txtObj);
+    if (layout.underline) underline(txtObj, container);
     
     if (textJoin) {
         joinStore.on(textJoin, "s", (val) => {

@@ -1,4 +1,4 @@
-import { Application, Container, Sprite, Text, Graphics, Assets, TextStyle, Color, NineSliceSprite, Rectangle, type Texture } from 'pixi.js';
+import { Application, Container, Sprite, Text, Graphics, Assets, TextStyle, Color, NineSliceSprite, Rectangle, TilingSprite, type Texture } from 'pixi.js';
 import { Slider, FancyButton, ScrollBox } from '@pixi/ui';
 import { animate, type AnimationPlaybackControlsWithThen } from 'motion';
 import { CFProject, CFNode, CFTheme, CFSubpage } from './parser';
@@ -369,6 +369,25 @@ export class CFRenderer {
         }
       });
     });
+  }
+
+  /**
+   * A background theme's colour, then its image: stretched over the w x h
+   * (GUI Designer's Tiled off), or at its own size from the top left again
+   * and again (background-repeat: repeat).
+   */
+  themeBackground(container: Container, css: Record<string, string> | undefined, w: number, h: number) {
+    const color = css?.["background-color"];
+    if (color && color.toLowerCase() !== 'transparent') {
+      container.addChild(new Graphics().rect(0, 0, w, h).fill({ color }));
+    }
+    const bgImg = this.getBgImage(css?.["background-image"]);
+    const texture = bgImg ? Assets.get(bgImg) : undefined;
+    if (!texture) return;
+    const sprite = /^repeat\b/i.test(css?.["background-repeat"] ?? '')
+      ? new TilingSprite({ texture, width: w, height: h })
+      : Object.assign(new Sprite(texture), { width: w, height: h });
+    container.addChild(sprite);
   }
 
   /** An object in another theme: made again from its node, in the same place. */
@@ -758,26 +777,7 @@ export class CFRenderer {
     // Theme
     if (def.theme) {
       const theme = this.project.themes[def.theme];
-      if (theme) {
-        const css = theme.states["0"];
-        if (css?.["background-color"]) {
-          const colorStr = css["background-color"];
-          if (colorStr.toLowerCase() !== 'transparent') {
-            const bgGfx = new Graphics();
-            bgGfx.rect(0, 0, def.w, def.h);
-            bgGfx.fill({ color: colorStr });
-            container.addChild(bgGfx);
-          }
-        }
-
-        const bgImg = this.getBgImage(css?.["background-image"]);
-        if (bgImg && Assets.get(bgImg)) {
-          const bgSprite = new Sprite(Assets.get(bgImg));
-          bgSprite.width = def.w;
-          bgSprite.height = def.h;
-          container.addChild(bgSprite);
-        }
-      }
+      if (theme) this.themeBackground(container, theme.states["0"], def.w, def.h);
     }
 
     // Nodes
@@ -948,23 +948,7 @@ export class CFRenderer {
           ? (this.project.properties.landscape?.height || 768)
           : (this.project.properties.portrait?.height || 1024);
 
-        if (css?.["background-color"]) {
-          const colorStr = css["background-color"];
-          if (colorStr.toLowerCase() !== 'transparent') {
-            const bgGfx = new Graphics();
-            bgGfx.rect(0, 0, width, height);
-            bgGfx.fill({ color: colorStr });
-            newContainer.addChild(bgGfx);
-          }
-        }
-
-        const bgImg = this.getBgImage(css?.["background-image"]);
-        if (bgImg && Assets.get(bgImg)) {
-          const bgSprite = new Sprite(Assets.get(bgImg));
-          bgSprite.width = width;
-          bgSprite.height = height;
-          newContainer.addChild(bgSprite);
-        }
+        this.themeBackground(newContainer, css, width, height);
       }
     }
 

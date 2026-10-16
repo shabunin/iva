@@ -551,5 +551,12 @@ export function renderList(
         }
     }
     
+    // its theme's background colour (none without one)
+    const bg = node.t ? renderer.project.themes[node.t]?.states['0']?.['background-color'] : undefined;
+    if (bg && bg.toLowerCase() !== 'transparent') {
+        const back = new Graphics().rect(0, 0, node.w, node.h).fill({ color: bg });
+        back.eventMode = 'none';
+        container.addChild(back);
+    }
     container.addChild(scrollBox);
 }
