@@ -249,7 +249,7 @@ test('Screens: a page a tab, named after the section, tabs that flip to the othe
 const A = ui.screenArea;
 export default (
   <Project name="T" width={1280} height={800}>
-    <ui.Screens name="Lists" shell={<ui.Header title="T" />} screens={[
+    <ui.Screens name="Lists" shell={<ui.Header title="T" />} transition={{ type: 'push', from: 'right', time: 0.3 }} tabTransition={{ type: 'fade', time: 0.15 }} screens={[
       { title: 'Rows', content: <ui.DataList {...A} join="rows" items={[{ title: 'one' }]} /> },
       { title: 'Long', content: <><ui.Toggle y={A.y} label="Lamp" join="lamp" /><ui.Toggle y={1500} label="Fan" join="fan" /></> },
       { title: 'Pages', content: <ui.Pager {...A} join="page"><Group /><Group /></ui.Pager> },
@@ -259,6 +259,8 @@ export default (
 `);
   const r = await compile(path.join(dir, 'app.jsx'));
   assert.deepEqual([...r.xml.matchAll(/<page name="([^"]+)"/g)].map((m) => m[1]), ['Lists', 'Lists / Long', 'Lists / Pages']);
+  // every screen comes as a tab does, the first too: a tab back to it flips with its own transition
+  assert.deepEqual([...r.xml.matchAll(/<page name="[^"]+" [^>]*transition="(\w+)"/g)].map((m) => m[1]), ['fade', 'fade', 'fade']);
   const page = (name: string) => new RegExp(`<page name="${name}"[\\s\\S]*?</page>`).exec(r.xml)![0];
   // the tabs: the others flip to their page (a tap; no swipe - the gestures on a page are its content's)
   assert.match(page('Lists'), /<btn [^>]*flip="None"[^>]*>\s*<inactive s="0">Rows</);

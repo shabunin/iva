@@ -406,9 +406,13 @@ export interface ScreensProps {
   shell?: Child;
   /** the pages' background (default: the theme's page colour) */
   bg?: string;
-  /** how the section's first page comes when flipped to (a page transition: { type, from, time, ease }) */
+  /** how its page comes when flipped to, a section of one screen (a page transition: { type, from, time, ease }); tabTransition's default */
   transition?: Transition;
-  /** how its other tabs' pages come (default: as the first) */
+  /**
+   * with tabs: how each screen's page comes, the first one's too - from a
+   * menu as well (default: transition). iViewer plays a page's own
+   * transition whoever flips to it, a tab or a menu
+   */
   tabTransition?: Transition;
 }
 export interface WeekDaysProps {
@@ -1601,10 +1605,13 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     const W = t.panel.width;
     const names = screens.map((sc, i) => (i ? `${name} / ${sc.title}` : name));
     const seg = (W - 32 - 8) / screens.length;
+    // a page comes with its own transition, whoever flips to it (a button can't give its own): with
+    // tabs the first screen is a tab too - a tab back to it would come in as the section does
+    const own = screens.length > 1 ? tabTransition : transition;
     return (
       <>
         {screens.map((sc, i) => (
-          <Page name={names[i]} bg={bg} transition={i ? tabTransition : transition}>
+          <Page name={names[i]} bg={bg} transition={own}>
             <Box x={16} y={tabs.y} w={W - 32} h={tabs.h} bg={t.raised} radius={t.radius} />
             {screens.map((tab, k) => (
               <Button x={20 + Math.round(k * seg)} y={tabs.y + 4} w={Math.round((k + 1) * seg) - Math.round(k * seg)} h={tabs.h - 8} text={tab.title}
