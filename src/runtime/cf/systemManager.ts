@@ -6,6 +6,7 @@ import { getHost } from '../stdlib/host';
 import { CFAPI } from './cf';
 import { CFNode } from './parser';
 import { TextIn, encodeText } from './textCodec';
+import { evaluateMath } from './mathExpr';
 
 // Track running macro timeouts for CF.stopMacro() support
 const runningMacros: Map<string, ReturnType<typeof setTimeout>[]> = new Map();
@@ -888,12 +889,14 @@ export class ControlSystem {
                 if (isNaN(processedValue as number)) processedValue = 0;
             }
 
+            // iViewer's math, `value` the number captured (value^2 a power, not JS's XOR)
             const transform = item.attributes['transform'];
             if (transform && typeof processedValue === 'number') {
-                const mathExpr = transform.replace(/value/g, processedValue.toString());
                 try {
-                    processedValue = new Function(`return ${mathExpr};`)() as number;
-                } catch (_) {}
+                    processedValue = evaluateMath(transform, { value: processedValue });
+                } catch (e) {
+                    console.warn(`[System ${this.name}] transform "${transform}":`, (e as Error).message);
+                }
             }
 
             // Apply min/max scaling: maps [min, max] range to CommandFusion's 16-bit analog scale [0, 65535]

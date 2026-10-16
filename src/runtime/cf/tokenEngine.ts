@@ -1,5 +1,6 @@
 import { CFContext } from './jsapi/types';
 import { joinStore } from './joinStore';
+import { evaluateMath } from './mathExpr';
 
 export interface TokenContext {
     data?: string;
@@ -11,25 +12,15 @@ export interface TokenContext {
     join?: string;
 }
 
+/** {{ }}: iViewer's math (see mathExpr); one it can't read is 0, as before */
 function evaluateMathExpression(expr: string): number {
-    let jsExpr = expr
-        .replace(/\bmin\b/g, 'Math.min')
-        .replace(/\bmax\b/g, 'Math.max')
-        .replace(/\babs\b/g, 'Math.abs')
-        .replace(/\bround\b/g, 'Math.round')
-        .replace(/\bfloor\b/g, 'Math.floor')
-        .replace(/\bceil\b/g, 'Math.ceil');
-        
-    const cleanExpr = jsExpr.replace(/Math\.(min|max|abs|round|floor|ceil)/g, '');
-    if (/^[0-9+\-*/().,\s]*$/.test(cleanExpr)) {
-        try {
-            const result = new Function(`return (${jsExpr});`)();
-            return typeof result === 'number' && !isNaN(result) ? result : 0;
-        } catch (e) {
-            console.error('Failed to evaluate math expression:', expr, e);
-        }
+    try {
+        const v = evaluateMath(expr);
+        return Number.isFinite(v) ? v : 0;
+    } catch (e) {
+        console.error('Failed to evaluate math expression:', expr, (e as Error).message);
+        return 0;
     }
-    return 0;
 }
 
 export class TokenEngine {
