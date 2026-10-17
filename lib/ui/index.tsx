@@ -210,9 +210,11 @@ export interface SceneBarProps {
   x?: number;
   y?: number;
   w?: number;
-  /** the tiles' height (default 96: two rows of 48, a Segmented's) */
+  /** a tile's height (default 96: two rows of 48, a Segmented's) */
   h?: number;
   gap?: number;
+  /** tiles a row (default: all in one row): more scenes wrap into rows below, a grid */
+  columns?: number;
 }
 export interface DimmerProps {
   label: string;
@@ -1257,18 +1259,22 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     );
   }
 
-  function SceneBar({ scenes, join, value = 0, x = 0, y = 0, w = 742, h = 96, gap = 12 }: SceneBarProps): VNode {
-    const each = (w - gap * (scenes.length - 1)) / scenes.length;
+  function SceneBar({ scenes, join, value = 0, x = 0, y = 0, w = 742, h = 96, gap = 12, columns }: SceneBarProps): VNode {
+    // a grid: `columns` tiles a row (all in one by default), the rows `gap` apart
+    const cols = Math.max(1, Math.min(columns ?? scenes.length, scenes.length));
+    const rows = Math.ceil(scenes.length / cols);
+    const each = (w - gap * (cols - 1)) / cols;
     const tw = Math.round(each);
-    const xs = scenes.map((_, i) => Math.round(i * (each + gap)));
-    const g = oneOf(join, scenes.length, value, undefined, undefined, { xs, w: tw, h, radius: t.radius });
+    const xs = scenes.map((_, i) => Math.round((i % cols) * (each + gap)));
+    const ys = scenes.map((_, i) => Math.floor(i / cols) * (h + gap));
+    const g = oneOf(join, scenes.length, value, undefined, undefined, { xs, ys: rows > 1 ? ys : undefined, w: tw, h, radius: t.radius });
     return (
       <Group x={x} y={y}>
         {/* a tile each (raised), the pill under the one chosen, the buttons transparent over them */}
-        {scenes.map((_, i) => <Box x={xs[i]} w={tw} h={h} bg={t.raised} radius={t.radius} />)}
+        {scenes.map((_, i) => <Box x={xs[i]} y={ys[i]} w={tw} h={h} bg={t.raised} radius={t.radius} />)}
         {g.pill}
         {scenes.map((sc, i) => (
-          <Button x={xs[i]} w={tw} h={h} text={sc.title} join={g.option(i)} feedback="none"
+          <Button x={xs[i]} y={ys[i]} w={tw} h={h} text={sc.title} join={g.option(i)} feedback="none"
                   js={g.pick(i)} cmd={sc.cmd} icon={fa(sc.icon, { size: Math.round(h * 0.28) })} iconAlign="top" font={font} fontSize={19} />
         ))}
         {runtime}

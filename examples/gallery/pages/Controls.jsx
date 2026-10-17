@@ -7,7 +7,8 @@ const L = ui.grid({
   stepper: [416, 260],
   // narrow: the two one under the other
   segmented: [1248, (w) => (w < 900 ? 280 : 170)],
-  scenes: [1248, 184],
+  // a phone: a 3 x 2 grid of tiles
+  scenes: [1248, (w) => (w < 900 ? 292 : 184)],
 }, [['toggle', 'slider', 'stepper'], ['segmented'], ['scenes']]);
 
 const note = (c, x, y, text) => <Text x={x} y={y} w={Math.min(500, c.w - x - 28)} h={24} text={text} color={t.muted} font={t.font} fontSize={16} />;
@@ -18,6 +19,7 @@ const scenes = [
   { icon: 'film', title: 'Movie' },
   { icon: 'music', title: 'Party' },
   { icon: 'right-from-bracket', title: 'Away' },
+  { icon: 'utensils', title: 'Dinner' },
 ];
 
 export default (
@@ -48,8 +50,8 @@ export default (
       </ui.Card>
 
       <ui.Card title="SceneBar" {...L.scenes}>
-        {/* a phone: three, each wide enough for its name */}
-        <ui.SceneBar x={28} y={60} w={L.scenes.w - 56} join="scene" value={1} scenes={narrow ? scenes.slice(0, 3) : scenes} />
+        {/* a phone: a grid of three a row; wide: one row */}
+        <ui.SceneBar x={28} y={60} w={L.scenes.w - 56} join="scene" value={1} scenes={scenes} columns={narrow ? 3 : scenes.length} />
       </ui.Card>
     </ui.ScrollArea>
     <OnStart js={'CF.setJoin(Joins.d.light, 1);'} />

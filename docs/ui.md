@@ -107,7 +107,7 @@ it as a value in min..max.
 | `Slider` | a bar with a label and the value | `label`, `join`, `min`, `max`, `value`, `unit`, `decimals`, `showValue`, `dragCmd` |
 | `Stepper` | − value + | `join`, `value`, `min`, `max`, `step`, `decimals`, `unit` |
 | `Segmented` | one of a few options: transparent buttons over an accent pill that slides to the one chosen (a tap's or the join's value) | `options`, `join` (the index), `value` |
-| `SceneBar` | one of several scenes, icon tiles: the accent pill slides to the one chosen | `scenes: [{ icon, title, cmd }]`, `join`, `value` |
+| `SceneBar` | one of several scenes, icon tiles (a grid with `columns`): the accent pill slides to the one chosen | `scenes: [{ icon, title, cmd }]`, `join`, `value`, `columns` (tiles a row; default all in one), `h` (a tile's), `gap` |
 | `Dimmer` | a light: icon, name, on / off, level | `label`, `icon`, `on`, `level` |
 | `Blinds` | up / stop / down and the position | `label`, `position`, `onOpen` / `onStop` / `onClose` |
 | `Knob` | a knob that turns, tick marks round it (GUI Designer's Dial demo); the value under it; touch / drag it | `join`, `min`, `max`, `value`, `step`, `decimals`, `unit`, `label` / `labelJoin`, `size`, `color`, `pointer`, `sweep` |

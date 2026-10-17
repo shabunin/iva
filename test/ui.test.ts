@@ -459,3 +459,25 @@ export default (
   assert.match(start, /IvaUI\.group\("mode#1", Joins\.a\["mode"\], \[Joins\.d\["ui_mode_0"\], Joins\.d\["ui_mode_1"\]\], 0, undefined, undefined, \{ join: Joins\.s\["ui_mode_pill_1"\]/);
   assert.match(r.xml, new RegExp(`<page name="B"[\\s\\S]*<img x="404" y="304" [^>]*j="${r.joins.serial.ui_mode_pill_1}"`));
 });
+
+test('SceneBar columns: a grid of tiles, rows a gap apart; the pill placed under the one chosen and slid in x and y', async () => {
+  const dir = tmpDir('iva-scenegrid-');
+  fs.writeFileSync(path.join(dir, 'app.jsx'), `import { SceneBar } from 'iva/ui';
+const scenes = ['sun', 'moon', 'film', 'music', 'right-from-bracket', 'utensils'].map((icon, i) => ({ icon, title: 'S' + i }));
+export default (
+  <Project name="T" width={1280} height={800}>
+    <Page name="P"><SceneBar w={742} h={96} columns={3} scenes={scenes} join="scene" value={4} /></Page>
+  </Project>
+);
+`);
+  const r = await compile(path.join(dir, 'app.jsx'));
+  const page = /<page name="P"[\s\S]*?<\/page>/.exec(r.xml)![0];
+  // (742 - 2 * 12) / 3 = 239.33: tiles at 0, 251, 503; the second row 96 + 12 down
+  const tiles = [...page.matchAll(/<img x="(\d+)" y="(\d+)" w="239" h="96" j="0"/g)].map((m) => [Number(m[1]), Number(m[2])]);
+  assert.deepEqual(tiles, [[0, 0], [251, 0], [503, 0], [0, 108], [251, 108], [503, 108]]);
+  assert.match(page, new RegExp(`<img x="251" y="108" w="239" h="96" j="${r.joins.serial.ui_scene_pill_0}" clickthrough="1"`), 'the pill under the fifth');
+  const buttons = [...page.matchAll(/<btn j="\d+" x="(\d+)" y="(\d+)" w="239" h="96"/g)].map((m) => [Number(m[1]), Number(m[2])]);
+  assert.deepEqual(buttons, tiles);
+  assert.match(r.scripts.find((x) => x.name === 'iva-start.js')!.code!, /xs: \[0,251,503,0,251,503\], ys: \[0,0,0,108,108,108\], at: 4, time: 0\.18 \}/);
+  assert.deepEqual(r.warnings, []);
+});
