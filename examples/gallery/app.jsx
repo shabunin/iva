@@ -13,6 +13,7 @@ import DragDrop from './pages/DragDrop.jsx';
 import Animations from './pages/Animations.jsx';
 import Gestures from './pages/Gestures.jsx';
 import Navigation from './pages/Navigation.jsx';
+import Network from './pages/Network.jsx';
 
 export default (
   // built at 1280x800, and for a phone with a 1400x1400 screen: laid out at 467x467 and scaled up 3x by
@@ -34,5 +35,6 @@ export default (
     {Animations}
     {Gestures}
     {Navigation}
+    {Network}
   </Project>
 );

@@ -77,8 +77,8 @@ test('live: the panel\'s log in the console - CF.log, what its servers get and s
   try {
     const script = (await get(s.port, '/iva-live.js')).body;
     assert.doesNotThrow(() => new Function(script));
-    // the gallery's web servers (its web apps', its camera's, its API's), found in the .gui: probed and watched
-    assert.match(script, /var servers = \[\{"name":"IvaWeb","port":8900,"feedback":\["request"\]\},\{"name":"galleryCams","port":8898,"feedback":\["request"\]\},\{"name":"galleryApiServer","port":8899,"feedback":\["request"\]\}\];/);
+    // the gallery's servers (its web apps', its camera's, its API's, the Network page's echo), found in the .gui: probed and watched
+    assert.match(script, /var servers = \[\{"name":"IvaWeb","port":8900,"feedback":\["request"\]\},\{"name":"galleryCams","port":8898,"feedback":\["request"\]\},\{"name":"galleryApiServer","port":8899,"feedback":\["request"\]\},\{"name":"EchoServer","port":8897,"feedback":\["line"\]\}\];/);
     // a fake panel runs it: what it logs and its servers do reaches the console
     const sent: string[] = [];
     const watchers: { event: string; cb: (...a: any[]) => void }[] = [];
@@ -100,7 +100,7 @@ test('live: the panel\'s log in the console - CF.log, what its servers get and s
     watchers.find((w) => w.event === 'page')!.cb('Overview', 'Dials');
     for (let i = 0; i < 50 && !lines.some((l) => /page: Dials/.test(l)); i++) await new Promise((r) => setTimeout(r, 20));
     const panel = lines.filter((l) => l.startsWith('panel '));
-    assert.ok(panel.some((l) => /started: iViewer 5\.0\.7, 3 server/.test(l)), panel.join('\n'));
+    assert.ok(panel.some((l) => /started: iViewer 5\.0\.7, 4 server/.test(l)), panel.join('\n'));
     assert.ok(panel.some((l) => /hello from the panel/.test(l)));
     assert.ok(panel.some((l) => /scripts started/.test(l)));
     assert.ok(panel.some((l) => /IvaWeb got GET \/iva-color\/000000 HTTP\/1\.1/.test(l)));

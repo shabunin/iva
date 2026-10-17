@@ -1,6 +1,6 @@
 // The gallery's own web servers (<HttpServer>): a "camera" - a picture a second, drawn here as SVG - and
 // an API an HTTP system (<System protocol="http">) asks: its command is the path of a GET, the answer's
-// body goes to its feedback.
+// body goes to its feedback. The Network page's CF.request asks it too.
 var GalleryNet = (function () {
   var shots = 0;
   var two = function (n) { return (n < 10 ? '0' : '') + n; };
@@ -33,8 +33,14 @@ var GalleryNet = (function () {
       // a moment, as a camera takes one: the spinner shows while a camera's first picture comes
       setTimeout(function () { res.bytes('image/svg+xml', picture(m[1])); }, 350);
     },
+    /** the API: /now (the time, for the HTTP system), /echo (the request as the server got it) - a Server header on each */
     api: function (req, res) {
-      if (req.path === '/now') return res.text('now=' + new Date().toTimeString().slice(0, 8));
+      var head = { Server: 'iva gallery' };
+      if (req.path === '/now') return res.bytes('text/plain; charset=utf-8', IvaHttp.utf8('now=' + new Date().toTimeString().slice(0, 8)), 200, head);
+      if (req.path === '/echo') {
+        var got = { method: req.method, path: req.path, query: req.query, headers: req.headers };
+        return res.bytes('application/json', IvaHttp.utf8(JSON.stringify(got, null, 1)), 200, head);
+      }
       res.notFound();
     },
   };
