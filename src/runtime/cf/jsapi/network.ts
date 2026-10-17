@@ -24,6 +24,48 @@ export interface CFRequestTlsOptions {
     insecure?: boolean;
 }
 
+/**
+ * A response's headers as a script gets them: by their usual names
+ * ("Server", "Content-Type" - the docs read headers["Server"]), and found
+ * whatever the case asked for (a host may give them in lower case).
+ */
+export function responseHeaders(pairs: Iterable<[string, unknown]>): Record<string, string> {
+    const usual = (k: string) => k.split('-').map((w) => (w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w)).join('-');
+    const out: Record<string, string> = {};
+    for (const [k, v] of pairs) {
+        const name = usual(String(k));
+        const text = Array.isArray(v) ? v.join(', ') : String(v);
+        out[name] = name in out ? `${out[name]}, ${text}` : text;
+    }
+    return new Proxy(out, {
+        get(target, key, receiver) {
+            if (typeof key !== 'string' || key in target) return Reflect.get(target, key, receiver);
+            const found = Object.keys(target).find((k) => k.toLowerCase() === key.toLowerCase());
+            return found === undefined ? undefined : target[found];
+        },
+        has(target, key) {
+            return typeof key === 'string' ? Object.keys(target).some((k) => k.toLowerCase() === key.toLowerCase()) : key in target;
+        },
+    });
+}
+
+/**
+ * CF.request's body and headers: a string body as UTF-8; an object (form
+ * fields) url-encoded, as application/x-www-form-urlencoded (unless the
+ * script set a Content-Type).
+ */
+function requestBody(headers: Record<string, string> | null | undefined, body: unknown): { headers: Record<string, string>; body: string | Uint8Array | null } {
+    const out: Record<string, string> = { ...(headers ?? {}) };
+    if (body === null || body === undefined || body === '') return { headers: out, body: null };
+    if (typeof body === 'object' && !(body instanceof ArrayBuffer) && !ArrayBuffer.isView(body)) {
+        if (!Object.keys(out).some((k) => k.toLowerCase() === 'content-type')) out['Content-Type'] = 'application/x-www-form-urlencoded';
+        return { headers: out, body: new URLSearchParams(Object.entries(body as Record<string, unknown>).map(([k, v]) => [k, String(v)])).toString() };
+    }
+    if (body instanceof ArrayBuffer) return { headers: out, body: new Uint8Array(body) };
+    if (ArrayBuffer.isView(body)) return { headers: out, body: new Uint8Array(body.buffer, body.byteOffset, body.byteLength) };
+    return { headers: out, body: String(body) };
+}
+
 export function request(
     ctx: CFContext,
     url: string,
@@ -33,16 +75,17 @@ export function request(
     callback: CFCallback,
     tlsOptions?: CFRequestTlsOptions | null
 ) {
+    const sent = requestBody(headers, body);
     const doRequest = async () => {
         if (getHost()?.http) {
             try {
                 // Prefer stdlib http (host-backed after installStdlib)
                 const http = (await import('../../stdlib/http')).default;
-                
+
                 const requestOptions: any = {
                     url,
                     method: method || 'GET',
-                    headers: headers || {},
+                    headers: sent.headers,
                 };
 
                 if (tlsOptions) {
@@ -53,7 +96,7 @@ export function request(
                         requestOptions.insecure = tlsOptions.insecure;
                     }
                 }
-                
+
                 const req = http.request(requestOptions, (res) => {
                     const chunks: Uint8Array[] = [];
                     res.on('data', (chunk: Uint8Array) => {
@@ -68,64 +111,36 @@ export function request(
                             offset += c.length;
                         }
                         const text = new TextDecoder().decode(fullBody);
-                        
-                        const resHeaders: any = {};
-                        for (const [k, v] of Object.entries(res.headers)) {
-                            resHeaders[k.toLowerCase()] = v;
-                        }
-                        if (callback) callback((res as any).statusCode || 200, resHeaders, text);
+                        if (callback) callback((res as any).statusCode || 200, responseHeaders(Object.entries(res.headers ?? {})), text);
                     });
                 });
-                
+
                 req.on('error', (err: unknown) => {
                     const detail = (err && ((err as any).message || String(err))) || 'unknown';
                     console.error("Tauri request failed:", detail, err);
-                    if (callback) callback(0, {}, detail || "Request failed");
+                    if (callback) callback(0, responseHeaders([]), detail || "Request failed");
                 });
-                
-                if (body) {
-                    if (typeof body === 'object' && !(body instanceof ArrayBuffer) && !ArrayBuffer.isView(body)) {
-                        const searchParams = new URLSearchParams(body).toString();
-                        if (!requestOptions.headers) requestOptions.headers = {};
-                        requestOptions.headers['Content-Type'] = 'application/x-www-form-urlencoded';
-                        req.write(searchParams);
-                    } else {
-                        req.write(body);
-                    }
-                }
-                
+
+                if (sent.body !== null) req.write(sent.body);
                 req.end();
                 return;
             } catch (e) {
                 console.error("Tauri HTTP request failed, falling back to fetch", e);
             }
         }
-        
+
         // Browser/Mock fallback
-        const opts: RequestInit = {
-            method: method || 'GET',
-        };
-        if (headers) {
-            opts.headers = headers;
-        }
-        if (body) {
-            if (typeof body === 'object') {
-                opts.body = new URLSearchParams(body).toString();
-                if (!opts.headers) opts.headers = {};
-                (opts.headers as any)['Content-Type'] = 'application/x-www-form-urlencoded';
-            } else {
-                opts.body = body;
-            }
-        }
+        const opts: RequestInit = { method: method || 'GET', headers: sent.headers };
+        if (sent.body !== null) opts.body = sent.body as BodyInit;
 
         fetch(url, opts).then(async res => {
             const text = await res.text();
-            const resHeaders: any = {};
-            res.headers.forEach((v, k) => resHeaders[k] = v);
-            if (callback) callback(res.status, resHeaders, text);
+            const pairs: [string, string][] = [];
+            res.headers.forEach((v, k) => pairs.push([k, v]));
+            if (callback) callback(res.status, responseHeaders(pairs), text);
         }).catch(err => {
             console.error(`CF.request failed:`, err);
-            if (callback) callback(0, {}, "Request failed");
+            if (callback) callback(0, responseHeaders([]), "Request failed");
         });
     };
 
