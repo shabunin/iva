@@ -124,6 +124,9 @@ export function setToken(
     if (!ctx.tokensStore[join]) {
         ctx.tokensStore[join] = {};
     }
+    // "[name]" and "name" are one token (GUI Designer writes the brackets, scripts may not): the key already there
+    const other = token.startsWith('[') && token.endsWith(']') ? token.slice(1, -1) : `[${token}]`;
+    if (ctx.tokensStore[join][token] === undefined && ctx.tokensStore[join][other] !== undefined) token = other;
     // a string, gone through what a value does: join references ([@s1]), math ({{ }})
     value = TokenEngine.replaceTokens(String(value), ctx);
     ctx.tokensStore[join][token] = value;
