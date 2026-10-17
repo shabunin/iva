@@ -1,5 +1,6 @@
 import { joinStore, normalizeJoinString } from "./joinStore";
 import { indexGui, type GuiIndex, type GuiDescription } from "./guiIndex";
+import { Mdns } from "./mdns/mdns";
 import { CFRenderer } from "./renderer";
 import { CFCallback, CFContext, Watcher } from "./jsapi/types";
 import { EVENTS, CONSTANTS } from "./jsapi/constants";
@@ -244,6 +245,8 @@ export class CFAPI implements CFContext {
         this.suspended = true;
         this.networkBefore = JSON.stringify(this.networkStatus());
         this.dispatchEvent(this.GUISuspendedEvent);
+        // Bonjour: our services gone from the network while asleep (as iViewer's), lookups paused
+        this.mdns?.suspend();
         if (!this.disconnectOnSuspend) return;
         for (const sys of new Set(Object.values(this.controlSystems))) {
             if (!sys?.enabled) continue;
@@ -265,6 +268,7 @@ export class CFAPI implements CFContext {
         if (!this.suspended) return;
         this.suspended = false;
         this.dispatchEvent(this.GUIResumedEvent);
+        void this.mdns?.resume();
         const sleeping = this.sleeping;
         this.sleeping = [];
         for (const sys of sleeping) {
@@ -383,6 +387,9 @@ export class CFAPI implements CFContext {
      */
     stopSystems() {
         if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.onVisibility);
+        // Bonjour: goodbyes for what's published, lookups ended
+        this.mdns?.dispose();
+        this.mdns = null;
         const seen = new Set<any>();
         for (const name in this.controlSystems) {
             const sys = this.controlSystems[name];
@@ -465,6 +472,21 @@ export class CFAPI implements CFContext {
             return { type: type as any, id };
         }
         return null;
+    }
+
+    private mdns: Mdns | null = null;
+
+    /** Bonjour (CF.startLookup, CF.startPublishing): one engine, made when first used; its doings in CF.log. */
+    bonjour(): Mdns {
+        if (!this.mdns) {
+            this.mdns = new Mdns({
+                network: () => ({ ipv4address: this.ipv4address, ipv4netmask: this.ipv4netmask }),
+                deviceName: () => String(this.device?.name || 'iva panel'),
+                deviceId: () => String(this.device?.uniqueIdentifier || this.device?.uuid || ''),
+                log: (m) => this.log(m),
+            });
+        }
+        return this.mdns;
     }
 
     // ── what the GUI has: its joins, objects and tags (getJoin's null, tags, getProperties, getGuiDescription) ──
@@ -718,7 +740,7 @@ export class CFAPI implements CFContext {
         networkApi.stopLookup(this, serviceType, serviceName);
     };
 
-    startPublishing = (serviceType: string, serviceName: string, port: number, txtData: string, callback?: CFCallback) => {
+    startPublishing = (serviceType: string, serviceName: string | null, port: number, txtData: Record<string, unknown> | null, callback?: CFCallback) => {
         networkApi.startPublishing(this, serviceType, serviceName, port, txtData, callback);
     };
 

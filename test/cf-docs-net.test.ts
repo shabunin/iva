@@ -1,9 +1,9 @@
 /**
  * CommandFusion's JavaScript API docs, the Network page, held up to iva's
  * runtime: CF.request in each of its forms (against a server of the test's
- * own).
+ * own), Bonjour through the CF object.
  */
-import { test, before, after } from 'node:test';
+import { test, before, after, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { once } from 'node:events';
@@ -97,4 +97,86 @@ test('responseHeaders: repeated headers joined; JSON of it lists the usual names
   assert.equal(h['ETAG'], '"x"');
   assert.deepEqual(JSON.parse(JSON.stringify(h)), { 'Set-Cookie': 'a=1, b=2', Etag: '"x"', 'Content-Length': '5' });
   assert.ok('content-length' in h);
+});
+
+test('Bonjour through the CF object: CF.startPublishing / CF.startLookup / CF.stopPublishing with the docs\' callbacks', async () => {
+  mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
+  try {
+    // two CF objects on one pretend network (each its own engine, sockets from it)
+    const { Mdns } = await import('../src/runtime/cf/mdns/mdns.ts');
+    const { EventEmitter } = await import('node:events');
+    const sockets = new Set<any>();
+    class Udp extends EventEmitter {
+      port = 0;
+      joined = false;
+      constructor(public address: string) {
+        super();
+      }
+      bind(port: number, cb?: () => void) {
+        this.port = port;
+        sockets.add(this);
+        queueMicrotask(() => cb?.());
+        return this;
+      }
+      addMembership() {
+        this.joined = true;
+      }
+      send(b: Uint8Array, off: number, len: number, port: number, address: string) {
+        const bytes = b.slice(off, off + len);
+        for (const s of sockets) {
+          if (address === '224.0.0.251' ? s.joined && s.port === port : s.address === address && s.port === port) {
+            queueMicrotask(() => s.emit('message', bytes, { address: this.address, port: this.port }));
+          }
+        }
+      }
+      close() {
+        sockets.delete(this);
+        return this;
+      }
+    }
+    const cfOn = (address: string, name: string) => {
+      const cf = new CFAPI();
+      cf.ipv4address = address;
+      cf.ipv4netmask = '255.255.255.0';
+      cf.device.name = name;
+      (cf as any).mdns = new Mdns({
+        network: () => ({ ipv4address: cf.ipv4address, ipv4netmask: cf.ipv4netmask }),
+        deviceName: () => cf.device.name,
+        deviceId: () => name.replace(/\W/g, ''),
+        createSocket: () => new Udp(address) as any,
+      });
+      return cf;
+    };
+    const settle = async () => {
+      for (let i = 0; i < 20; i++) await Promise.resolve();
+    };
+    const pass = async (ms: number) => {
+      for (let t = 0; t < ms; t += 50) {
+        mock.timers.tick(50);
+        await settle();
+      }
+    };
+    const kitchen = cfOn('10.0.0.3', 'Kitchen panel');
+    const hall = cfOn('10.0.0.2', 'Hall panel');
+    const results: unknown[] = [];
+    kitchen.startPublishing('_touch-remote._tcp.', '', 10211, { DvNm: 'iViewer Remote', txtvers: '1' }, (...a: unknown[]) => results.push(a));
+    await pass(800);
+    assert.deepEqual(results, [['_touch-remote._tcp.', '', 10211, true, null]]);
+    const found: unknown[] = [];
+    hall.startLookup('_touch-remote._tcp.', '', (added: any[], removed: any[], error: string | null) => found.push({ added, removed, error }));
+    await pass(500);
+    assert.deepEqual(found, [{
+      added: [{ name: 'Kitchen panel', type: '_touch-remote._tcp.', addresses: ['10.0.0.3'], hostname: 'iva-kitchenp.local', port: 10211, data: { DvNm: 'iViewer Remote', txtvers: '1' } }],
+      removed: [], error: null,
+    }]);
+    kitchen.stopPublishing('_touch-remote._tcp.', '', 10211);
+    await pass(100);
+    assert.deepEqual(results[1], ['_touch-remote._tcp.', '', 10211, false, null]);
+    assert.deepEqual((found[1] as any).removed, [{ name: 'Kitchen panel', type: '_touch-remote._tcp.' }]);
+    hall.stopLookup('_touch-remote._tcp.', '');
+    hall.stopSystems();
+    kitchen.stopSystems();
+  } finally {
+    mock.timers.reset();
+  }
 });

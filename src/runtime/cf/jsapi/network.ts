@@ -1,4 +1,5 @@
 import { CFContext, CFCallback } from './types';
+import type { Mdns } from '../mdns/mdns';
 import { TokenEngine, TokenContext } from '../tokenEngine';
 import { getHost } from '../../stdlib/host';
 
@@ -264,47 +265,48 @@ export function stopMacro(ctx: CFContext, macroName: string | null) {
     console.warn('CF.stopMacro: use cf.ts stopMacroByName instead');
 }
 
+/** the CF object's Bonjour engine (cf.ts) */
+const bonjourOf = (ctx: CFContext) => (ctx as unknown as { bonjour(): Mdns }).bonjour();
+
+/** CF.startLookup: Bonjour services of a type (and name, if given) - callback(added, removed, error) as they come and go. */
 export function startLookup(
     ctx: CFContext,
     serviceType: string,
     serviceName: string,
     callback?: CFCallback
 ) {
-    console.log(`CF STUB: startLookup(${serviceType}, ${serviceName})`);
-    if (callback) {
-        setTimeout(() => callback([], [], null), 10);
-    }
+    void bonjourOf(ctx).lookup(serviceType, serviceName ?? '', callback ?? (() => {}));
 }
 
+/** CF.stopLookup: every lookup of that type and name ends. */
 export function stopLookup(
     ctx: CFContext,
     serviceType: string,
     serviceName: string
 ) {
-    console.log(`CF STUB: stopLookup(${serviceType}, ${serviceName})`);
+    bonjourOf(ctx).stopLookup(serviceType, serviceName ?? '');
 }
 
+/** CF.startPublishing: a service of ours on Bonjour - callback(type, name, port, published, error). */
 export function startPublishing(
     ctx: CFContext,
     serviceType: string,
-    serviceName: string,
+    serviceName: string | null,
     port: number,
-    txtData: string,
+    txtData: Record<string, unknown> | null,
     callback?: CFCallback
 ) {
-    console.log(`CF STUB: startPublishing(${serviceType}, ${serviceName}, ${port}, ${txtData})`);
-    if (callback) {
-        setTimeout(() => callback(serviceType, serviceName, port, true, null), 10);
-    }
+    void bonjourOf(ctx).publish(serviceType, serviceName, Number(port), txtData, callback);
 }
 
+/** CF.stopPublishing: gone from the network; its callback told once (not published, no error). */
 export function stopPublishing(
     ctx: CFContext,
     serviceType: string,
-    serviceName: string,
+    serviceName: string | null,
     port: number
 ) {
-    console.log(`CF STUB: stopPublishing(${serviceType}, ${serviceName}, ${port})`);
+    bonjourOf(ctx).stopPublishing(serviceType, serviceName, Number(port));
 }
 
 export function setSystemProperties(
