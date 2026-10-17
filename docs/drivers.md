@@ -157,15 +157,22 @@ over ZeroTier for the GUI and the console:
   panel app does send the connection event), node 1 reconnected, and the
   Control page went on working - a level drag's every step and each colour
   pick answered in time.
-- Official iViewer 5.0.7, same phone, same GUI: the controller starts, but
-  its Bonjour reported nothing with the VPN on, and the one commissioning
-  attempt by address failed ("Could not connect to device") because the
-  pool held the first packets 1.5 s for a connection event iViewer never
-  sends for a UDP system (fixed: sent at once). Its UDP retargets in the
-  probe gave no connection event in three loads that night, and persisted
-  tokens were empty at each of those loads (each a new build); the earlier
-  run that night had the retargets working in a few ms. A retry on iViewer
-  with the fix is the open item.
+- Official iViewer 5.0.7 (Android), same phone, same GUI: the controller
+  starts, its Bonjour reported nothing with the VPN on, and no commissioning
+  attempt got a packet onto the network. matter.js's debug log, with the
+  virtual light on this machine as the peer (reached over ZeroTier): on a
+  slot retargeted at runtime the PASE request came back 25 ms later as the
+  slot's own frame, byte for byte, and the controller refused itself; on a
+  slot targeted at the light in the GUI itself (no retarget) the request was
+  answered in 29 ms with a StatusReport InvalidParam by a Matter node that
+  was not the light - the only one on the phone is agapi's controller on
+  port 5540 - so iViewer sends a UDP system's datagrams to the phone's own
+  address rather than the configured host, at least for a host over the VPN.
+  The same with or without `accept`, broadcasts, the offline queue or
+  `localPort` set again; no `ConnectionStatusChangeEvent` for a UDP system
+  either; persisted tokens empty at each load that night (each a new build).
+  iViewer for Android is not the reference (the user's ruling: "full of
+  bugs"); Matter on official iViewer waits for an iPad.
 
 ## Matter: `<Matter>` (iva/drivers/matter)
 
