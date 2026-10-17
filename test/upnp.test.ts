@@ -721,7 +721,7 @@ test('<Upnp ssdp>: another address and port (a test\'s fake on 127.0.0.1), any l
   await assert.rejects(build(wrap(`<Upnp devices={['10.0.0.5:8200/rootDesc.xml']} />`)), /devices: "10\.0\.0\.5:8200\/rootDesc\.xml" isn't a description URL/);
   await assert.rejects(build(wrap(`<Upnp name="a b" />`)), /name "a b"/);
   await assert.rejects(build(`import { Upnp } from 'iva/drivers/nothing';\nexport default <Project name="T" width={400} height={300}><Page name="Main" /></Project>;`),
-    /no module "iva\/drivers\/nothing" \(iva has: iva, iva\/ui, iva\/drivers\/matter, iva\/drivers\/upnp, iva\/jsx-runtime\)/);
+    /no module "iva\/drivers\/nothing" \(iva has: iva, iva\/ui, iva\/drivers\/matter, iva\/drivers\/mqtt, iva\/drivers\/upnp, iva\/jsx-runtime\)/);
 });
 
 test('examples/upnp builds for the tablet and the phone: the driver, the lists with their rows, the now playing card, no warnings', async () => {
