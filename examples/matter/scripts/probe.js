@@ -57,8 +57,6 @@ var MatterProbe = (function () {
     say('Engine', 'Modern JavaScript: ' + (missing.length ? 'Partly (missing ' + missing.join(', ') + ')' : 'Yes (' + Object.keys(checks).length + ' features)'));
     say('Engine', 'Address: ' + (CF.ipv4address || '?') + ' / ' + (CF.ipv4netmask || '?') + ', MAC ' + (CF.MACaddress || '?') + ', IPv6 ' + (CF.ipv6address || 'none'));
     say('Engine', 'Network: ' + (CF.networkType || '?') + (CF.networkSSID ? ' ' + CF.networkSSID : ''));
-    var services = Object.keys(found).length;
-    say('Engine', 'Bonjour: ' + services + ' Matter service(s) so far (the Devices page lists them)');
   }
 
   // ── Web Crypto ─────────────────────────────────────────────────
@@ -306,26 +304,6 @@ var MatterProbe = (function () {
     return ok;
   }
 
-  // ── Bonjour ────────────────────────────────────────────────────
-  // (the driver looks the same types up for the Devices page; this only counts what comes, in the log)
-  var found = {};
-  function lookups() {
-    var types = { '_matter._tcp.': 'operational', '_matterc._udp.': 'commissionable' };
-    Object.keys(types).forEach(function (type) {
-      CF.startLookup(type, '', function (added, removed, error) {
-        if (error) { CF.log('probe Bonjour ' + type + ': error ' + error); return; }
-        (removed || []).forEach(function (s) { delete found[type + s.name]; });
-        (added || []).forEach(function (s) { found[type + s.name] = { kind: types[type], s: s }; });
-        var all = Object.keys(found).map(function (k) {
-          var f = found[k], d = f.s.data || {};
-          var info = Object.keys(d).filter(function (x) { return x; }).map(function (x) { return x + '=' + d[x]; }).join(' ');
-          return f.kind + ' ' + f.s.name + ' at ' + ((f.s.addresses || []).join(',') || f.s.hostname || '?') + ':' + f.s.port + (info ? ' [' + info + ']' : '');
-        });
-        CF.log('probe Bonjour: ' + all.length + ' Matter service(s): ' + all.join('; '));
-      });
-    });
-  }
-
   async function run() {
     if (running) return;
     running = true;
@@ -372,7 +350,6 @@ var MatterProbe = (function () {
         tokensAtStart = tokens || {};
         CF.log('probe tokens at start: ' + JSON.stringify(tokensAtStart).slice(0, 300));
       });
-      lookups();
       // the systems connect a moment after the scripts start (iViewer); the echo path needs both up
       setTimeout(run, 1500);
     },
