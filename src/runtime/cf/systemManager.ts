@@ -4,6 +4,7 @@ import tls from '../stdlib/tls';
 import http from '../stdlib/http';
 import { getHost } from '../stdlib/host';
 import { CFAPI } from './cf';
+import { joinValue } from './jsapi/gui';
 import { CFNode } from './parser';
 import { TextIn, encodeText } from './textCodec';
 import { evaluateMath } from './mathExpr';
@@ -871,10 +872,8 @@ export class ControlSystem {
                     }
                 }
                 
-                const numVal = resolvedVal === '0' ? 0
-                    : (resolvedVal === '1' ? 1
-                    : (isNaN(Number(resolvedVal)) ? resolvedVal : Number(resolvedVal)));
-                this.cfApi.setJoin(resolvedTarget, numVal, true);
+                // a number for a d / a target, the text as written for a serial one
+                this.cfApi.setJoin(resolvedTarget, joinValue(this.cfApi, resolvedTarget, resolvedVal), true);
             }
 
             if (cmdName) {

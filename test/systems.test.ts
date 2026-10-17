@@ -470,3 +470,32 @@ test("CF.setJoin on a digital join: a string made a number first, as iViewer doe
   }
   assert.deepEqual(seen, [true, false, true, false, true, false, true, false, true, false]);
 });
+
+test("a command's target / value and a feedback's onmatch: a serial join gets the text as written ('007', ''), a digital or analog one a number", () => {
+  const { cf, sys } = gui({}, {
+    Zeros: ['Dev', '', { target: 's5', value: '007' }],
+    Blank: ['Dev', '', { target: 's5', value: '' }],
+    Level: ['Dev', '', { target: 'a5', value: '007' }],
+    On: ['Dev', '', { target: 'd5', value: '1' }],
+  });
+  cf.runCommand('', 'Zeros');
+  assert.equal(joinStore.get('5', 's'), '007');
+  cf.runCommand('', 'Blank');
+  assert.equal(joinStore.get('5', 's'), '');
+  cf.runCommand('', 'Level');
+  assert.equal(joinStore.get('5', 'a'), 7);
+  cf.runCommand('', 'On');
+  assert.equal(joinStore.get('5', 'd'), true);
+  (sys as any).feedbackRules = [{ type: 'fb', attributes: { name: 'code', regex: 'CODE=(.*)' }, children: [
+    { type: 'onmatch', attributes: { target: 's6', value: '$1$' }, children: [] },
+    { type: 'onmatch', attributes: { target: 'a6', value: '$1$' }, children: [] },
+    { type: 'onmatch', attributes: { target: 's7', value: 'v$1$' }, children: [] },
+  ] }];
+  (sys as any)._matchFeedbacks('CODE=007');
+  assert.equal(joinStore.get('6', 's'), '007');
+  assert.equal(joinStore.get('6', 'a'), 7);
+  assert.equal(joinStore.get('7', 's'), 'v007');
+  (sys as any)._matchFeedbacks('CODE=');
+  assert.equal(joinStore.get('6', 's'), '');
+  assert.equal(joinStore.get('6', 'a'), 0);
+});

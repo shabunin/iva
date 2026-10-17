@@ -1,6 +1,7 @@
 import { CFContext, CFCallback } from './types';
 import type { Mdns } from '../mdns/mdns';
 import { TokenEngine, TokenContext } from '../tokenEngine';
+import { joinValue } from './gui';
 import { getHost } from '../../stdlib/host';
 
 export function send(
@@ -189,11 +190,9 @@ export function runCommand(
     const nativeTarget = cmdNode.attributes?.target;
     const nativeValue = cmdNode.attributes?.value;
     if (nativeTarget && nativeValue !== undefined) {
-        // Resolve the join type prefix if not already present
+        // its value with tokens in: a number for a d / a target, the text as written for a serial one
         const resolvedNativeValue = TokenEngine.replaceTokens(nativeValue, ctx, tokenContext);
-        const join = /^[ads]/.test(nativeTarget) ? nativeTarget : nativeTarget;
-        const val = resolvedNativeValue === '0' ? 0 : (isNaN(Number(resolvedNativeValue)) ? resolvedNativeValue : Number(resolvedNativeValue));
-        (ctx as any).setJoin(join, val, true);
+        (ctx as any).setJoin(nativeTarget, joinValue(ctx, nativeTarget, resolvedNativeValue), true);
         // If there is also text body, fall through to send it too.
         // If there is NO text body, we're done.
         if (!cmdNode.text) return;

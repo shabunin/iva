@@ -80,6 +80,19 @@ export function setJoin(
     }
 }
 
+/**
+ * A value the GUI writes for a join (a command's target / value, a
+ * feedback's onmatch): a number for a digital or analog join, the text as
+ * written for a serial one - "007" stays "007", "" stays "" (made a number,
+ * they were "7" and "0").
+ */
+export function joinValue(ctx: CFContext, join: string, text: string): string | number {
+    const type = ctx.parseJoin(join)?.type;
+    if (type !== 'd' && type !== 'a') return text;
+    const n = Number(text);
+    return isNaN(n) ? text : n;
+}
+
 export function setJoins(
     ctx: CFContext,
     joinsArray: {
