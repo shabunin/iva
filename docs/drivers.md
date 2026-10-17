@@ -34,13 +34,17 @@ in official iViewer as well as in iva's runtime and the iva panel):
   is a socket: what `CF.send(name, data)` sends goes to `host:port` from
   `localPort`; what comes in (from anyone, with `accept`) goes through its
   feedbacks. To retarget it: `CF.setSystemProperties(name, { enabled: false })`,
-  then `{ address, port, localPort }`, then `{ enabled: true }` - iViewer
-  keeps the old address when only `address` and `port` change. Send at once:
-  iva's runtime queues it till the socket is bound again (`offlineQueue`),
-  iViewer sends no `ConnectionStatusChangeEvent` for a UDP system at all
-  (waiting for one cost matter.js its retries), and the protocol's own
-  retransmissions cover a lost first packet. A pool of systems (`matter0`
-  ... `matter9`) is a pool of peers.
+  then `{ address, port }`, then `{ enabled: true }` - and send at once: the
+  protocol's own retransmissions cover a packet lost while the socket binds
+  again. Official iViewer 5.0.7 (Android) can't do this at all: a UDP
+  system retargeted at runtime hands what it sends back as its own frames
+  and puts nothing on the wire - with or without `accept`, broadcasts, the
+  offline queue or `localPort` set again, and it sends no
+  `ConnectionStatusChangeEvent` for a UDP system either (2026-10-18, a
+  virtual light on the other end saw nothing; the pool names the loop in
+  the log). A system the GUI targets at its peer from the start needs no
+  retarget: that's what a device known by address gets. A pool of systems
+  (`matter0` ... `matter9`) is a pool of peers.
 - **Bytes.** `CF.send`'s string is sent a char a byte; a feedback's match
   comes a char a byte. The systems take `textEncoding="iso-8859-1"` (GUI
   Designer's own option) so nothing is read as UTF-8 either way - iva's
@@ -193,7 +197,7 @@ Props:
 |---|---|
 | `slots` | UDP systems in the pool, a peer each (default 10: `matter0` ... `matter9`) |
 | `port` | the first slot's local port, the next ones following (default 5550) |
-| `devices` | by name: `{ node, cluster, join }` - `node` the id the controller gave the device when commissioning (the status join shows it), `endpoint` (default 1), `cluster` `OnOff` (`join` digital, both ways), `LevelControl` (`join` analog: 0..65535 for 0..254, `moveToLevelWithOnOff`) or `ColorControl` (`hue` and `saturation` analog, 0..65535 for 0..254, `moveToHueAndSaturation`); `address` + `port` where Bonjour can't find the node |
+| `devices` | by name: `{ node, cluster, join }` - `node` the id the controller gave the device when commissioning (the status join shows it), `endpoint` (default 1), `cluster` `OnOff` (`join` digital, both ways), `LevelControl` (`join` analog: 0..65535 for 0..254, `moveToLevelWithOnOff`) or `ColorControl` (`hue` and `saturation` analog, 0..65535 for 0..254, `moveToHueAndSaturation`); `address` + `port` (default 5540) where Bonjour can't find the node - and one of the first slots is targeted at that address in the GUI itself, never retargeted (official iViewer needs that; commissioning by that address goes over it too) |
 | `commission` | `{ code, go, status, address }`: the setup code (serial: 11 digits, 21, or the QR code's `MT:` text), Go (digital, a momentary button), what the controller says (serial), and `address` (serial, optional): where the device is when Bonjour can't find it - `host`, `host:port` or `[v6]:port`. A commissioned device gets the lowest free node id from 1 (so `devices` can name it ahead); "Commissioned: node N" tells which, and its devices are bound at once |
 | `found` | serial join: the devices Bonjour finds, JSON rows `{ name, kind, where, info, slot }` for a `ui.DataTable source` (`kind`: operational, node of ours, commissionable) |
 | `label` | the controller's name in the devices' fabrics (default `iva`) |
@@ -202,8 +206,9 @@ Props:
 | `store` | `{ prefix, chunks, size }` of the persisted tokens (default `matter_store_`, 8, 32768) |
 | `textEncoding` | the systems' (default `iso-8859-1`; `''` for none) |
 
-What it emits: the systems (`host="127.0.0.2" port={5540}` till assigned,
-`localPort` the slot's, `accept`, `offlineQueue`, the `frame` feedback), the
+What it emits: the systems (plain UDP clients: `host="127.0.0.2" port={5540}`
+till assigned, or a device's address, `localPort` the slot's, no `accept`,
+broadcasts or offline queue, the `frame` feedback), the
 tokens, `iva-matter.js` (once), and one `OnStart` line
 `IvaMatter.start({...})` with the devices' joins as `Joins.*` references.
 On the panel: `IvaMatter.driver` (the `MatterDriver`), `IvaMatter.commission(code, address?)`.
