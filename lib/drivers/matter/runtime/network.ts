@@ -54,10 +54,13 @@ export class CfUdpSocket implements UdpSocket {
   async close(): Promise<void> {}
 }
 
-/** a MAC as GeneralDiagnostics wants one (six bytes): CF's when it's one, else made from the address (locally administered) */
+/**
+ * a MAC as GeneralDiagnostics wants one (six bytes): CF's when it's one (Android gives 02:00:00:00:00:00 -
+ * nothing - and iViewer 00:...), else made from the address (locally administered)
+ */
 export function macOf(cf: CF): string {
   const mac = (cf.MACaddress ?? '').trim().toLowerCase();
-  if (/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(mac) && mac !== '00:00:00:00:00:00') return mac;
+  if (/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(mac) && !/^0[02](:00){5}$/.test(mac)) return mac;
   const seed = `${cf.ipv4address}|${cf.device?.name ?? ''}`;
   let h1 = 0x811c9dc5;
   let h2 = 0x9e3779b9;

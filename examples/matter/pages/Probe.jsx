@@ -46,6 +46,7 @@ const setup = (
     <Token name="probe16k" persist />
     <Token name="probe64k" persist />
     <Token name="probeJson" persist />
+    <Token name="probeNoBr" persist />
     <Script src="../scripts/probe.js" />
     <Script name="probe-big.js" code={bigScript} />
     <OnStart js="MatterProbe.start();" joins={[s('probeEngine'), s('probeCrypto'), s('probeUDP'), s('probeTokens'), s('probeScript'), s('probeSummary')]} />
@@ -56,8 +57,8 @@ const L = ui.grid({
   summary: [1248, 110],
   engine: [600, 190],
   crypto: [632, 320],
-  udp: [600, 300],
-  tokens: [632, 170],
+  udp: [600, 340],
+  tokens: [632, 230],
 }, [['summary'], ['engine', 'crypto'], ['udp', 'tokens']]);
 
 export default (
