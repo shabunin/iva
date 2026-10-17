@@ -1355,8 +1355,11 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
       <Group x={x} y={y}>
         <Knob join={setpoint} value={value} min={min} max={max} step={step} decimals={1} unit={unit} size={size}
               label={current !== undefined ? `Now ${current}` : undefined} labelJoin={currentJoin} />
-        <Button x={Math.round(size / 2 - b * 2.2)} y={row} {...btn} icon={fa('minus', { size: Math.round(b * 0.4) })} js={`IvaUI.dialStep(${id}, -1)`} />
-        <Button x={Math.round(size / 2 + b * 1.2)} y={row} {...btn} icon={fa('plus', { size: Math.round(b * 0.4) })} js={`IvaUI.dialStep(${id}, 1)`} />
+        {/* a tap: a step; held: a step every 120 ms after the first 400 */}
+        <Button x={Math.round(size / 2 - b * 2.2)} y={row} {...btn} icon={fa('minus', { size: Math.round(b * 0.4) })}
+                onPress={[jsAction(`IvaUI.dialStep(${id}, -1)`), jsAction(`IvaUI.dialStep(${id}, -1)`, { delay: 400, repeat: 120 })]} />
+        <Button x={Math.round(size / 2 + b * 1.2)} y={row} {...btn} icon={fa('plus', { size: Math.round(b * 0.4) })}
+                onPress={[jsAction(`IvaUI.dialStep(${id}, 1)`), jsAction(`IvaUI.dialStep(${id}, 1)`, { delay: 400, repeat: 120 })]} />
         {modes && mode !== undefined && <Segmented x={Math.round((size - segW) / 2)} y={size + 72} w={segW} h={44} options={modes} join={mode} value={modeValue} />}
       </Group>
     );
