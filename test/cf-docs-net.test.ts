@@ -10,6 +10,7 @@ import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import { CFAPI } from '../src/runtime/cf/cf.ts';
 import { responseHeaders } from '../src/runtime/cf/jsapi/network.ts';
+import { runGui } from './gui-runtime.ts';
 
 (globalThis as any).window ??= { devicePixelRatio: 1 };
 
@@ -179,4 +180,25 @@ test('Bonjour through the CF object: CF.startPublishing / CF.startLookup / CF.st
   } finally {
     mock.timers.reset();
   }
+});
+
+test("CF.systems: each of the GUI's systems as the docs have it, kept up to date - setSystemProperties, connections coming and going", async () => {
+  const { CF } = await runGui('<page name="P" j="0" transition="" subtype="" time="0" ease="" start="1"><portrait /><landscape /></page>', {
+    systems: `<system name="Media" ip="192.168.0.7" port="12655" origin="0" protocol="tcp" alwayson="1" offlinequeue="1" accept="0" acceptBroadcasts="0" ssl="0" maxconnections="0" heartbeatRx="" heartbeatTx="" heartbeatMode="-1" eom="" connectionStatus="100" disconnectionStatus="0" startupCmd="" startupMacro="" textEncoding="" js="" />
+              <system name="Web" ip="http://www.mycompany.com" port="80" origin="0" protocol="http" alwayson="1" offlinequeue="1" accept="0" acceptBroadcasts="0" ssl="0" maxconnections="0" heartbeatRx="" heartbeatTx="" heartbeatMode="-1" eom="" connectionStatus="0" disconnectionStatus="0" startupCmd="" startupMacro="" textEncoding="" js="" />`,
+  });
+  const media = CF.systems['Media'];
+  assert.deepEqual(JSON.parse(JSON.stringify(media)),
+    { type: 'tcp', enabled: true, address: '192.168.0.7', port: 12655, localPort: 0, connect: 'd100', disconnect: '', connections: [] });
+  assert.equal(CF.systems['Web'].type, 'http');
+  // the docs' example: a generic script checks a system is there
+  assert.equal(CF.systems['XBMC'], undefined);
+  CF.setSystemProperties('Media', { enabled: false, address: '192.168.0.8', port: 12656 });
+  assert.deepEqual([media.enabled, media.address, media.port], [false, '192.168.0.8', 12656]);
+  // a connection: there, then gone (the system's list replaced as it changes)
+  const sys = CF.controlSystems['Media'];
+  sys.connections = ['192.168.0.8:12656'];
+  assert.deepEqual(CF.systems['Media'].connections, ['192.168.0.8:12656']);
+  sys.connections = [];
+  assert.deepEqual(CF.systems['Media'].connections, []);
 });

@@ -344,17 +344,7 @@ export function setSystemProperties(
             sys.start();
         }
 
-        // Update public dictionary
-        const pubSys = api.systems?.[systemName];
-        if (pubSys) {
-            if (changes.address !== undefined) pubSys.address = changes.address;
-            if (changes.port !== undefined) pubSys.port = changes.port;
-            if (changes.localPort !== undefined) pubSys.localPort = changes.localPort;
-            if (changes.enabled !== undefined) pubSys.enabled = changes.enabled;
-            if (changes.connect !== undefined) pubSys.connect = changes.connect;
-            if (changes.disconnect !== undefined) pubSys.disconnect = changes.disconnect;
-        }
-
+        // (CF.systems reads the system as it is now: nothing to copy)
     } else {
         console.warn(`CF.setSystemProperties: System "${systemName}" not found.`);
     }

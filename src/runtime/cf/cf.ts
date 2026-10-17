@@ -333,20 +333,20 @@ export class CFAPI implements CFContext {
                 else if (sys.type === 'http') sysType = 'http';
                 else sysType = 'tcp';
 
-                // Per docs: connect/disconnect are full join strings (e.g. "d100")
-                const connectStr = sys.connectJoin ? ('d' + sys.connectJoin) : '';
-                const disconnectStr = sys.disconnectJoin ? ('d' + sys.disconnectJoin) : '';
-
-                this.systems[sys.name] = {
-                    type: sysType,
-                    enabled: sys.enabled,
-                    address: sys.address,
-                    port: sys.port,
-                    localPort: sys.localPort,
-                    connect: connectStr,
-                    disconnect: disconnectStr,
-                    connections: sys.connections  // live reference — updates as connections change
-                };
+                // as the docs have it - kept up to date: each a getter on the system as it is now
+                // (CF.setSystemProperties, its connections coming and going); connect / disconnect
+                // full join strings ("d100"), "" for none
+                const entry: Record<string, unknown> = {};
+                const live = (key: string, get: () => unknown) => Object.defineProperty(entry, key, { get, enumerable: true });
+                live('type', () => sysType);
+                live('enabled', () => !!sys.enabled);
+                live('address', () => sys.address);
+                live('port', () => sys.port);
+                live('localPort', () => sys.localPort);
+                live('connect', () => (sys.connectJoin ? 'd' + sys.connectJoin : ''));
+                live('disconnect', () => (sys.disconnectJoin ? 'd' + sys.disconnectJoin : ''));
+                live('connections', () => [...(sys.connections ?? [])]);
+                this.systems[sys.name] = entry;
 
                 // Alias empty string for Loopback / main CF system
                 if (sys.name.toLowerCase() === 'loopback' || sys.name === '') {

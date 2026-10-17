@@ -39,8 +39,8 @@ g.CanvasRenderingContext2D ??= class {};
 g.requestAnimationFrame ??= (fn: (t: number) => void) => setTimeout(() => fn(performance.now()), 16).unref() as unknown as number;
 g.cancelAnimationFrame ??= (id: number) => clearTimeout(id);
 
-/** The GUI's pages in a 400 x 300 landscape (properties, themes, systems as given): its CF, its renderer, on its start page. */
-export async function runGui(body: string, { tokens = '', themes = '' } = {}) {
+/** The GUI's pages in a 400 x 300 landscape (its tokens, themes and systems as given - the systems not started): its CF, its renderer, on its start page. */
+export async function runGui(body: string, { tokens = '', themes = '', systems = '' } = {}) {
   const { parseGUI } = await import('../src/runtime/cf/parser.ts');
   const { CFRenderer } = await import('../src/runtime/cf/renderer.ts');
   const { CFAPI } = await import('../src/runtime/cf/cf.ts');
@@ -49,7 +49,7 @@ export async function runGui(body: string, { tokens = '', themes = '' } = {}) {
   <properties><project>T</project><designer>iva</designer>
     <size autoposition="scale"><portrait width="400" height="300" /><landscape width="400" height="300" /></size>
     <imagefolder></imagefolder><debug loaderrors="0" connectionerrors="0" /></properties>
-  <systems />
+  <systems>${systems}</systems>
   <themes>
     <theme type="text" name=".t"><![CDATA[color: #FFFFFF; font-size: 14px; font-family: 'Arial';]]></theme>
     <theme type="button" name=".b[state='0']"><![CDATA[background-color: #333333;]]></theme>
