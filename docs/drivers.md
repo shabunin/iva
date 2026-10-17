@@ -35,9 +35,11 @@ in official iViewer as well as in iva's runtime and the iva panel):
   `localPort`; what comes in (from anyone, with `accept`) goes through its
   feedbacks. To retarget it: `CF.setSystemProperties(name, { enabled: false })`,
   then `{ address, port, localPort }`, then `{ enabled: true }` - iViewer
-  keeps the old address when only `address` and `port` change - and wait for
-  its `ConnectionStatusChangeEvent` before sending (up to 1.5 s;
-  `offlineQueue` keeps what's sent meanwhile). A pool of systems (`matter0`
+  keeps the old address when only `address` and `port` change. Send at once:
+  iva's runtime queues it till the socket is bound again (`offlineQueue`),
+  iViewer sends no `ConnectionStatusChangeEvent` for a UDP system at all
+  (waiting for one cost matter.js its retries), and the protocol's own
+  retransmissions cover a lost first packet. A pool of systems (`matter0`
   ... `matter9`) is a pool of peers.
 - **Bytes.** `CF.send`'s string is sent a char a byte; a feedback's match
   comes a char a byte. The systems take `textEncoding="iso-8859-1"` (GUI
@@ -51,6 +53,11 @@ in official iViewer as well as in iva's runtime and the iva panel):
 - **DNS-SD.** `CF.startLookup(type, '', callback(added, removed, error))`
   finds services of a type (`_matter._tcp.`) with their addresses, port and
   TXT data; `CF.stopLookup(type, '')` ends it. No multicast socket needed.
+  One lookup a type: iViewer answers a second one with the error
+  "already active" and tells it nothing (so nothing else in the GUI looks
+  the driver's types up). On the iva panel app a found service comes with
+  all its addresses, IPv4 first; on iViewer (Android's NSD) a Matter device
+  on the same Wi-Fi was not reported at all with a VPN on (2026-10-18).
 - **Storage.** `<Token name persist />`: a global token kept between runs,
   `CF.setToken(CF.GlobalTokensJoin, '[name]', value)` /
   `CF.getJoin(CF.GlobalTokensJoin, function (j, v, tokens) {...})`. A value
@@ -121,6 +128,35 @@ runtime's text fitting (a value too long for a texture, cut to its box) and
 bracket-less token names came the same day. On official
 iViewer the driver's needs are all met, if persisted tokens turn out to be
 kept across app restarts (the probe's "At start" line tells).
+
+## The first real device (2026-10-18)
+
+A Nanoleaf light (Matter over Wi-Fi, already in agapi's fabric; agapi's
+"Enhanced (new code)" opened a commissioning window with a fresh code), the
+iva panel app on the Titan 2 with ZeroTier on, this machine's `iva serve`
+over ZeroTier for the GUI and the console:
+
+- The Devices page listed it within seconds: commissionable (CM=2, its
+  discriminator) at 192.168.2.2 - and four operational names at the same
+  address (the fabrics it is in), plus the virtual light on this machine
+  over ZeroTier. The panel app's own mDNS engine found all of it with the
+  VPN on.
+- The code and the address typed, Go: PASE, attestation, certificates, the
+  CASE reconnect and CommissioningComplete in 2.6 s; "Commissioned: node 1 -
+  connecting lamp, level, colour", the subscription up a second later, the
+  three clusters bound.
+- The Control page: on, off, on and the colour wheel's picks each answered
+  "Success" by the light in about 100 ms; the ON state and the 100 % level
+  came from the light through the subscription.
+- Official iViewer 5.0.7, same phone, same GUI: the controller starts, but
+  its Bonjour reported nothing with the VPN on, and the one commissioning
+  attempt by address failed ("Could not connect to device") because the
+  pool held the first packets 1.5 s for a connection event iViewer never
+  sends for a UDP system (fixed: sent at once). Its UDP retargets in the
+  probe gave no connection event in three loads that night, and persisted
+  tokens were empty at each of those loads (each a new build); the earlier
+  run that night had the retargets working in a few ms. A retry on iViewer
+  with the fix is the open item.
 
 ## Matter: `<Matter>` (iva/drivers/matter)
 

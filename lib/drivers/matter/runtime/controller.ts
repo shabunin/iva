@@ -238,7 +238,17 @@ export class MatterDriver {
         sat = s;
         if (spec.saturation) this.setJoin(spec.saturation, fromLevel(s));
       });
-      const move = () => c.moveToHueAndSaturation({ hue, saturation: sat, transitionTime: 0, optionsMask: {}, optionsOverride: {} });
+      // a pick sets both joins at once: one command for the two (the second change finds it pending)
+      let pending: Promise<unknown> | undefined;
+      const move = () => {
+        if (!pending) {
+          pending = new Promise((r) => setTimeout(r, 0)).then(() => {
+            pending = undefined;
+            return c.moveToHueAndSaturation({ hue, saturation: sat, transitionTime: 0, optionsMask: {}, optionsOverride: {} });
+          });
+        }
+        return pending;
+      };
       watch(spec.hue, (v) => {
         hue = toLevel(v);
         return move();
