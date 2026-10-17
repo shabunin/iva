@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeZip } from '../src/server/zip.ts';
-import { loadManifest, savedManifest, unzip, useFetch } from '../panel/loader.ts';
+import { loadManifest, savedManifest, toSave, unzip, useFetch } from '../panel/loader.ts';
 
 const GUI = '<gui><properties><project>Kept</project><imagefolder>images</imagefolder></properties><scripts><script name="scripts/main.js" /></scripts></gui>';
 const MAIN = 'var answer = 42;\n'.repeat(40);
@@ -67,4 +67,41 @@ test("a GUI from its server: its scripts fetched a few at a time, a failed one a
   assert.ok(most <= 4, `${most} fetches at once`);
   // the scripts' URLs: in the image folder, as iViewer asks for them
   assert.equal(tries['a.js'], 1);
+});
+
+test("the copy kept is whole: iva serve's archive asked for twice, else the files - a script the load lost fetched again for it; one still missing: no copy", async () => {
+  const names = ['a.js', 'gone.js', 'dead.js'];
+  const gui = `<gui><properties><project>Live</project><imagefolder>assets</imagefolder></properties><scripts>${names.map((n) => `<script name="scripts/${n}" />`).join('')}</scripts></gui>`;
+  const answer = (text: string, server?: string) => ({
+    ok: true, status: 200, headers: { get: (h: string) => (h === 'server' ? server ?? null : null) },
+    arrayBuffer: async () => new TextEncoder().encode(text).buffer,
+  });
+  const scenario = (fails: Record<string, number>) => {
+    const asked: string[] = [];
+    useFetch((async (url: string) => {
+      const name = url.split('/').pop()!;
+      asked.push(name);
+      if (url === 'http://10.0.0.2:8019/') return answer(gui, 'iva');
+      if ((fails[name] ?? 0) > 0) {
+        fails[name]--;
+        throw new Error('connection reset');
+      }
+      return answer(`// ${name}`);
+    }) as any);
+    return asked;
+  };
+  // the archive fails both times; gone.js failed twice at the load and comes the third time: kept, whole
+  let asked = scenario({ 'gui.zip': 2, 'gone.js': 2 });
+  let { manifest, got } = await loadManifest('http://10.0.0.2:8019/');
+  assert.deepEqual(manifest.missingScripts, ['scripts/gone.js']);
+  const saved = await toSave(got, manifest);
+  assert.equal(asked.filter((n) => n === 'gui.zip').length, 2);
+  assert.ok(saved.gui && !saved.zip, 'the files, not an archive');
+  assert.equal(new TextDecoder().decode(saved.files!['assets/scripts/gone.js']), '// gone.js');
+  assert.equal(new TextDecoder().decode(saved.files!['assets/scripts/a.js']), '// a.js');
+  assert.deepEqual((await savedManifest(saved)).missingScripts, []);
+  // dead.js never comes: no copy kept
+  asked = scenario({ 'gui.zip': 2, 'dead.js': 99 });
+  ({ manifest, got } = await loadManifest('http://10.0.0.2:8019/'));
+  await assert.rejects(toSave(got, manifest), /not kept - scripts missing: scripts\/dead\.js/);
 });

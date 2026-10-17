@@ -125,14 +125,19 @@ async function each<T>(items: T[], n: number, work: (item: T) => Promise<void>) 
 /**
  * What to keep of a GUI that came from its server: a zip as it came; iva
  * serve's whole build (its web pages, the assets its scripts load); or the
- * files a .gui names - its images, scripts and web pages - beside it.
+ * files a .gui names - its images, scripts and web pages - beside it. A copy
+ * kept is whole: a script the load lost is asked for again, and one still
+ * missing means no copy (the one kept before stays) - a copy without the
+ * start script would run nothing, every start.
  */
 export async function toSave(got: Download, m: Manifest): Promise<SavedGui> {
   const base = { url: got.url, etag: got.etag, lastModified: got.lastModified, savedAt: Date.now() };
   if (isZip(got.bytes)) return { ...base, zip: got.bytes, bytes: got.bytes.length };
   const gui = decodeXml(got.bytes);
   if (got.server?.startsWith('iva')) {
-    const zip = await download(new URL('/__iva/gui.zip', got.url).href).catch(() => null);
+    // the whole build in one archive (asked for twice: a flaky link)
+    const at = new URL('/__iva/gui.zip', got.url).href;
+    const zip = await download(at).catch(() => download(at)).catch(() => null);
     if (zip && isZip(zip.bytes)) return { ...base, gui, zip: zip.bytes, bytes: zip.bytes.length };
   }
   const folder = folderOf(gui);
@@ -150,6 +155,18 @@ export async function toSave(got: Download, m: Manifest): Promise<SavedGui> {
     }
   });
   for (const [name, code] of Object.entries(m.scriptMap)) files[inFolder(name)] = new TextEncoder().encode(code);
+  // the scripts the load lost: once more, for the copy
+  const lost: string[] = [];
+  await each(m.missingScripts, 2, async (name) => {
+    const href = m.fileUrl(name);
+    try {
+      if (!href) throw new Error('nowhere to ask');
+      files[inFolder(name)] = await get(href);
+    } catch {
+      lost.push(name);
+    }
+  });
+  if (lost.length) throw new Error(`not kept - scripts missing: ${lost.join(', ')}`);
   return { ...base, gui, files, bytes: Object.values(files).reduce((n, f) => n + f.length, 0) };
 }
 

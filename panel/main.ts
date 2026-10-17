@@ -160,7 +160,19 @@ async function start() {
   const saved = await savedGui(url).catch((e) => void noteError(`the copy kept: ${message(e)}`));
   if (saved && !fresh) {
     try {
-      await show(await savedManifest(saved));
+      const m = await savedManifest(saved);
+      if (m.missingScripts.length) {
+        // a copy with scripts missing (kept by an older panel from a load that lost them): its server first, if it answers
+        try {
+          const live = await loadManifest(url);
+          await show(live.manifest);
+          void keep(live.got, live.manifest);
+          return;
+        } catch (e) {
+          noteError(`${message(e)} - the copy kept runs, ${m.missingScripts.length} script(s) missing`);
+        }
+      }
+      await show(m);
       kept = saved;
       void usedGui(url).catch(() => {});
       void checkServer();
