@@ -245,7 +245,34 @@ export interface SetPropsOptions {
 /** An element (or more): its join - d('cube'), s(12) - a tag of elements, or a list of them. */
 export type PropsTarget = JoinRef | string | (JoinRef | string)[];
 
-const PROPERTIES = ['x', 'y', 'w', 'h', 'opacity', 'scale', 'xscale', 'yscale', 'zrotation', 'xrotation', 'yrotation', 'theme'];
+/** how long a motion takes and how it runs (seconds; the curve as setProps()) */
+export interface MotionTiming {
+  delay?: number;
+  duration?: number;
+  curve?: SetPropsOptions['curve'];
+}
+/**
+ * How an element moves (motion={...}), by itself: coming in when its page is
+ * shown, while it is pressed, with a digital join. Values are where it goes -
+ * a number, or '+n' / '-n' from where it is laid out (CF.getProperties). The
+ * element needs no join of its own: iva gives it one (iva_motion0 ...).
+ *
+ *   <Text … motion={{ enter: { from: { y: '+40', opacity: 0 }, duration: 0.4, curve: 'easeOut' } }} />
+ *   <Button … motion={{ press: { scale: 0.92, duration: 0.08 } }} />
+ *   <Image … motion={{ when: { join: d('alarm'), on: { opacity: 1, scale: 1.1 }, off: { opacity: 0.3 }, duration: 0.3 } }} />
+ */
+export interface Motion {
+  /** when the page it is on is shown: from these (where it starts) to where it is laid out (default 0.3 s, easeOut) */
+  enter?: { from: Properties } & MotionTiming;
+  /** while it is pressed (a button, a slider: iViewer's press and release events): these, and back on release (default 0.1 s) */
+  press?: Properties & Pick<MotionTiming, 'duration' | 'curve'>;
+  /** with a digital join: `on` while it is high, `off` while low (default: as laid out; 0.25 s, easeInOut) */
+  when?: { join: JoinRef | string; on: Properties; off?: Properties } & MotionTiming;
+}
+
+/** what CF.setProperties changes (setProps(), motion={...})
+ * @internal */
+export const PROPERTIES = ['x', 'y', 'w', 'h', 'opacity', 'scale', 'xscale', 'yscale', 'zrotation', 'xrotation', 'yrotation', 'theme'];
 const CURVES: Record<string, string> = {
   linear: 'CF.AnimationCurveLinear', easeIn: 'CF.AnimationCurveEaseIn', easeOut: 'CF.AnimationCurveEaseOut', easeInOut: 'CF.AnimationCurveEaseInOut',
 };
@@ -347,7 +374,7 @@ export interface StyleProps extends XmlProp {
 }
 
 const STYLE = ['bg', 'image', 'tile', 'slice', 'color', 'font', 'fontStyle', 'fontName', 'fontSize', 'bold', 'italic', 'underline', 'align', 'valign', 'shadow', 'opacity', 'padding', 'radius', 'borderWidth', 'borderColor', 'css', 'theme'];
-const GEOM = ['x', 'y', 'w', 'h'];
+const GEOM = ['x', 'y', 'w', 'h', 'motion'];
 const METER = ['bg', 'image', 'fill', 'fillImage', 'radius', 'theme'];
 
 interface Geom {
@@ -357,6 +384,8 @@ interface Geom {
   h: number;
   /** iViewer tags (for JS: CF.getJoins by tag) */
   tags?: string | string[];
+  /** how it moves by itself: in as its page shows, while pressed, with a join (Motion) */
+  motion?: Motion;
 }
 
 export interface Transition {
@@ -370,6 +399,8 @@ export interface Transition {
 interface Placement {
   x?: number;
   y?: number;
+  /** how it moves by itself: in as its page shows, with a join (Motion) */
+  motion?: Motion;
   /** digital join that shows / hides it */
   join?: Join;
   /** shown at start (when there's no join) */
@@ -946,6 +977,9 @@ export const PROPS: Record<string, string[]> = {
   OnStart: ['js', 'joins'],
 };
 for (const [name, props] of Object.entries(PROPS)) if (!['Raw', 'Group', 'OnStart', 'HttpServer'].includes(name)) props.push('xml');
+for (const name of ['Subpage', 'SubpageRef']) PROPS[name].push('motion');
+// a Box with motion gets a serial join of its own (an <img> on a join), never one given
+PROPS.Box.push('join');
 
 /** Required props (a missing one is an error).
  * @internal */

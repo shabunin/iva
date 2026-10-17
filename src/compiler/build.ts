@@ -7,7 +7,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { DEVICES, parseSize, PROPS, REQUIRED, sizeFolder, sizeLabel, STYLE_PROPS, variant, type ScreenSize, type StyleProps, type Transition } from './components.js';
+import { DEVICES, parseSize, PROPERTIES, PROPS, REQUIRED, sizeFolder, sizeLabel, STYLE_PROPS, variant, type Motion, type ScreenSize, type StyleProps, type Transition } from './components.js';
 import { fixedJoin, JoinAllocator, JoinSlot, typedJoin } from './joins.js';
 import { isVNode, type Child, type Source, type VNode } from './runtime.js';
 import { styleCss, Themes, type ThemeType } from './style.js';
@@ -16,6 +16,15 @@ import { arc, box, boxIcon, circle, cutout, dotOnRing, generatedName, icon, knob
 import type { DrawRef, IconRef, JoinRef } from './components.js';
 
 const isIcon = (v: unknown): v is IconRef => !!v && typeof v === 'object' && (v as IconRef).$$icon === 1;
+
+/** iva-motion.js: what motion={...} does on the panel (shipped with a GUI that has one) */
+const MOTION_RUNTIME = fs.readFileSync(new URL('./iva-motion.js', import.meta.url), 'utf8');
+/** the join an element with motion is addressed by: its own kind's */
+const MOTION_JOIN: Record<string, 'd' | 'a' | 's' | 'l'> = {
+  Button: 'd', Subpage: 'd', SubpageRef: 'd', Text: 's', Image: 's', Box: 's', Video: 's', Web: 's', Input: 's', Slider: 'a', Gauge: 'a', List: 'l',
+};
+const MOTION_TIMING = new Set(['delay', 'duration', 'curve']);
+const MOTION_CURVES = ['linear', 'easeIn', 'easeOut', 'easeInOut'];
 
 // ── readable names of the drawings (names.ts) ───────────────────────────
 /** a colour in a file name: #2B3137 -> 2b3137 */
@@ -196,6 +205,9 @@ export class Builder {
   private warnings: string[] = [];
   /** the named joins buttons' setProps() actions change: checked against the elements' once all are in */
   private actionJoins: { node: VNode; joins: JoinRef[] }[] = [];
+  /** joins given to elements with motion={...} so far (iva_motion0 ...), and whether their script is in */
+  private motions = 0;
+  private motionScript = false;
   private primary: 'landscape' | 'portrait' = 'landscape';
   /** <Project assets>: shipped whole; images found there by bare name */
   private assetDir: string | null = null;
@@ -962,6 +974,74 @@ export class Builder {
     this.onStart({ $$iva: 1, type: 'OnStart', props: { js: `IvaHttp.serve(${JSON.stringify(p.name)}, ${p.handler});` }, children: [], source: node.source });
   }
 
+  /**
+   * motion={...}: the element given a join if it has none (its own kind's:
+   * iva_motion0 ...), its motion checked and handed to iva-motion.js (shipped
+   * once) as a line of the start script: IvaMotion.add({ join, page, enter,
+   * press, when }). The node back, with its join.
+   */
+  private motion(node: VNode): VNode {
+    const p = node.props;
+    const m = p.motion as Motion;
+    const type = MOTION_JOIN[node.type];
+    if (!type) throw this.err(node, `motion: not for <${node.type}>`);
+    if (!m || typeof m !== 'object' || (m.enter === undefined && m.press === undefined && m.when === undefined)) {
+      throw this.err(node, 'motion: { enter: { from: {...} }, press: {...}, when: { join, on, off } } - one or more of them');
+    }
+    const check = (what: string, props: unknown, timing: boolean) => {
+      if (!props || typeof props !== 'object') throw this.err(node, `motion: ${what}: the properties to move to ({ opacity: 0, y: '+40' })`);
+      for (const [k, v] of Object.entries(props as Record<string, unknown>)) {
+        if (MOTION_TIMING.has(k)) {
+          if (!timing) throw this.err(node, `motion: ${what}: ${k} goes beside it, not in it`);
+          if (k === 'curve' ? !MOTION_CURVES.includes(String(v)) : typeof v !== 'number') throw this.err(node, `motion: ${what}: ${k}: ${k === 'curve' ? MOTION_CURVES.join(' / ') : 'seconds'} (got ${JSON.stringify(v)})`);
+          continue;
+        }
+        if (!PROPERTIES.includes(k)) throw this.err(node, `motion: ${what}: no property "${k}"${didYouMean(k, PROPERTIES)}`);
+        const ok = k === 'theme' ? typeof v === 'string' : (typeof v === 'number' && Number.isFinite(v)) || (typeof v === 'string' && /^[+-]\d*\.?\d+$/.test(v));
+        if (!ok) throw this.err(node, `motion: ${what}: ${k}: ${k === 'theme' ? "a theme's name" : "a number, or '+n' / '-n' (from where it is laid out)"} (got ${JSON.stringify(v)})`);
+      }
+    };
+    const timing = (what: string, o: Record<string, unknown>) => {
+      for (const k of ['delay', 'duration', 'curve']) if (o[k] !== undefined) check(what, { [k]: o[k] }, true);
+    };
+    if (m.enter !== undefined) {
+      check('enter.from', m.enter?.from, false);
+      timing('enter', m.enter as unknown as Record<string, unknown>);
+    }
+    if (m.press !== undefined) check('press', m.press, true);
+    let whenJoin: JoinSlot | string | undefined;
+    if (m.when !== undefined) {
+      if (!m.when || typeof m.when !== 'object' || m.when.join === undefined) throw this.err(node, 'motion: when: { join, on, off }: the digital join it follows');
+      whenJoin = this.target(node, 'motion: when.join', m.when.join);
+      if (whenJoin instanceof JoinSlot && whenJoin.type !== 'd') throw this.err(node, `motion: when.join: a digital join (d('x'), 'd5'), got ${whenJoin.type}`);
+      check('when.on', m.when.on, false);
+      if (m.when.off !== undefined) check('when.off', m.when.off, false);
+      timing('when', m.when as unknown as Record<string, unknown>);
+    }
+    // its join: the one given, else one of its own
+    const given = p.join !== undefined && p.join !== 0 && p.join !== '0' && p.join !== '';
+    const out: VNode = given ? node : { ...node, props: { ...p, join: { $$join: 1, type, id: `iva_motion${this.motions++}` } } };
+    let slot: JoinSlot;
+    try {
+      slot = fixedJoin(type, out.props.join)!;
+    } catch (e: any) {
+      throw this.err(node, `motion: join: ${e.message}`);
+    }
+    const parts = [`join: ${this.jsJoin(slot)}`, `page: ${JSON.stringify(this.pageName)}`];
+    if (m.enter !== undefined) parts.push(`enter: ${JSON.stringify(m.enter)}`);
+    if (m.press !== undefined) parts.push(`press: ${JSON.stringify(m.press)}`);
+    if (m.when !== undefined && whenJoin !== undefined) {
+      const { join: _join, ...rest } = m.when;
+      parts.push(`when: { join: ${this.jsJoin(whenJoin)}, ${JSON.stringify(rest).slice(1)}`);
+    }
+    if (!this.motionScript) {
+      this.motionScript = true;
+      this.script({ $$iva: 1, type: 'Script', props: { name: 'iva-motion.js', code: MOTION_RUNTIME }, children: [], source: node.source });
+    }
+    this.start.push(`IvaMotion.add({ ${parts.join(', ')} });`);
+    return out;
+  }
+
   /** A join as JavaScript: "d12", or Joins.d["name"] for a named one (iva-joins.js). */
   private jsJoin(t: JoinSlot | string): string {
     if (typeof t === 'string') return JSON.stringify(t);
@@ -1172,6 +1252,7 @@ export class Builder {
 
   private itemXml(node: VNode): XNode {
     if (!ITEMS.has(node.type)) throw this.err(node, `can't be inside a page or subpage`);
+    if (node.props.motion !== undefined) node = this.motion(node);
     const p = node.props;
     const geom = { x: p.x ?? 0, y: p.y ?? 0, w: p.w, h: p.h };
     switch (node.type) {
@@ -1272,8 +1353,9 @@ export class Builder {
         const name = this.generated(node, 'box', (sc) =>
           box({ w: p.w, h: p.h, radius: p.radius, fill: p.bg, borderWidth: p.borderWidth ?? 0, borderColor: p.borderColor }, sc),
           undefined, [`boxes/${boxLook(p.w, p.h, p.radius, p.bg, p.borderWidth, p.borderColor)}`]);
+        // on a join only with motion (its own, given by motion()): a script's handle on it
         return this.E('img', {
-          ...geom, j: 0, clickthrough: 1, refresh: 0, l: 0, noCache: 0, downloadIndicator: 0, clearOnURLChange: 0, tags: tagsAttr(p.tags),
+          ...geom, j: p.join !== undefined ? this.join(node, 'join', 's') : 0, clickthrough: 1, refresh: 0, l: 0, noCache: 0, downloadIndicator: 0, clearOnURLChange: 0, tags: tagsAttr(p.tags),
         }, [], name, node);
       }
       case 'Subpage': {

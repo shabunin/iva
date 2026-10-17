@@ -627,3 +627,30 @@ test('<Video>: its joins go through the allocator - named ones get numbers (a se
   const v = none.pages.Main.landscape!.find((n) => n.type === 'video')!;
   assert.deepEqual([v.j, v.attributes.play, v.attributes.stop], ['0', '0', '0']);
 });
+
+test('motion={...}: an element comes in as its page shows, shrinks while pressed, follows a join - a join of its own if it had none, the motion script, its setup lines', async () => {
+  const r = await build(wrap(`
+    <Text w={100} h={30} text="Hi" motion={{ enter: { from: { y: '+40', opacity: 0 }, duration: 0.4, curve: 'easeOut' } }} />
+    <Button y={40} w={100} h={40} join="go" motion={{ press: { scale: 0.92, duration: 0.08 } }} />
+    <Image y={100} w={32} h={32} src={fa('house')} motion={{ when: { join: d('glow'), on: { opacity: 1 }, off: { opacity: 0.3 }, duration: 0.3 } }} />
+    <Box y={200} w={50} h={20} bg="#333333" motion={{ enter: { from: { opacity: 0 } } }} />
+    <Button y={240} w={50} h={50} join="glow" feedback="toggle" />`));
+  // joins given to the text, the image and the box (their own kinds); the button keeps its own
+  assert.deepEqual(Object.keys(r.joins.serial).filter((k) => k.startsWith('iva_motion')), ['iva_motion0', 'iva_motion1', 'iva_motion2']);
+  const gui = await parseGUI(r.xml);
+  const main = gui.pages.Main.landscape!;
+  assert.ok(main.some((n) => n.type === 'txt' && n.j === String(r.joins.serial.iva_motion0)), 'the text carries its join');
+  assert.ok(main.some((n) => n.type === 'img' && n.j === String(r.joins.serial.iva_motion2) && n.text?.startsWith('boxes/')), 'the box too');
+  // the motion script before the start script that sets the elements up
+  const names = r.scripts.map((s) => s.name);
+  assert.ok(names.indexOf('iva-motion.js') >= 0 && names.indexOf('iva-motion.js') < names.indexOf('iva-start.js'), names.join(', '));
+  assert.doesNotThrow(() => new Function('CF', r.scripts.find((s) => s.name === 'iva-motion.js')!.code!));
+  const start = r.scripts.find((s) => s.name === 'iva-start.js')!.code!;
+  assert.match(start, /IvaMotion\.add\(\{ join: Joins\.s\["iva_motion0"\], page: "Main", enter: \{"from":\{"y":"\+40","opacity":0\},"duration":0\.4,"curve":"easeOut"\} \}\);/);
+  assert.match(start, /IvaMotion\.add\(\{ join: Joins\.d\["go"\], page: "Main", press: \{"scale":0\.92,"duration":0\.08\} \}\);/);
+  assert.match(start, /IvaMotion\.add\(\{ join: Joins\.s\["iva_motion1"\], page: "Main", when: \{ join: Joins\.d\["glow"\], "on":\{"opacity":1\},"off":\{"opacity":0\.3\},"duration":0\.3\} \}\);/);
+  assert.deepEqual(r.warnings, []);
+  // a property that isn't one: said with a suggestion
+  await fails(wrap(`<Text w={10} h={10} motion={{ enter: { from: { opacty: 0 } } }} />`), /motion.*opacty.*opacity/);
+  await fails(wrap(`<Text w={10} h={10} motion={{ press: { scale: 'big' } }} />`), /motion.*scale/);
+});

@@ -30,7 +30,7 @@ injected); `import { Button } from 'iva'` works too.
 | `<WebApp>` | `<web>` + a server `<system>` + `apps/<name>.js` | `joins={{ name: d('x'), … }}`: what the page sees and sets, by name | a web page the panel serves itself (charts, 3D - [docs/web.md](web.md)): `entry` (your module, bundled with its npm imports; or `iva:trend` / `iva:chart`), `name` (its path on the panel's web server: `/<name>/`; one port for all, `<Project httpPort>`), `options` (JSON for the page), `handlers` (panel functions it may call), `record={{ every, keep }}`, `bg`, `title` |
 | `<Gesture>` | `<gesture>` + `<action phase>` | in actions: `join: 'd10'` / `d(10)` | `type` (`tap`·`swipe`·`pan`·`press`·`rotate`·`pinch`), `touches`, `taps`, `direction`, `onBegin` / `onChange` / `onEnd`: a js string, or `{ js, join, value, token, tokenJoin, cmd, macro, page, transition, delay }` (a list of them too); `value` takes the gesture's `[x]` `[y]` `[startx]` `[deltax]` `[scale]` `[rotation]` `[velocity]` … and `{{math}}` |
 
-All items take `x`, `y` (default 0), `w`, `h` (required) and `tags`.
+All items take `x`, `y` (default 0), `w`, `h` (required), `tags` and `motion` ([Motion](#motion-motion)).
 
 ## Systems and logic
 
@@ -263,6 +263,38 @@ call - a toggle (there and back), a value from the panel - is a script's: the
 gallery's Animations page (`examples/gallery/pages/Animations.jsx`) has both.
 Subpages animate on their own: `in` / `out` on `<Subpage>` / `<SubpageRef>`
 (fade, moveIn / push / reveal from a side, a time, an ease).
+
+## Motion: motion={...}
+
+An element can move by itself, with no script of yours: `motion={...}` on
+any item (a subpage's placement too) says how. It needs no join - iva gives
+the element one (`iva_motion0` ...) when it has none - and ships one small
+script, `iva-motion.js`, that does it with `CF.setProperties`.
+
+```jsx
+// in as the page shows: from 40 px lower and invisible to where it is laid out
+<Text w={300} h={40} text="Hello" motion={{ enter: { from: { y: '+40', opacity: 0 }, duration: 0.4, curve: 'easeOut' } }} />
+// a little smaller while pressed (iViewer's press and release events), back on release
+<Button w={160} h={48} text="Go" motion={{ press: { scale: 0.92, duration: 0.08 } }} />
+// with a join: bright and a little bigger while it is high, dim while low
+<Image w={64} h={64} src={fa('lightbulb')} motion={{ when: { join: d('lamp'), on: { opacity: 1, scale: 1.1 }, off: { opacity: 0.35 }, duration: 0.3 } }} />
+```
+
+- `enter: { from, delay, duration, curve }`: when the page the element is on
+  is shown (at the start, and each flip to it), it is put at `from` at once
+  and moves to where it is laid out (default 0.3 s, `easeOut`). A `delay`
+  staggers several.
+- `press: { ...properties, duration, curve }`: while a button (or a slider)
+  is pressed, these; back on release (default 0.1 s).
+- `when: { join, on, off, delay, duration, curve }`: a digital join (`d('x')`
+  or `'d5'`): `on` while it is high, `off` while low (default: as laid out;
+  0.25 s, `easeInOut`). The join's element can be anywhere - a toggle, a
+  feedback's target.
+
+The properties are `setProps()`'s: `x`, `y`, `w`, `h`, `opacity`, `scale`,
+`xscale`, `yscale`, `zrotation`, `xrotation`, `yrotation`, `theme`; a
+number, or `'+n'` / `'-n'` from where the element is laid out. Elements in a
+subpage defined on a page come in with that page.
 
 ## Gestures and transitions in the runtime
 

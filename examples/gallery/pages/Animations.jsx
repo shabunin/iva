@@ -174,6 +174,29 @@ const chainsCard = (c, compact) => {
   );
 };
 
+/** motion={...} on elements: in as the page shows, smaller while pressed, with a join - no script of the page's. */
+const motionCard = (c, compact) => {
+  const m = compact ? 20 : 28;
+  const top = compact ? 12 : 48;
+  const y0 = top + (compact ? 76 : 60);
+  const size = compact ? 64 : 80;
+  const row2 = y0 + size + 28;
+  return (
+    <ui.Card title={compact ? undefined : 'motion={...}'} {...c}>
+      {note(m, top, c.w - 2 * m, 64, 'motion={...} on an element, no script: these three come in as the page shows (flip away and back), the button shrinks while pressed, the lamp follows the toggle.', compact ? 14 : 16)}
+      {['circle', 'square', 'star'].map((icon, i) => (
+        <Image x={m + i * (size + 12)} y={y0} w={size} h={size} src={fa(icon, { color: t.accent, size: Math.round(size * 0.55) })}
+               motion={{ enter: { from: { y: '+40', opacity: 0 }, delay: 0.1 * i, duration: 0.4, curve: 'easeOut' } }} />
+      ))}
+      <Button x={m} y={row2} w={compact ? 150 : 180} h={48} text="Press me" bg={t.accent} radius={t.radius} font={t.font} fontSize={18}
+              motion={{ press: { scale: 0.92, duration: 0.08 } }} />
+      <ui.Toggle x={m + (compact ? 164 : 200)} y={row2 + 6} w={110} h={36} label="Lamp" join="animGlow" />
+      <Image x={c.w - m - size} y={row2 - 8} w={size} h={size} src={fa('lightbulb', { color: t.warning, size: Math.round(size * 0.6) })}
+             motion={{ when: { join: d('animGlow'), on: { opacity: 1, scale: 1.15 }, off: { opacity: 0.35, scale: 1 }, duration: 0.3 } }} />
+    </ui.Card>
+  );
+};
+
 const L = ui.grid({
   props: [800, 400], curves: [432, 400],
   transitions: [800, 280], chains: [432, 280],
@@ -186,6 +209,7 @@ export default narrow ? (
     { title: 'Curves', content: curvesCard(A, true) },
     { title: 'Subpages', content: <>{transitionsCard(A, true)}{sheetDef}</> },
     { title: 'Chains', content: chainsCard(A, true) },
+    { title: 'Motion', content: motionCard(A, true) },
   ]} />
 ) : (
   <Page name="Animations" bg={t.page} transition={enter}>
