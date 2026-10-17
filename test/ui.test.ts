@@ -28,6 +28,8 @@ test('the iva/ui gallery builds: one runtime script, the shared subpages once', 
   // a section's screens: subpages on its one page, not pages of their own
   assert.ok(phone.xml.includes('<subpage name="ui_screen_Lists_0" x="0" y="0"') && phone.xml.includes('<subpage name="ui_screen_Lists_1" x="0" y="0"'));
   assert.doesNotMatch(phone.xml, /<page name="Lists \//);
+  // the colour picker's wheel (a subpage of its own, no join: it clips the marker) on the page, on its tab's join - not over every tab
+  assert.match(phone.xml, new RegExp(`<subpage name="ui_cp_lampR" x="\\d+" y="\\d+" j="${phone.joins.digital.ui_tabs_Devices_1}" `));
 });
 
 test('iva/ui props are checked in the editor', async () => {
@@ -381,4 +383,25 @@ export default (
   const r = await compile(path.join(dir, 'app.jsx'));
   for (const f of ['knobs/vol/knob.png', 'knobs/vol-light/knob.png', 'knobs/now-20-5/knob.png']) assert.ok(r.assets.some((x) => x.name === f), f);
   assert.equal((r.xml.match(/<subpage name="ui_scroll_[0-9a-f]{8}" w=/g) ?? []).length, 1);
+});
+
+test("Screens: a subpage a screen's content places with no join of its own (a colour picker's wheel) goes on the page on the tab's join, so it shows with its screen only", async () => {
+  const dir = tmpDir('iva-screens-clip-');
+  fs.writeFileSync(path.join(dir, 'app.jsx'), `import { ui } from 'iva/ui';
+export default (
+  <Project name="T" width={1280} height={800}>
+    <ui.Screens name="S" tabTransition={{ type: 'fade', time: 0.15 }} screens={[
+      { title: 'A', content: <Text x={16} y={140} w={100} h={30} text="a" /> },
+      { title: 'B', content: <Group x={16} y={140}><Subpage name="wheel" w={100} h={100}><Image w={100} h={100} src={fa('house')} /></Subpage></Group> },
+    ]} />
+  </Project>
+);
+`);
+  const r = await compile(path.join(dir, 'app.jsx'));
+  const page = /<page name="S"[\s\S]*?<\/page>/.exec(r.xml)![0];
+  assert.match(page, new RegExp(`<subpage name="wheel" x="16" y="140" j="${r.joins.digital.ui_tabs_S_1}" transition1="fade" [^>]*time1="0.15"[^>]*v="0"`));
+  // the screen's own subpage holds nothing else: the wheel was all there was
+  assert.match(r.xml, /<subpage name="ui_screen_S_1" w="1280" h="800" clip="1" \/>/);
+  assert.match(r.scripts.find((x) => x.name === 'iva-start.js')!.code!, /owned: \[\[\], \[\]\]/);
+  assert.deepEqual(r.warnings, []);
 });

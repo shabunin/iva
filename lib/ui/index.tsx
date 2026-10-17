@@ -1559,7 +1559,9 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
    * shows its subpage (IvaUI.tab) - no page flip. Subpages a screen's
    * content places (a Pager's pages, a dialog, a picker's sheet) go on the
    * page, where they'd be - iViewer shows no subpage inside a subpage - and
-   * those that aren't modal (fixed) are shown with their tab only. In
+   * those that aren't modal (fixed) are shown with their tab only: one with
+   * no join of its own on the tab's, one with its own hidden and shown
+   * again with the tab. In
    * iViewer a ScrollArea is a list, and a list's rows (its header too) hold
    * no list, subpage or gesture: a DataList, a Pager, a Knob in one stay
    * empty or dead. Where a page of them doesn't fit (a phone), they get
@@ -1577,7 +1579,13 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     const bar: JoinRef = s(`ui_tabs_${key}_bar`);
     const xs = screens.map((_, k) => 20 + Math.round(k * seg));
     const pill = draw.box({ w: Math.round(seg), h: tabs.h - 8, radius: t.radius - 3, fill: t.accent });
-    const parts = screens.map((sc) => liftSubpages(sc.content));
+    const parts = screens.map((sc, k) => {
+      const { content, lifted, owned } = liftSubpages(sc.content);
+      // one with no join of its own (always shown in its screen - a colour picker's wheel): shown with the screen, on its tab's join
+      const placed = lifted.map((n) => (n.props.fixed || n.props.join !== undefined ? n
+        : { ...n, props: { ...n.props, join: tabJoin(k), visible: k === 0, in: n.props.in ?? tabTransition, out: n.props.out ?? tabTransition } }));
+      return { content, lifted: placed, owned };
+    });
     return (
       <Page name={name} bg={bg} transition={transition}>
         {screens.map((sc, k) => (
