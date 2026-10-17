@@ -200,15 +200,27 @@ var IvaUI = (function () {
     /**
      * a section's tabs (ui.Screens, one page): the shown screen's tab lit and
      * its subpage shown (one join), the pill under it. A tap on another (tab):
-     * the pill slides under it and the screens swap - the last one's own
-     * subpages (lifted to the page: a pager's pages) going with it, back as
-     * they were when its tab is tapped again. A tap while it slides is ignored.
+     * the pill slides under it and the screens swap. A screen's own subpages
+     * (lifted to the page: a pager's pages) sit on mirror joins: each high
+     * while its screen shows and its own join is high - the screen's join
+     * and its own ANDed here, as iViewer can't. A tap while it slides is ignored.
      */
     tabs: function (id, o) {
       tabsOf[id] = o;
       o.current = 0;
-      o.shown = {};
       for (var k = 0; k < o.joins.length; k++) CF.setJoin(o.joins[k], k === 0 ? 1 : 0);
+      var mirrors = {};
+      (o.owned || []).forEach(function (pairs, k) {
+        pairs.forEach(function (p) { mirrors[p[0]] = { to: p[1], tab: k }; });
+      });
+      o.mirrors = mirrors;
+      var originals = Object.keys(mirrors);
+      if (originals.length) {
+        CF.watch(CF.JoinChangeEvent, originals, function (j, v) {
+          var m = mirrors[j];
+          if (m) CF.setJoin(m.to, m.tab === o.current && Number(v) ? 1 : 0);
+        }, true);
+      }
     },
     tab: function (id, k) {
       var o = tabsOf[id];
@@ -218,22 +230,22 @@ var IvaUI = (function () {
       o.current = k;
       CF.setProperties({ join: o.bar, x: o.xs[k] }, 0, o.time, CF.AnimationCurveEaseInOut);
       setTimeout(function () { o.going = false; }, o.time * 1000);
-      var away = (o.owned && o.owned[from]) || [];
-      var back = (o.owned && o.owned[k]) || [];
-      function swap() {
-        for (var i = 0; i < o.joins.length; i++) CF.setJoin(o.joins[i], i === k ? 1 : 0);
-        for (var j = 0; j < back.length; j++) if (o.shown[back[j]]) CF.setJoin(back[j], 1);
-      }
-      if (!away.length) return swap();
-      // the last screen's own subpages: which were shown (to come back), then away
-      CF.getJoins(away, function (joins) {
-        for (var j = 0; j < away.length; j++) {
-          var v = joins[away[j]];
-          o.shown[away[j]] = !!v && Number(v.value) === 1;
-          CF.setJoin(away[j], 0);
-        }
-        swap();
+      for (var i = 0; i < o.joins.length; i++) CF.setJoin(o.joins[i], i === k ? 1 : 0);
+      // the last screen's own subpages away; the new one's as their own joins are
+      var mirrors = o.mirrors || {};
+      var mine = [];
+      Object.keys(mirrors).forEach(function (j) {
+        if (mirrors[j].tab === from) CF.setJoin(mirrors[j].to, 0);
+        if (mirrors[j].tab === k) mine.push(j);
       });
+      if (mine.length) {
+        CF.getJoins(mine, function (joins) {
+          mine.forEach(function (j) {
+            var v = joins[j];
+            CF.setJoin(mirrors[j].to, v && Number(v.value) ? 1 : 0);
+          });
+        });
+      }
     },
     /**
      * a knob (a dial): the value in an analog join (min..max as 0..65535);

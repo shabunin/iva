@@ -279,7 +279,10 @@ export default (
   assert.match(def('ui_screen_Lists_0'), /<list j="\d+"/);
   assert.match(def('ui_screen_Lists_1'), /<list j="0" [^>]*headerSub="ui_scroll_\w+"/);
   assert.doesNotMatch(def('ui_screen_Lists_2'), /<subpage /);
-  assert.match(page, /<subpage name="ui_pg_page_0" x="16" y="132" j="\d+"/);
+  // on mirror joins of the section's (the script ANDs the pager's page join with the tab's); its own join held for the script
+  assert.match(page, new RegExp(`<subpage name="ui_pg_page_0" x="16" y="132" j="${r.joins.digital.ui_tabs_Lists_own0}"`));
+  assert.match(page, new RegExp(`<subpage name="ui_pg_page_1" x="16" y="132" j="${r.joins.digital.ui_tabs_Lists_own1}"`));
+  assert.ok(r.joins.digital.ui_page_pg0 !== undefined && r.joins.digital.ui_page_pg0 !== r.joins.digital.ui_tabs_Lists_own0);
   // the tabs: transparent buttons on their joins, a tap tells the script; no page flips; the pill on its join under the first tab
   const tab = (k: number, title: string) => new RegExp(`<btn j="${tabJ(k)}" [^>]*js="IvaUI\\.tab\\(&quot;Lists&quot;, ${k}\\)"[^>]*>\\s*<inactive s="0">${title}<`).test(page);
   assert.ok(tab(0, 'Rows') && tab(1, 'Long') && tab(2, 'Pages'), 'the tab buttons');
@@ -288,7 +291,7 @@ export default (
   assert.match(page, new RegExp(`<img x="20" y="84" w="413" h="32" j="${bar}" clickthrough="1"`));
   // its setup: the tabs' joins, the pill, where the tabs are, and the pager's pages as the third screen's own
   const start = r.scripts.find((x) => x.name === 'iva-start.js')!.code!;
-  assert.match(start, /IvaUI\.tabs\("Lists", \{ joins: \[Joins\.d\["ui_tabs_Lists_0"\], Joins\.d\["ui_tabs_Lists_1"\], Joins\.d\["ui_tabs_Lists_2"\]\], bar: Joins\.s\["ui_tabs_Lists_bar"\], xs: \[20,433,847\], time: 0\.18, owned: \[\[\], \[\], \[Joins\.d\["ui_page_pg0"\], Joins\.d\["ui_page_pg1"\]\]\] \}\);/);
+  assert.match(start, /IvaUI\.tabs\("Lists", \{ joins: \[Joins\.d\["ui_tabs_Lists_0"\], Joins\.d\["ui_tabs_Lists_1"\], Joins\.d\["ui_tabs_Lists_2"\]\], bar: Joins\.s\["ui_tabs_Lists_bar"\], xs: \[20,433,847\], time: 0\.18, owned: \[\[\], \[\], \[\[Joins\.d\["ui_page_pg0"\], Joins\.d\["ui_tabs_Lists_own0"\]\], \[Joins\.d\["ui_page_pg1"\], Joins\.d\["ui_tabs_Lists_own1"\]\]\]\] \}\);/);
   assert.equal(start.match(/IvaUI\.tabs\(/g)!.length, 1, 'set up once for the section');
   assert.deepEqual(r.warnings, []);
 });

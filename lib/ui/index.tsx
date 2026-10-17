@@ -985,12 +985,10 @@ function liftFixed(children: Child): { content: Child; lifted: VNode[] } {
  * Subpages a screen's content places (a Pager's pages, a dialog, a picker's
  * sheet) taken out of it, to go on the page where they'd be (their groups'
  * offsets added; a fixed one sits where it says): iViewer shows no subpage
- * inside a subpage. Those that aren't modal (fixed) are the screen's own, to
- * be shown with its tab only - their joins.
+ * inside a subpage.
  */
-function liftSubpages(children: Child): { content: Child; lifted: VNode[]; owned: Join[] } {
+function liftSubpages(children: Child): { content: Child; lifted: VNode[] } {
   const lifted: VNode[] = [];
-  const owned: Join[] = [];
   const walk = (c: Child, dx: number, dy: number): Child => {
     if (Array.isArray(c)) return c.map((k) => walk(k, dx, dy));
     if (!c || typeof c !== 'object') return c;
@@ -998,14 +996,13 @@ function liftSubpages(children: Child): { content: Child; lifted: VNode[]; owned
     if (n.type === 'Subpage') {
       if (n.props.define) return n;
       lifted.push(n.props.fixed ? n : { ...n, props: { ...n.props, x: dx + (Number(n.props.x) || 0), y: dy + (Number(n.props.y) || 0) } });
-      if (!n.props.fixed && n.props.join !== undefined) owned.push(n.props.join);
       return null;
     }
     const nx = n.type === 'Group' ? dx + (Number(n.props?.x) || 0) : dx;
     const ny = n.type === 'Group' ? dy + (Number(n.props?.y) || 0) : dy;
     return n.children?.length ? { ...n, children: n.children.map((k) => walk(k, nx, ny)) } : n;
   };
-  return { content: walk(children, 0, 0), lifted, owned };
+  return { content: walk(children, 0, 0), lifted };
 }
 
 /**
@@ -1560,8 +1557,8 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
    * content places (a Pager's pages, a dialog, a picker's sheet) go on the
    * page, where they'd be - iViewer shows no subpage inside a subpage - and
    * those that aren't modal (fixed) are shown with their tab only: one with
-   * no join of its own on the tab's, one with its own hidden and shown
-   * again with the tab. In
+   * no join of its own on the tab's, one with its own on a mirror join the
+   * script keeps high while the tab shows and its own join is high. In
    * iViewer a ScrollArea is a list, and a list's rows (its header too) hold
    * no list, subpage or gesture: a DataList, a Pager, a Knob in one stay
    * empty or dead. Where a page of them doesn't fit (a phone), they get
@@ -1579,11 +1576,22 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     const bar: JoinRef = s(`ui_tabs_${key}_bar`);
     const xs = screens.map((_, k) => 20 + Math.round(k * seg));
     const pill = draw.box({ w: Math.round(seg), h: tabs.h - 8, radius: t.radius - 3, fill: t.accent });
+    // a screen's own subpages (lifted): one with no join of its own (always shown in its screen - a colour picker's wheel)
+    // goes on its tab's join; one with its own (a Pager's pages) on a mirror join the script keeps high only while its tab
+    // shows and its own join is high - iViewer has no AND of two joins. Modal ones (fixed: a dialog, a sheet) as they are.
+    let mirrors = 0;
     const parts = screens.map((sc, k) => {
-      const { content, lifted, owned } = liftSubpages(sc.content);
-      // one with no join of its own (always shown in its screen - a colour picker's wheel): shown with the screen, on its tab's join
-      const placed = lifted.map((n) => (n.props.fixed || n.props.join !== undefined ? n
-        : { ...n, props: { ...n.props, join: tabJoin(k), visible: k === 0, in: n.props.in ?? tabTransition, out: n.props.out ?? tabTransition } }));
+      const { content, lifted } = liftSubpages(sc.content);
+      const owned: [Join, JoinRef][] = [];
+      const placed = lifted.map((n) => {
+        if (n.props.fixed) return n;
+        if (n.props.join === undefined) {
+          return { ...n, props: { ...n.props, join: tabJoin(k), visible: k === 0, in: n.props.in ?? tabTransition, out: n.props.out ?? tabTransition } };
+        }
+        const mirror: JoinRef = d(`ui_tabs_${key}_own${mirrors++}`);
+        owned.push([n.props.join as Join, mirror]);
+        return { ...n, props: { ...n.props, join: mirror } };
+      });
       return { content, lifted: placed, owned };
     });
     return (
@@ -1603,8 +1611,8 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
         ))}
         {shell}
         {runtime}
-        <OnStart js={`IvaUI.tabs(${id}, { joins: [${screens.map((_, k) => jsJoin('d', tabJoin(k))).join(', ')}], bar: ${jsJoin('s', bar)}, xs: ${JSON.stringify(xs)}, time: 0.18, owned: [${parts.map((part) => `[${part.owned.map((j) => jsJoin('d', j)).join(', ')}]`).join(', ')}] });`}
-                 joins={[...screens.map((_, k) => tabJoin(k)), bar]} />
+        <OnStart js={`IvaUI.tabs(${id}, { joins: [${screens.map((_, k) => jsJoin('d', tabJoin(k))).join(', ')}], bar: ${jsJoin('s', bar)}, xs: ${JSON.stringify(xs)}, time: 0.18, owned: [${parts.map((part) => `[${part.owned.map(([j, m]) => `[${jsJoin('d', j)}, ${jsJoin('d', m)}]`).join(', ')}]`).join(', ')}] });`}
+                 joins={[...screens.map((_, k) => tabJoin(k)), bar, ...parts.flatMap((part) => part.owned.flatMap(([j, m]) => [typeof j === 'object' ? j : d(j), m]))]} />
       </Page>
     );
   }
