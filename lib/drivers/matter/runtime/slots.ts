@@ -6,9 +6,12 @@
  * a free slot, else the one longest unused. A retarget is the system off,
  * its address, port and localPort set, and on again: iViewer keeps sending
  * to the old address when only the address and port change (the probe
- * showed), and a restart binds the socket again, which takes a moment
- * (longer on a phone) - what's sent meanwhile waits for the system's
- * ConnectionStatusChangeEvent (or READY_MS).
+ * showed). A restart binds the socket again, which takes a moment on a
+ * phone; what's sent meanwhile goes at once all the same - iva's runtime
+ * queues it till the socket is bound (offlineQueue), iViewer sends no
+ * ConnectionStatusChangeEvent for a UDP system at all (seen 2026-10-18:
+ * holding the first packets till a 1.5 s timeout cost matter.js its whole
+ * retry budget), and Matter's own retransmissions cover a lost first packet.
  */
 
 import { fromBinary, toBinary, type CF } from './cf.js';
@@ -26,15 +29,12 @@ export interface Slot {
 
 export type FrameListener = (slot: Slot, bytes: Uint8Array) => void;
 
-/** how long a retargeted system gets to say it's connected before what waits goes anyway */
-export const READY_MS = 1500;
-
 export class SlotPool {
   readonly slots: Slot[];
   private listeners: FrameListener[] = [];
   private clock = 0;
-  /** what waits for a retargeted slot's socket, by slot */
-  private pending = new Map<number, { queue: Uint8Array[]; timer: ReturnType<typeof setTimeout> }>();
+  /** when a retargeted slot said it was bound again (a log line the first time: how long the phone takes) */
+  private retargeted = new Map<number, number>();
 
   constructor(private cf: CF, names: string[], localPorts: number[], private log: (m: string) => void = () => {}) {
     this.slots = names.map((name, i) => ({ index: i, name, localPort: localPorts[i], used: 0 }));
@@ -42,7 +42,11 @@ export class SlotPool {
       cf.watch(cf.FeedbackMatchedEvent, slot.name, 'frame', (_fb: unknown, data: unknown) => this.frame(slot, String(data)));
       // (one system a watch: iViewer takes no array here)
       cf.watch(cf.ConnectionStatusChangeEvent, slot.name, (_system: string, connected: boolean) => {
-        if (connected) this.ready(slot);
+        const since = this.retargeted.get(slot.index);
+        if (connected && since !== undefined) {
+          this.retargeted.delete(slot.index);
+          this.log(`slot ${slot.name}: bound again after ${Date.now() - since} ms`);
+        }
       });
     }
   }
@@ -55,26 +59,13 @@ export class SlotPool {
       if (slot.host !== undefined) this.log(`slot ${slot.name}: ${slot.host}:${slot.port} -> ${host}:${port} (all ${this.slots.length} slots in use)`);
       slot.host = host;
       slot.port = port;
-      const old = this.pending.get(slot.index);
-      if (old) clearTimeout(old.timer);
-      const index = slot.index;
-      this.pending.set(index, { queue: [], timer: setTimeout(() => this.ready(this.slots[index], true), READY_MS) });
+      this.retargeted.set(slot.index, Date.now());
       this.cf.setSystemProperties(slot.name, { enabled: false });
       this.cf.setSystemProperties(slot.name, { address: host, port, localPort: slot.localPort });
       this.cf.setSystemProperties(slot.name, { enabled: true });
     }
     slot.used = ++this.clock;
     return slot;
-  }
-
-  /** a retargeted slot's socket is bound: what waited goes */
-  private ready(slot: Slot, timedOut = false): void {
-    const p = this.pending.get(slot.index);
-    if (!p) return;
-    clearTimeout(p.timer);
-    this.pending.delete(slot.index);
-    if (timedOut && p.queue.length) this.log(`slot ${slot.name}: no connection event in ${READY_MS} ms, sending anyway`);
-    for (const bytes of p.queue) this.cf.send(slot.name, toBinary(bytes));
   }
 
   /** the slot targeted at host:port, if any */
@@ -84,9 +75,7 @@ export class SlotPool {
 
   send(host: string, port: number, bytes: Uint8Array): void {
     const slot = this.slotFor(host, port);
-    const p = this.pending.get(slot.index);
-    if (p) p.queue.push(bytes);
-    else this.cf.send(slot.name, toBinary(bytes));
+    this.cf.send(slot.name, toBinary(bytes));
   }
 
   /** frames as they come, with the slot (its peer) they came on; returns what stops listening */

@@ -151,20 +151,21 @@ test('the slot pool: a peer gets a free system, retargeted to it; its frames are
   assert.equal(pool.slotOf('192.168.2.43', 5540)?.name, 'matter0');
 });
 
-test('a retargeted slot binds its socket again: what\'s sent meanwhile waits for its connection event, then goes in order', () => {
+test('a retargeted slot sends at once, bound again or not (iViewer says nothing for a UDP system); the event, when it comes, is logged with its delay', () => {
   const p = panel();
-  const pool = new SlotPool(p.CF, ['matter0', 'matter1'], [5550, 5551]);
+  const log: string[] = [];
+  const pool = new SlotPool(p.CF, ['matter0', 'matter1'], [5550, 5551], (m) => log.push(m));
   p.hold(true);
   pool.send('192.168.2.40', 5540, Uint8Array.from([1]));
   pool.send('192.168.2.40', 5540, Uint8Array.from([2]));
-  assert.deepEqual(p.sent, [], 'held till the system says it is connected');
+  assert.deepEqual(p.sent, [{ system: 'matter0', bytes: [1] }, { system: 'matter0', bytes: [2] }], 'sent at once: the runtime queues till the socket is bound, matter.js retransmits');
   assert.equal(p.props.length, 3);
   p.connect('matter0');
-  assert.deepEqual(p.sent, [{ system: 'matter0', bytes: [1] }, { system: 'matter0', bytes: [2] }]);
+  assert.equal(log.length, 1);
+  assert.match(log[0], /^slot matter0: bound again after \d+ ms$/);
+  p.connect('matter0');
+  assert.equal(log.length, 1, 'later events of the slot: nothing to say');
   pool.send('192.168.2.40', 5540, Uint8Array.from([3]));
-  assert.equal(p.sent.length, 3, 'bound: sent at once');
-  // another peer, its slot never says so: sent after READY_MS anyway
-  pool.send('192.168.2.41', 5540, Uint8Array.from([4]));
   assert.equal(p.sent.length, 3);
 });
 
