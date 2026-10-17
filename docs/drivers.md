@@ -73,11 +73,11 @@ the runtime before this driver's codec fix), and iva's preview in a browser.
 | UDP: 1232 bytes in one packet | Yes | Yes | Yes |
 | UDP: four packets at once, four frames | Yes | Yes | Yes |
 | UDP: `textEncoding="iso-8859-1"`, a byte a char | Yes | No: windows-1252 (fixed in the runtime since) | Yes (since the fix) |
-| UDP: a system to `::1` (IPv6) | Yes | No | No (IPv4 socket) |
+| UDP: a system to `::1` (IPv6) | Yes | No (a v6 socket for a v6 address in the runtime since; the APK not yet) | Yes (since 2026-10-18) |
 | UDP: retarget with `CF.setSystemProperties({ address, port })` alone | No: keeps sending to the old address | Yes (after its connection event; 300 ms was too soon) | Yes |
 | UDP: rebind (`localPort` too) | Yes | Yes | Yes |
 | Tokens: 4, 16, 64 KB written and read back | Yes | Yes | Yes |
-| Tokens: kept to the next load | Not seen in two loads a minute apart (open: were they app restarts?) | pending | Yes |
+| Tokens: kept to the next load | Not seen in two loads a minute apart (open: were they app restarts?) | pending (the card was hidden) | Yes |
 | Tokens: a JSON value verbatim | No: `{{1+1}}` and `[@s1]` substituted | No (the same) | No (the same) |
 | A 1.5 MB script | Yes | Yes | Yes |
 | Bonjour (`_matter._tcp.`) | not exercised (VPN on) | not exercised | works (the gallery's page) |
@@ -91,8 +91,10 @@ JSON line). One more thing both runtimes do: a text join's value with
 "Token names seen" line showed 64 KB of token (a black texture on the
 panel, seven garbled lines on iViewer); names in text go without brackets.
 
-The panel app needs a new APK (CI, on push) for the two encoding lines; on
-the current one the driver's bytes would be read as text. On official
+The panel app needs a new APK (CI, on push) for the two encoding lines and
+IPv6; on the current one the driver's bytes would be read as text. The
+runtime's text fitting (a value too long for a texture, cut to its box) and
+bracket-less token names came the same day. On official
 iViewer the driver's needs are all met, if persisted tokens turn out to be
 kept across app restarts (the probe's "At start" line tells).
 
