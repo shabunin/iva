@@ -268,6 +268,36 @@ declare module 'iva' {
   }
   /** An element (or more): its join - d('cube'), s(12) - a tag of elements, or a list of them. */
   export type PropsTarget = JoinRef | string | (JoinRef | string)[];
+  /** how long a motion takes and how it runs (seconds; the curve as setProps()) */
+  export interface MotionTiming {
+      delay?: number;
+      duration?: number;
+      curve?: SetPropsOptions['curve'];
+  }
+  /**
+   * How an element moves (motion={...}), by itself: coming in when its page is
+   * shown, while it is pressed, with a digital join. Values are where it goes -
+   * a number, or '+n' / '-n' from where it is laid out (CF.getProperties). The
+   * element needs no join of its own: iva gives it one (iva_motion0 ...).
+   *
+   *   <Text … motion={{ enter: { from: { y: '+40', opacity: 0 }, duration: 0.4, curve: 'easeOut' } }} />
+   *   <Button … motion={{ press: { scale: 0.92, duration: 0.08 } }} />
+   *   <Image … motion={{ when: { join: d('alarm'), on: { opacity: 1, scale: 1.1 }, off: { opacity: 0.3 }, duration: 0.3 } }} />
+   */
+  export interface Motion {
+      /** when the page it is on is shown: from these (where it starts) to where it is laid out (default 0.3 s, easeOut) */
+      enter?: {
+          from: Properties;
+      } & MotionTiming;
+      /** while it is pressed (a button, a slider: iViewer's press and release events): these, and back on release (default 0.1 s) */
+      press?: Properties & Pick<MotionTiming, 'duration' | 'curve'>;
+      /** with a digital join: `on` while it is high, `off` while low (default: as laid out; 0.25 s, easeInOut) */
+      when?: {
+          join: JoinRef | string;
+          on: Properties;
+          off?: Properties;
+      } & MotionTiming;
+  }
   /**
    * Change elements' properties - move, scale, turn, fade - with CF.setProperties,
    * animated over `duration` with a `curve`, then (`then`) the next thing: a
@@ -329,6 +359,8 @@ declare module 'iva' {
       h: number;
       /** iViewer tags (for JS: CF.getJoins by tag) */
       tags?: string | string[];
+      /** how it moves by itself: in as its page shows, while pressed, with a join (Motion) */
+      motion?: Motion;
   }
   export interface Transition {
       type: 'fade' | 'moveIn' | 'push' | 'reveal' | 'none';
@@ -340,6 +372,8 @@ declare module 'iva' {
   interface Placement {
       x?: number;
       y?: number;
+      /** how it moves by itself: in as its page shows, with a join (Motion) */
+      motion?: Motion;
       /** digital join that shows / hides it */
       join?: Join;
       /** shown at start (when there's no join) */
@@ -1055,8 +1089,11 @@ declare module 'iva/ui' {
       x?: number;
       y?: number;
       w?: number;
+      /** a tile's height (default 96: two rows of 48, a Segmented's) */
       h?: number;
       gap?: number;
+      /** tiles a row (default: all in one row): more scenes wrap into rows below, a grid */
+      columns?: number;
   }
   export interface DimmerProps {
       label: string;
@@ -1100,6 +1137,8 @@ declare module 'iva/ui' {
       /** its pointer */
       pointer?: string;
       sweep?: number;
+      /** seconds the knob takes to turn to a value set or tapped (default 0.3); a drag has it follow the finger straight */
+      time?: number;
       x?: number;
       y?: number;
   }
