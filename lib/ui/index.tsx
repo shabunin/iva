@@ -258,6 +258,8 @@ export interface KnobProps {
   /** its pointer */
   pointer?: string;
   sweep?: number;
+  /** seconds the knob takes to turn to a value set or tapped (default 0.3); a drag has it follow the finger straight */
+  time?: number;
   x?: number;
   y?: number;
 }
@@ -1311,22 +1313,23 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
 
   /** A knob that turns, tick marks round it (GUI Designer's Dial demo); the value under it. */
   function Knob({ join, min = 0, max = 100, value, step, decimals = 0, unit = '%', label, labelJoin, size = 200, color = t.raised, pointer = t.accent,
-                  sweep = 270, x = 0, y = 0 }: KnobProps): VNode {
+                  sweep = 270, time = 0.3, x = 0, y = 0 }: KnobProps): VNode {
     const key = keyOf(join);
     const id = JSON.stringify(key);
     const from = -sweep / 2;
     const disc = Math.round(size * 0.72);
     const knobJoin: JoinRef = s(`ui_${key}_knob`);
     const text: JoinRef = s(`ui_${key}_value`);
-    const touch = `IvaUI.dialTouch(${id}, gesture.x, gesture.y)`;
-    const o = { sweep, size, min, max, step: step ?? 0, decimals, unit };
+    // a tap turns the knob there (in `time`); a drag has it follow the finger straight
+    const touch = (kind: 'tap' | 'pan') => `IvaUI.dialTouch(${id}, gesture.x, gesture.y, "${kind}")`;
+    const o = { sweep, size, min, max, step: step ?? 0, decimals, unit, time };
     // its drawings in a folder of its own, named after it (knobs/volume/): the ticks, the knob
     const folder = drawnSet('knobs', `${size}|${disc}|${color}|${pointer}|${sweep}|${t.muted}`, label ?? joinLabel(join, 'knob'), 'knob', variant(), placeOf('knobs'));
     return (
       <Group x={x} y={y}>
         <Image w={size} h={size} src={draw.ticks({ size, count: 28, from, to: -from, length: Math.round(size * 0.07), width: 2, color: t.muted, name: `${folder}/ticks` })}>
-          <Gesture type="tap" onBegin={touch} />
-          <Gesture type="pan" onBegin={touch} onChange={touch} />
+          <Gesture type="tap" onBegin={touch('tap')} />
+          <Gesture type="pan" onBegin={touch('pan')} onChange={touch('pan')} />
         </Image>
         <Image x={(size - disc) / 2} y={(size - disc) / 2} w={disc} h={disc} join={knobJoin} clickthrough
                src={draw.knob({ size: disc, color, pointer, at: from, name: `${folder}/knob` })} />

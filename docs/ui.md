@@ -110,7 +110,7 @@ it as a value in min..max.
 | `SceneBar` | one of several scenes, icon tiles (a grid with `columns`): the accent pill slides to the one chosen | `scenes: [{ icon, title, cmd }]`, `join`, `value`, `columns` (tiles a row; default all in one), `h` (a tile's), `gap` |
 | `Dimmer` | a light: icon, name, on / off, level | `label`, `icon`, `on`, `level` |
 | `Blinds` | up / stop / down and the position | `label`, `position`, `onOpen` / `onStop` / `onClose` |
-| `Knob` | a knob that turns, tick marks round it (GUI Designer's Dial demo); the value under it; touch / drag it | `join`, `min`, `max`, `value`, `step`, `decimals`, `unit`, `label` / `labelJoin`, `size`, `color`, `pointer`, `sweep` |
+| `Knob` | a knob that turns, tick marks round it (GUI Designer's Dial demo); the value under it; a tap turns it there, a drag has it follow | `join`, `min`, `max`, `value`, `step`, `decimals`, `unit`, `label` / `labelJoin`, `size`, `color`, `pointer`, `sweep`, `time` (seconds a turn takes, default 0.3) |
 | `Thermostat` | a setpoint Knob, the room temperature under it, − / + beside the value; modes below | `setpoint`, `value`, `current` / `currentJoin`, `min`, `max`, `step`, `unit`, `size`, `modes` + `mode` |
 | `RadioGroup` | one of a few, as radio buttons | `options`, `join` (the index), `value` |
 | `CheckBox` / `CheckBoxGroup` | on / off boxes | `label`, `join`, `value`; group: `options: [{ label, join, value }]` |

@@ -71,7 +71,8 @@ export default (
   assert.equal(r.assets.filter((x) => x.name.startsWith('knobs/')).length, 8);
   assert.ok(!r.assets.some((x) => x.name.startsWith('dials/')));
   assert.equal((r.xml.match(/<gesture /g) ?? []).length, 6); // tap + pan on each knob
-  assert.match(r.xml, /js="IvaUI\.dialTouch\(&quot;level&quot;, gesture\.x, gesture\.y\)"/);
+  assert.match(r.xml, /<gesture name="tap gesture" [^>]*>\s*<action phase="begin" js="IvaUI\.dialTouch\(&quot;level&quot;, gesture\.x, gesture\.y, &quot;tap&quot;\)"/);
+  assert.match(r.xml, /js="IvaUI\.dialTouch\(&quot;level&quot;, gesture\.x, gesture\.y, &quot;pan&quot;\)"/);
   assert.doesNotMatch(r.xml, /ui_frames_/);
   const start = r.scripts.find((x) => x.name === 'iva-start.js')!.code!;
   assert.equal(start.match(/IvaUI\.dial\(/g)!.length, 3);

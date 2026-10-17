@@ -558,11 +558,18 @@ test('Knob on the device: a finger\'s moves - a value at most every 40 ms and th
   d.IvaUI.dialStep('level', -1);
   d.run();
   assert.deepEqual([d.joins.a1, d.joins.s3], [Math.round(0.99 * 65535), '99 %']);
-  assert.equal(d.props[p1].duration, 0.12);
+  assert.equal(d.props[p1].duration, 0.3);
   // and the finger back where it was: put again
   d.IvaUI.dialTouch('level', ...at(135));
   d.run();
   assert.equal(d.joins.a1, 65535);
+  // a tap (not a drag) turns the knob there, not at once
+  d.run(1000);
+  const p2 = d.props.length;
+  d.IvaUI.dialTouch('level', ...at(0), 'tap');
+  d.run();
+  assert.equal(d.joins.a1, Math.round(0.5 * 65535));
+  assert.equal(d.props[p2].duration, 0.3);
 });
 
 test("Screens' tabs on the device: the first screen shown; a tap on another lights it, slides the pill, swaps the screens - no page flip; a tap meanwhile is ignored; a screen's own subpages show only while it does", () => {

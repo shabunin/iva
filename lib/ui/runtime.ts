@@ -284,7 +284,8 @@ var IvaUI = (function () {
      * a knob (a dial): the value in an analog join (min..max as 0..65535);
      * shown as the knob turned (its image's zrotation) and a serial join text.
      * Under a finger: a value at most every 40 ms, the knob following it
-     * straight (an animation a move piled up on the device); what's shown
+     * straight (an animation a move piled up on the device); a tap, a step or
+     * a value from elsewhere turn it there in o.time (0.3 s); what's shown
      * already isn't again (a move or not).
      */
     dial: function (id, o) {
@@ -298,15 +299,15 @@ var IvaUI = (function () {
       var turn = f * o.sweep, text = fmt(fromJoin(v, o.min, o.max), o.decimals, o.unit);
       if (o.thumb && turn !== o.turn) {
         o.turn = turn;
-        CF.setProperties({ join: o.thumb, zrotation: turn }, 0, Date.now() - (o.touched || 0) < 400 ? 0 : 0.12);
+        CF.setProperties({ join: o.thumb, zrotation: turn }, 0, Date.now() - (o.touched || 0) < 400 ? 0 : (o.time === undefined ? 0.3 : o.time));
       }
       if (o.text && text !== o.shown) {
         o.shown = text;
         CF.setJoin(o.text, text);
       }
     },
-    /** a touch at (x, y) in the dial's square: the value there, snapped to the step */
-    dialTouch: function (id, x, y) {
+    /** a touch at (x, y) in the dial's square: the value there, snapped to the step; kind 'tap' turns the knob there, a drag (else) follows */
+    dialTouch: function (id, x, y, kind) {
       var o = dials[id];
       if (!o) return;
       var c = o.size / 2;
@@ -316,7 +317,7 @@ var IvaUI = (function () {
       var f = clamp((a + o.sweep / 2) / o.sweep, 0, 1);
       var v = o.min + f * (o.max - o.min);
       if (o.step) v = Math.round(v / o.step) * o.step;
-      o.touched = Date.now();
+      o.touched = kind === 'tap' ? 0 : Date.now();
       o.want = toJoin(v, o.min, o.max);
       if (!o.timer) IvaUI.dialPut(id);
     },
