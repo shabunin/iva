@@ -74,6 +74,7 @@ function device({ echo = 'change', lag = 5 }: { echo?: 'change' | 'always'; lag?
   const joins: Record<string, any> = {};
   const sets: { join: string; value: any; quiet: boolean }[] = [];
   const props: { props: any; duration: number }[] = [];
+  const flips: string[] = [];
   const watchers: { event: string; joins?: string | string[]; cb: (...a: any[]) => void }[] = [];
   const fire = (event: string, join: string, ...rest: any[]) => later(lag, () => {
     for (const w of watchers) {
@@ -114,6 +115,14 @@ function device({ echo = 'change', lag = 5 }: { echo?: 'change' | 'always'; lag?
       props.push({ props: p, duration });
       if (done) later((delay + duration) * 1000, done);
     },
+    currentPage: 'Lists',
+    // a flip: the page shown, PageFlipEvent (from, to) later
+    flipToPage(page: string) {
+      const from = CF.currentPage;
+      flips.push(page);
+      CF.currentPage = page;
+      later(lag, () => { for (const w of watchers) if (w.event === 'page') w.cb(from, page, 'landscape'); });
+    },
     listRemove() {},
     listAdd() {},
     listScroll() {},
@@ -146,7 +155,7 @@ function device({ echo = 'change', lag = 5 }: { echo?: 'change' | 'always'; lag?
     joins[j] = v;
     fire('join', j, v);
   };
-  return { CF, IvaUI, joins, sets, props, run, user, pending: () => tasks.length };
+  return { CF, IvaUI, joins, sets, props, flips, run, user, pending: () => tasks.length };
 }
 
 /** Tones of a table: each one's row images (normal, every other, selected) and badge. */
@@ -548,4 +557,33 @@ test('Knob on the device: a finger\'s moves - a value at most every 40 ms and th
   d.IvaUI.dialTouch('level', ...at(135));
   d.run();
   assert.equal(d.joins.a1, 65535);
+});
+
+test("Screens' tabs on the device: the shown page's tab lit; a tap on another lights it, slides the pill under it, then flips - a tap meanwhile is ignored", () => {
+  const d = device();
+  d.IvaUI.tabs('Lists', { pages: ['Lists', 'Lists / Long', 'Lists / Pages'], joins: ['d1', 'd2', 'd3'], bar: 's9', xs: [20, 433, 847], time: 0.18 });
+  d.run();
+  assert.deepEqual([d.joins.d1, d.joins.d2, d.joins.d3], [1, 0, 0], 'the first page shown: its tab lit');
+  d.IvaUI.tab('Lists', 0);
+  d.run();
+  assert.deepEqual(d.flips, [], 'the tab shown: nothing to do');
+  const p0 = d.props.length;
+  d.IvaUI.tab('Lists', 2);
+  assert.deepEqual([d.joins.d1, d.joins.d2, d.joins.d3], [0, 0, 1], 'lit at once');
+  assert.deepEqual(d.props.slice(p0), [{ props: { join: 's9', x: 847 }, duration: 0.18 }], 'the pill slides under it');
+  d.IvaUI.tab('Lists', 1);
+  d.run(100);
+  assert.deepEqual(d.flips, [], 'the page waits for the slide');
+  d.run(100);
+  assert.deepEqual(d.flips, ['Lists / Pages']);
+  d.run();
+  assert.deepEqual([d.joins.d1, d.joins.d2, d.joins.d3], [0, 0, 1], 'the tap while sliding went nowhere');
+  // a flip from elsewhere (a menu): the tabs follow the page
+  d.CF.flipToPage('Lists / Long');
+  d.run();
+  assert.deepEqual([d.joins.d1, d.joins.d2, d.joins.d3], [0, 1, 0]);
+  d.IvaUI.tab('Lists', 0);
+  d.run();
+  assert.deepEqual(d.flips, ['Lists / Pages', 'Lists / Long', 'Lists']);
+  assert.equal(d.props.at(-1)!.props.x, 20);
 });

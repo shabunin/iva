@@ -1530,12 +1530,15 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
 
   /**
    * A section as screens a tab apart: a page each (the first named `name`,
-   * the others `name / title`), the tabs under the header - a tap on one
-   * flips to its page. In iViewer a ScrollArea is a list, and a list's
-   * rows (its header too) hold no list, subpage or gesture: a DataList, a
-   * Pager, a Knob in one stay empty or dead. Where a page of them doesn't fit
-   * (a phone), they get screens of their own; content that goes further down
-   * than the screen scrolls, if it can.
+   * the others `name / title`), the tabs under the header: transparent
+   * buttons over one accent pill, under the tab shown. A tap on another tab
+   * lights it, slides the pill under it (CF.setProperties, IvaUI.tab), then
+   * flips to its page - where the pill already sits under that tab. In
+   * iViewer a ScrollArea is a list, and a list's rows (its header too) hold
+   * no list, subpage or gesture: a DataList, a Pager, a Knob in one stay
+   * empty or dead. Where a page of them doesn't fit (a phone), they get
+   * screens of their own; content that goes further down than the screen
+   * scrolls, if it can.
    */
   function Screens({ name, screens, shell, bg = t.page, transition, tabTransition = transition }: ScreensProps): VNode {
     const W = t.panel.width;
@@ -1544,18 +1547,29 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     // a page comes with its own transition, whoever flips to it (a button can't give its own): with
     // tabs the first screen is a tab too - a tab back to it would come in as the section does
     const own = screens.length > 1 ? tabTransition : transition;
+    // the tabs' joins (the one shown lit), the pill's (slid by its join), where each tab is
+    const key = name.replace(/[^\w]/g, '_');
+    const id = JSON.stringify(key);
+    const tabJoin = (k: number): JoinRef => d(`ui_tabs_${key}_${k}`);
+    const bar: JoinRef = s(`ui_tabs_${key}_bar`);
+    const xs = screens.map((_, k) => 20 + Math.round(k * seg));
+    const pill = draw.box({ w: Math.round(seg), h: tabs.h - 8, radius: t.radius - 3, fill: t.accent });
     return (
       <>
         {screens.map((sc, i) => (
           <Page name={names[i]} bg={bg} transition={own}>
             <Box x={16} y={tabs.y} w={W - 32} h={tabs.h} bg={t.raised} radius={t.radius} />
+            <Image x={xs[i]} y={tabs.y + 4} w={Math.round(seg)} h={tabs.h - 8} join={bar} src={pill} clickthrough />
             {screens.map((tab, k) => (
-              <Button x={20 + Math.round(k * seg)} y={tabs.y + 4} w={Math.round((k + 1) * seg) - Math.round(k * seg)} h={tabs.h - 8} text={tab.title}
-                      radius={t.radius - 3} font={font} fontSize={16}
-                      {...(k === i ? { bg: t.accent, color: t.text } : { bg: t.raised, color: t.muted, active: { bg: shade(t.raised, 0.12), color: t.text }, page: names[k] })} />
+              <Button x={xs[k]} y={tabs.y + 4} w={Math.round((k + 1) * seg) - Math.round(k * seg)} h={tabs.h - 8} text={tab.title}
+                      join={tabJoin(k)} feedback="none" color={t.muted} active={{ color: t.text }} font={font} fontSize={16}
+                      js={`IvaUI.tab(${id}, ${k})`} />
             ))}
             <ScrollArea y={tabs.y + tabs.h + 4}>{sc.content}</ScrollArea>
             {shell}
+            {runtime}
+            <OnStart js={`IvaUI.tabs(${id}, { pages: ${JSON.stringify(names)}, joins: [${screens.map((_, k) => jsJoin('d', tabJoin(k))).join(', ')}], bar: ${jsJoin('s', bar)}, xs: ${JSON.stringify(xs)}, time: 0.18 });`}
+                     joins={[...screens.map((_, k) => tabJoin(k)), bar]} />
           </Page>
         ))}
       </>

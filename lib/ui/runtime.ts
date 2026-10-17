@@ -23,6 +23,7 @@ var IvaUI = (function () {
   var alarmSets = {};
   var pagers = {};
   var drags = {};
+  var tabsOf = {};
   // listInfo's scroll position over the GUI's pixels: 1, or the screen's scale where iViewer scales the
   // GUI up (a phone), or whatever it counts in - learnt from a list a script turned (unanimated) to a row
   var listScale = 0;
@@ -195,6 +196,36 @@ var IvaUI = (function () {
       // iViewer passes (from, to, orientation); some runtimes just (to)
       CF.watch(CF.PageFlipEvent, function (a, b) { show(typeof b === 'string' ? b : a); });
       if (CF.currentPage) show(CF.currentPage);
+    },
+    /**
+     * a section's tabs (ui.Screens: a page each): the tab of the page shown
+     * lit, the pill under it. A tap on another tab (tab): the tabs lit for it,
+     * the pill sliding under it, and then its page - so the page comes with
+     * the pill already there. A tap while it slides waits its turn (ignored).
+     */
+    tabs: function (id, o) {
+      tabsOf[id] = o;
+      function at(page) {
+        var i = o.pages.indexOf(page);
+        if (i < 0) return;
+        o.current = i;
+        for (var k = 0; k < o.joins.length; k++) CF.setJoin(o.joins[k], k === i ? 1 : 0);
+      }
+      // iViewer passes (from, to, orientation); some runtimes just (to)
+      CF.watch(CF.PageFlipEvent, function (a, b) { at(typeof b === 'string' ? b : a); });
+      if (CF.currentPage) at(CF.currentPage);
+    },
+    tab: function (id, k) {
+      var o = tabsOf[id];
+      if (!o || k === o.current || o.going) return;
+      o.going = true;
+      for (var i = 0; i < o.joins.length; i++) CF.setJoin(o.joins[i], i === k ? 1 : 0);
+      CF.setProperties({ join: o.bar, x: o.xs[k] }, 0, o.time, CF.AnimationCurveEaseInOut);
+      setTimeout(function () {
+        o.going = false;
+        o.current = k;
+        CF.flipToPage(o.pages[k]);
+      }, o.time * 1000);
     },
     /**
      * a knob (a dial): the value in an analog join (min..max as 0..65535);

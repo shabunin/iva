@@ -243,7 +243,7 @@ export default (
   assert.match(r.xml, /<page name="Q"[\s\S]*?<subpage [^>]*name="ui_select_pick"[\s\S]*?<\/page>/);
 });
 
-test('Screens: a page a tab, named after the section, tabs that flip to the others, content that scrolls if it can', async () => {
+test('Screens: a page a tab, named after the section; transparent tabs over a pill that slides to the one tapped, then its page; content that scrolls if it can', async () => {
   const dir = tmpDir('iva-screens-');
   fs.writeFileSync(path.join(dir, 'app.jsx'), `import { ui } from 'iva/ui';
 const A = ui.screenArea;
@@ -262,10 +262,19 @@ export default (
   // every screen comes as a tab does, the first too: a tab back to it flips with its own transition
   assert.deepEqual([...r.xml.matchAll(/<page name="[^"]+" [^>]*transition="(\w+)"/g)].map((m) => m[1]), ['fade', 'fade', 'fade']);
   const page = (name: string) => new RegExp(`<page name="${name}"[\\s\\S]*?</page>`).exec(r.xml)![0];
-  // the tabs: the others flip to their page (a tap; no swipe - the gestures on a page are its content's)
-  assert.match(page('Lists'), /<btn [^>]*flip="None"[^>]*>\s*<inactive s="0">Rows</);
-  assert.match(page('Lists'), /<btn [^>]*flip="Lists \/ Long"[^>]*>\s*<inactive s="0">Long</);
-  assert.match(page('Lists / Pages'), /<btn [^>]*flip="Lists"[^>]*>\s*<inactive s="0">Rows</);
+  // the tabs: transparent buttons (no background in their theme) on their joins, a tap tells the script; no page flip of their own
+  const tab = (p: string, k: number, title: string) => new RegExp(`<btn j="${r.joins.digital[`ui_tabs_Lists_${k}`]}" [^>]*js="IvaUI\\.tab\\(&quot;Lists&quot;, ${k}\\)"[^>]*>\\s*<inactive s="0">${title}<`).test(page(p));
+  assert.ok(tab('Lists', 0, 'Rows') && tab('Lists', 1, 'Long') && tab('Lists / Pages', 0, 'Rows'), 'the tab buttons');
+  assert.doesNotMatch(page('Lists'), /flip="Lists/);
+  const theme = r.xml.match(/<theme type="button" name=".(btn_\w+)\[state='0'\]"><!\[CDATA\[([^\]]*)\]\]>/g)!.find((m) => /color: #/.test(m) && !/background/.test(m));
+  assert.ok(theme, 'a transparent button theme');
+  // the pill: one drawn image on the bar join, under the tab shown on each page (1280 wide: tabs at 20, 433, 847)
+  const bar = r.joins.serial.ui_tabs_Lists_bar;
+  assert.match(page('Lists'), new RegExp(`<img x="20" y="84" w="413" h="32" j="${bar}" clickthrough="1"`));
+  assert.match(page('Lists / Pages'), new RegExp(`<img x="847" y="84" w="413" h="32" j="${bar}" clickthrough="1"`));
+  const start = r.scripts.find((x) => x.name === 'iva-start.js')!.code!;
+  assert.match(start, /IvaUI\.tabs\("Lists", \{ pages: \["Lists","Lists \/ Long","Lists \/ Pages"\], joins: \[Joins\.d\["ui_tabs_Lists_0"\], Joins\.d\["ui_tabs_Lists_1"\], Joins\.d\["ui_tabs_Lists_2"\]\], bar: Joins\.s\["ui_tabs_Lists_bar"\], xs: \[20,433,847\], time: 0\.18 \}\);/);
+  assert.equal(start.match(/IvaUI\.tabs\(/g)!.length, 1, 'set up once for the section');
   assert.ok(!/<gesture /.test(page('Lists')) && !/<gesture /.test(page('Lists / Long')));
   // the list on a page of its own, not in a list; the long one scrolls; no warnings
   assert.match(page('Lists'), /<list j="\d+"/);
