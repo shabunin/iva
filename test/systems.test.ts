@@ -230,17 +230,6 @@ test('Heartbeat: Initiate sends Tx every 3 s and closes after 15 s without Rx; R
   }
 });
 
-test('Text Encoding ISO-8859-1: a byte a char in and out, even bytes that would read as UTF-8 (a binary protocol: iva/drivers/mqtt)', () => {
-  const latin = new TextIn('ISO-8859-1');
-  const utf8 = new TextEncoder().encode('héllo');
-  assert.equal(latin.decode(utf8), 'h\xc3\xa9llo');
-  assert.equal(latin.decode(Uint8Array.from([0x30, 0x0a, 0x80, 0x9f, 0xff])), '\x30\x0a\x80\x9f\xff');
-  assert.equal(text(encodeText('\x80\x9f\xff', 'iso-8859-1')), '\x80\x9f\xff');
-  assert.equal(text(encodeText('a€', 'latin1')), 'a?');
-  // none set: the same bytes are the UTF-8 they look like
-  assert.equal(new TextIn('').decode(utf8), 'héllo');
-});
-
 test('Text Encoding: a server\'s windows-1251 read as such, commands sent in it; none set: UTF-8 text is read as UTF-8, binary stays a char a byte', () => {
   const cp1251 = new TextIn('windows-1251');
   assert.equal(cp1251.decode(Uint8Array.from([0xcf, 0xf0, 0xe8, 0xe2, 0xe5, 0xf2])), 'Привет');
@@ -530,4 +519,19 @@ test("feedback tokens: a <group settoken> keeps its value as a token named by th
   assert.equal(cf.tokensStore.s3.where, 'zone 2');
   assert.equal(joinStore.get('3', 's'), 'ON', 'an onmatch without a token sets the join');
   assert.equal(joinStore.has('e0', 'd'), false, 'e0 is no join');
+});
+
+test('textEncoding iso-8859-1 (GUI Designer\'s), latin1, binary: a byte a char both ways - 0x80 stays 0x80, UTF-8 sequences stay bytes', () => {
+  const all = Uint8Array.from({ length: 256 }, (_, i) => i);
+  for (const name of ['iso-8859-1', 'latin1', 'binary']) {
+    const decoded = new TextIn(name).decode(all);
+    assert.equal(decoded.length, 256, name);
+    assert.equal(decoded.charCodeAt(0x80), 0x80, `${name}: 0x80 (windows-1252 would give U+20AC)`);
+    assert.equal(decoded.charCodeAt(0xff), 0xff, name);
+    // é € in UTF-8, cut: bytes, not characters, and nothing waits for the next packet
+    assert.equal(new TextIn(name).decode(Uint8Array.from([0xc3, 0xa9, 0xe2, 0x82])), '\xc3\xa9\xe2\x82', name);
+    assert.deepEqual([...encodeText('\x00\x80\xff', name)], [0, 0x80, 0xff], name);
+    // a char past a byte: its low byte (nothing is sent as UTF-8)
+    assert.deepEqual([...encodeText('€', name)], [0xac], name);
+  }
 });

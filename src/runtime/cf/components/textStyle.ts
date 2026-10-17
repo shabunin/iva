@@ -119,6 +119,54 @@ export function underline(text: Text, parent: Container) {
     text.on('destroyed', () => line.destroy());
 }
 
+/** the biggest texture a phone's GPU takes: a text drawn past it is a black box */
+const MAX_TEXTURE = 4096;
+
+/**
+ * `text` cut to what a w x h box can show, so a long value (a 64 KB log on a
+ * join) never asks for a texture bigger than a GPU draws (a black box on a
+ * phone): the lines past twice the box or past the texture limit go, and a
+ * line that isn't wrapped is cut where it passes the limit. Text that a
+ * box might show stays as it is, drawn past its edges as before.
+ */
+export function fitText(text: string, layout: TextLayout, w: number, h: number): string {
+    const size = Number(layout.style.fontSize) || 16;
+    const [t, r, b, l] = layout.pad;
+    const limit = MAX_TEXTURE / (globalThis.devicePixelRatio || 1) - 8;
+    const innerW = Math.max(1, w - l - r);
+    const innerH = Math.max(size, h - t - b);
+    const wrap = !!layout.style.wordWrap;
+    // a cheap cut first: more characters than lines this high and wide could show (a glyph a fifth of the font size)
+    const perLine = Math.ceil(Math.min(wrap ? innerW : limit, limit) / (size * 0.2)) + 1;
+    const maxLines = Math.ceil(Math.min(innerH * 2, limit) / (size * 0.8)) + 1;
+    let lines = text.split('\n');
+    let cut = false;
+    if (lines.length > maxLines) {
+        lines = lines.slice(0, maxLines);
+        cut = true;
+    }
+    if (wrap) {
+        const most = perLine * maxLines;
+        if (lines.some((x) => x.length > most)) {
+            lines = lines.map((x) => x.slice(0, most));
+            cut = true;
+        }
+    } else if (lines.some((x) => x.length > perLine)) {
+        lines = lines.map((x) => x.slice(0, perLine));
+        cut = true;
+    }
+    if (!cut) return text;
+    // then as measured: the lines a box twice as high shows (within the texture), each within the texture's width
+    const m = CanvasTextMetrics.measureText(lines.join('\n'), layout.style, undefined, wrap);
+    const lineHeight = m.lineHeight || size * 1.2;
+    const keep = Math.max(1, Math.floor(Math.min(innerH * 2, limit) / lineHeight));
+    const kept = m.lines.slice(0, keep).map((line, i) => {
+        const width = m.lineWidths[i];
+        return width > limit && line.length ? line.slice(0, Math.max(1, Math.floor((line.length * limit) / width))) : line;
+    });
+    return kept.join('\n');
+}
+
 /** Place `text` in a w x h box as the layout says. */
 export function placeText(text: Text, layout: TextLayout, w: number, h: number) {
     const [t, r, b, l] = layout.pad;

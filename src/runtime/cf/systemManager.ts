@@ -586,8 +586,10 @@ export class ControlSystem {
      * it), -1 any. Taken (another system on it): any.
      */
     private _startUdp(port = this.localPort > 0 ? this.localPort : this.localPort < 0 ? 0 : this.port) {
+        // an IPv6 address (::1, fe80::..., ff02::fb): a v6 socket, bound on every v6 interface
+        const v6 = this.address.includes(':');
         // reuseAddr helps SSDP / reload when previous socket is slow to release
-        const socket = dgram.createSocket({ type: 'udp4', reuseAddr: true } as any);
+        const socket = dgram.createSocket({ type: v6 ? 'udp6' : 'udp4', reuseAddr: true } as any);
         this.udpSocket = socket;
         let bound = false;
 
@@ -620,16 +622,16 @@ export class ControlSystem {
             console.warn(`[System ${this.name}] UDP error:`, err?.message ?? err);
         });
 
-        socket.bind(port, '0.0.0.0', () => {
+        socket.bind(port, v6 ? '::' : '0.0.0.0', () => {
             if (this.udpSocket !== socket) return;
             bound = true;
             try {
-                // Multicast SSDP etc. (e.g. 239.255.255.250)
+                // Multicast SSDP etc. (e.g. 239.255.255.250, ff02::fb)
                 if (this._isMulticastAddress(this.address) && socket.addMembership) {
                     socket.addMembership(this.address);
                 }
-                // Accept Broadcast Messages; a broadcast address to send to
-                if ((this.accept || this.acceptBroadcasts || /\.255$/.test(this.address)) && socket.setBroadcast) {
+                // Accept Broadcast Messages; a broadcast address to send to (IPv6 has no broadcast)
+                if (!v6 && (this.accept || this.acceptBroadcasts || /\.255$/.test(this.address)) && socket.setBroadcast) {
                     socket.setBroadcast(true);
                 }
             } catch (e) {
@@ -648,6 +650,8 @@ export class ControlSystem {
     }
 
     private _isMulticastAddress(ip: string): boolean {
+        // IPv6: ff00::/8
+        if (/^ff[0-9a-f]{2}:/i.test(ip)) return true;
         const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(ip);
         if (!m) return false;
         const a = parseInt(m[1], 10);

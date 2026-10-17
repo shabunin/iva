@@ -1,5 +1,5 @@
 import { Container, Sprite, Graphics, Text, NineSliceSprite, Assets, type FederatedPointerEvent } from "pixi.js";
-import { placeText, textLayout, underline } from './textStyle';
+import { fitText, placeText, textLayout, underline } from './textStyle';
 import { TokenEngine } from "../tokenEngine";
 import { Button } from '@pixi/ui';
 import { CFNode } from '../parser';
@@ -212,10 +212,10 @@ export function renderButton(
                     ...(node.j && node.j !== '0' ? store[normalizeJoinString('d', node.j)] : undefined),
                     ...(textJoin && textJoin !== '0' ? store[normalizeJoinString('s', textJoin)] : undefined),
                 };
-                txtObj.text = TokenEngine.replaceTokens(rawStr, renderer.cfApi as any, { list: (node as any).listJoin, index: (node as any).listIndex, tokens });
-            } else {
-                txtObj.text = rawStr;
+                rawStr = TokenEngine.replaceTokens(rawStr, renderer.cfApi as any, { list: (node as any).listJoin, index: (node as any).listIndex, tokens });
             }
+            // what the button can show: a value too long for any texture would draw as a black box
+            txtObj.text = fitText(rawStr, isActive ? layout1 : layout0, node.w, node.h);
         }
     };
 

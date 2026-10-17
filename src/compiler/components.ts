@@ -857,6 +857,12 @@ export interface ScriptProps extends XmlProp {
   name?: string;
   /** inline code instead of src */
   code?: string;
+  /**
+   * a module (JavaScript / TypeScript, relative to the .jsx) bundled with what
+   * it imports - npm packages from the project's node_modules, else iva's -
+   * into one script for the panel (a driver bringing a library: iva/drivers/matter)
+   */
+  entry?: string;
 }
 export interface SoundProps extends XmlProp {
   name: string;
@@ -968,7 +974,7 @@ export const PROPS: Record<string, string[]> = {
   Macro: ['name'],
   Step: ['command', 'delay'],
   Token: ['name', 'value', 'persist'],
-  Script: ['src', 'name', 'code'],
+  Script: ['src', 'name', 'code', 'entry'],
   Sound: ['name', 'src', 'join', 'loop', 'releaseStop'],
   Theme: ['name', 'type', 'active', 'states', ...STYLE.filter((p) => p !== 'theme')],
   Raw: ['xml'],

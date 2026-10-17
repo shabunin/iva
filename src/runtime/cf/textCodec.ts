@@ -14,12 +14,11 @@ const latin1 = (bytes: Uint8Array) => {
 
 const UTF8 = new Set(['utf-8', 'utf8', 'unicode-1-1-utf-8']);
 /**
- * ISO-8859-1 as IANA has it: a byte a char, every byte (the web's decoder
- * gives windows-1252 for these names, a different thing for 0x80-0x9F) -
- * what a binary protocol over a system wants, in and out, with no UTF-8
- * read into it (iva/drivers/mqtt sets it).
+ * A byte a char, both ways: GUI Designer's iso-8859-1 (the web's TextDecoder
+ * would read it as windows-1252: 0x80 as U+20AC), latin1, binary. What a
+ * system carrying bytes (a Matter driver's) asks for: nothing read as UTF-8.
  */
-const LATIN1 = new Set(['iso-8859-1', 'iso_8859-1', 'iso8859-1', 'iso-ir-100', 'latin1', 'l1', 'cp819', 'ibm819', 'csisolatin1', 'binary']);
+const BYTES = new Set(['iso-8859-1', 'iso8859-1', 'iso_8859-1', 'latin1', 'latin-1', 'l1', 'binary', 'x-user-defined']);
 const named = (encoding?: string) => (encoding ?? '').trim().toLowerCase();
 
 /** how many bytes at the end start a UTF-8 character that isn't all there */
@@ -38,16 +37,13 @@ export class TextIn {
     private decoder: TextDecoder | null = null;
     private rest: Uint8Array | null = null;
     private readonly fatal = new TextDecoder('utf-8', { fatal: true });
-    /** ISO-8859-1: a byte a char, whatever the bytes */
-    private readonly latin1: boolean = false;
+    /** a byte a char, whatever the bytes */
+    private readonly bytes: boolean;
 
     constructor(encoding?: string) {
         const name = named(encoding);
-        if (!name) return;
-        if (LATIN1.has(name)) {
-            this.latin1 = true;
-            return;
-        }
+        this.bytes = BYTES.has(name);
+        if (!name || this.bytes) return;
         try {
             this.decoder = new TextDecoder(name);
         } catch {
@@ -57,7 +53,7 @@ export class TextIn {
 
     decode(data: Uint8Array | string): string {
         if (typeof data === 'string') return data;
-        if (this.latin1) return latin1(data);
+        if (this.bytes) return latin1(data);
         if (this.decoder) return this.decoder.decode(data, { stream: true });
         let bytes = data;
         if (this.rest) {
@@ -100,9 +96,10 @@ function table(name: string): Map<string, number> | null {
     return map;
 }
 
-/** Text to send as bytes in the encoding (none: a byte a char, UTF-8 if any char is past a byte). */
+/** Text to send as bytes in the encoding (none: a byte a char, UTF-8 if any char is past a byte; iso-8859-1: a byte a char, whatever the char). */
 export function encodeText(text: string, encoding?: string): Uint8Array {
     const name = named(encoding);
+    if (BYTES.has(name)) return Uint8Array.from(text, (c) => c.charCodeAt(0) & 0xff);
     if (!name) {
         let wide = false;
         for (let i = 0; i < text.length && !wide; i++) wide = text.charCodeAt(i) > 0xff;
@@ -110,8 +107,6 @@ export function encodeText(text: string, encoding?: string): Uint8Array {
         return Uint8Array.from(text, (c) => c.charCodeAt(0));
     }
     if (UTF8.has(name)) return new TextEncoder().encode(text);
-    // a char a byte; one past a byte: '?'
-    if (LATIN1.has(name)) return Uint8Array.from(text, (c) => (c.charCodeAt(0) > 0xff ? 0x3f : c.charCodeAt(0)));
     if (name === 'utf-16le' || name === 'utf-16' || name === 'utf-16be') {
         const out = new Uint8Array(text.length * 2);
         const view = new DataView(out.buffer);

@@ -1,5 +1,5 @@
 import { Container, Text } from 'pixi.js';
-import { placeText, textLayout, underline } from './textStyle';
+import { fitText, placeText, textLayout, underline } from './textStyle';
 import { TokenEngine } from '../tokenEngine';
 import { CFNode } from '../parser';
 import { joinStore, normalizeJoinString } from '../joinStore';
@@ -26,10 +26,10 @@ export function renderText(
         if (rawText.includes('[')) {
             // its join's tokens first (a list item's { value, tokens }), then the global ones
             const tokens = textJoin ? renderer.cfApi?.tokensStore?.[normalizeJoinString('s', textJoin)] : undefined;
-            txtObj.text = TokenEngine.replaceTokens(rawText, renderer.cfApi as any, { list: (node as any).listJoin, index: (node as any).listIndex, tokens });
-        } else {
-            txtObj.text = rawText;
+            rawText = TokenEngine.replaceTokens(rawText, renderer.cfApi as any, { list: (node as any).listJoin, index: (node as any).listIndex, tokens });
         }
+        // what the box can show: a value too long for any texture would draw as a black box
+        txtObj.text = fitText(rawText, layout, node.w, node.h);
     };
 
     reflectState();

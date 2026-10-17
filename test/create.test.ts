@@ -61,7 +61,7 @@ test("the references in a project: iva's docs copied, their links to each other 
   fs.writeFileSync(path.join(r.dir, 'IVA-UI.md'), 'stale');
   assert.deepEqual(writeDocs(r.dir), ['IVA.md', 'IVA-UI.md', 'IVA-WEB.md', 'IVA-DRIVERS.md']);
   const drivers = fs.readFileSync(path.join(r.dir, 'IVA-DRIVERS.md'), 'utf8');
-  assert.match(drivers, /# iva drivers/);
+  assert.match(drivers, /\n# Drivers: a component bringing its systems and script\n/);
   assert.ok(drivers.includes('](IVA.md#systems-and-logic)') && !drivers.includes('](components.md'), 'drivers.md links to components.md as the copy');
   assert.notEqual(fs.readFileSync(path.join(r.dir, 'IVA-UI.md'), 'utf8'), 'stale');
 });

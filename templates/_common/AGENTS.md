@@ -21,8 +21,9 @@ iva serve          # to iViewer on a real device (GUI File URL http://<this mach
   bare name (`image="bg.png"`), as iViewer finds them.
 - `scripts/`: iViewer JavaScript (the `CF.*` API), shipped as is with `<Script src>`.
 - `IVA.md`: every element and prop; `IVA-UI.md`: the iva/ui components;
-  `IVA-WEB.md`: web apps; `IVA-DRIVERS.md`: the drivers (MQTT ...) - iva's
-  docs, copied in (`iva types` rewrites them; don't edit). `iva.d.ts`: the types (don't edit;
+  `IVA-WEB.md`: web apps; `IVA-DRIVERS.md`: drivers (a component bringing
+  its systems and script: Matter, MQTT) - iva's docs, copied in (`iva types`
+  rewrites them; don't edit). `iva.d.ts`: the types (don't edit;
   `iva types` rewrites it).
 
 ## Rules that matter

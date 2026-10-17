@@ -244,7 +244,8 @@ export class CFAPI implements CFContext {
             this.ipv4netmask = d.ipv4netmask;
             this.ipv6address = d.ipv6address;
             this.ipv6netmask = d.ipv6netmask;
-            this.MACaddress = d.MACaddress;
+            // Android keeps the MAC from apps: the placeholder it hands them (iViewer shows the same)
+            this.MACaddress = d.MACaddress || (d.platform === 'Android' ? '02:00:00:00:00:00' : this.MACaddress);
             this.networkType = d.networkType;
             this.networkSSID = d.networkSSID;
         } catch (e) {
