@@ -58,12 +58,13 @@ export function styleCss(type: ThemeType, st: StyleProps, image: ImageResolver, 
   const opacity = st.opacity ?? 1;
 
   const background = () => {
-    if (st.bg !== undefined) {
-      if (type === 'button') {
-        decl.push(`filter: Alpha(Opacity=${Math.round(opacity * 100)}); -moz-opacity:${opacity}; opacity: ${opacity};`);
-      }
-      add('background-color', cssColor(st.bg));
+    // a button's opacity: GUI Designer's triple (always with a background colour, which shows only after it); a text's or input's: plain
+    if (type === 'button' && (st.bg !== undefined || st.opacity !== undefined)) {
+      decl.push(`filter: Alpha(Opacity=${Math.round(opacity * 100)}); -moz-opacity:${opacity}; opacity: ${opacity};`);
+    } else if (textual && st.opacity !== undefined) {
+      add('opacity', String(st.opacity));
     }
+    if (st.bg !== undefined) add('background-color', cssColor(st.bg));
     if (st.image) {
       const url = `url(${image(st.image)})`;
       if (slice) add('-webkit-border-image', `${url} ${slice.join(' ')}`);
