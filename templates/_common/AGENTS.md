@@ -63,7 +63,7 @@ iva serve          # to iViewer on a real device (GUI File URL http://<this mach
   scrolls a page that doesn't fit. A ScrollArea is a list: iViewer shows no
   list, subpage or gesture in one (DataList, DataTable, Pager, Knob,
   DragDrop... - the build warns); on a phone give those `<ui.Screens>` (a
-  page a tab). See iva's docs/components.md and docs/ui.md, Screen sizes.
+  subpage a tab, on one page). See iva's docs/components.md and docs/ui.md, Screen sizes.
 - Devices: `<System host port>` with `<Command>` and `<Feedback>`; button
   `cmd="Name"` sends a command.
 - Keep it valid for the real iViewer: prefer iva's props; `xml={{...}}` and

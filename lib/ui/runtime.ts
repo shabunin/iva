@@ -198,34 +198,42 @@ var IvaUI = (function () {
       if (CF.currentPage) show(CF.currentPage);
     },
     /**
-     * a section's tabs (ui.Screens: a page each): the tab of the page shown
-     * lit, the pill under it. A tap on another tab (tab): the tabs lit for it,
-     * the pill sliding under it, and then its page - so the page comes with
-     * the pill already there. A tap while it slides waits its turn (ignored).
+     * a section's tabs (ui.Screens, one page): the shown screen's tab lit and
+     * its subpage shown (one join), the pill under it. A tap on another (tab):
+     * the pill slides under it and the screens swap - the last one's own
+     * subpages (lifted to the page: a pager's pages) going with it, back as
+     * they were when its tab is tapped again. A tap while it slides is ignored.
      */
     tabs: function (id, o) {
       tabsOf[id] = o;
-      function at(page) {
-        var i = o.pages.indexOf(page);
-        if (i < 0) return;
-        o.current = i;
-        for (var k = 0; k < o.joins.length; k++) CF.setJoin(o.joins[k], k === i ? 1 : 0);
-      }
-      // iViewer passes (from, to, orientation); some runtimes just (to)
-      CF.watch(CF.PageFlipEvent, function (a, b) { at(typeof b === 'string' ? b : a); });
-      if (CF.currentPage) at(CF.currentPage);
+      o.current = 0;
+      o.shown = {};
+      for (var k = 0; k < o.joins.length; k++) CF.setJoin(o.joins[k], k === 0 ? 1 : 0);
     },
     tab: function (id, k) {
       var o = tabsOf[id];
       if (!o || k === o.current || o.going) return;
+      var from = o.current;
       o.going = true;
-      for (var i = 0; i < o.joins.length; i++) CF.setJoin(o.joins[i], i === k ? 1 : 0);
+      o.current = k;
       CF.setProperties({ join: o.bar, x: o.xs[k] }, 0, o.time, CF.AnimationCurveEaseInOut);
-      setTimeout(function () {
-        o.going = false;
-        o.current = k;
-        CF.flipToPage(o.pages[k]);
-      }, o.time * 1000);
+      setTimeout(function () { o.going = false; }, o.time * 1000);
+      var away = (o.owned && o.owned[from]) || [];
+      var back = (o.owned && o.owned[k]) || [];
+      function swap() {
+        for (var i = 0; i < o.joins.length; i++) CF.setJoin(o.joins[i], i === k ? 1 : 0);
+        for (var j = 0; j < back.length; j++) if (o.shown[back[j]]) CF.setJoin(back[j], 1);
+      }
+      if (!away.length) return swap();
+      // the last screen's own subpages: which were shown (to come back), then away
+      CF.getJoins(away, function (joins) {
+        for (var j = 0; j < away.length; j++) {
+          var v = joins[away[j]];
+          o.shown[away[j]] = !!v && Number(v.value) === 1;
+          CF.setJoin(away[j], 0);
+        }
+        swap();
+      });
     },
     /**
      * a knob (a dial): the value in an analog join (min..max as 0..65535);

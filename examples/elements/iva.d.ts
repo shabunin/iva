@@ -1231,24 +1231,20 @@ declare module 'iva/ui' {
       children?: Child;
   }
   export interface ScreensProps {
-      /** the section's page: its first screen (a menu, a NavCard flips to it); the others are pages named `name / title` */
+      /** the section's page: one page (a menu, a NavCard flips to it), its screens subpages on it */
       name: string;
-      /** a tab each: its title, and what's on it - placed as on a page, in ui.screenArea (under the tabs); it scrolls when it goes further down */
+      /** a tab each: its title, and what's on it - placed as on a page, in ui.screenArea (under the tabs), in a subpage of its own; it scrolls when it goes further down */
       screens: {
           title: string;
           content: Child;
       }[];
-      /** on every screen, over its content: the header, the side menu */
+      /** over every screen: the header, the side menu */
       shell?: Child;
-      /** the pages' background (default: the theme's page colour) */
+      /** the page's background (default: the theme's page colour) */
       bg?: string;
-      /** how its page comes when flipped to, a section of one screen (a page transition: { type, from, time, ease }); tabTransition's default */
+      /** how the page comes when flipped to (a page transition: { type, from, time, ease }); tabTransition's default */
       transition?: Transition;
-      /**
-       * with tabs: how each screen's page comes, the first one's too - from a
-       * menu as well (default: transition). iViewer plays a page's own
-       * transition whoever flips to it, a tab or a menu
-       */
+      /** how a screen's subpage comes and goes when a tab is tapped (fade, moveIn, push ...; default: transition) */
       tabTransition?: Transition;
   }
   export interface WeekDaysProps {

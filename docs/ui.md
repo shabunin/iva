@@ -66,20 +66,23 @@ list, subpage or gesture in a list's header, footer or rows - a `DataList`,
 `DataTable`, `AlarmTable`, `ScrollBox`, `Pager`, `ColorPicker`,
 `Knob`, `Thermostat` (the knob), `DragDrop` in one stays empty or dead on the
 device (the build warns). On a phone, give them screens of their own with
-`<ui.Screens>`: a page a tab, under the header; each screen's content goes in
-`ui.screenArea`, and still scrolls if it goes further down and can.
+`<ui.Screens>`: one page, a subpage a tab, under the header; each screen's
+content goes in `ui.screenArea`, and still scrolls if it goes further down
+and can.
 
 ```jsx
 export default narrow ? (
   <ui.Screens name="Lists" shell={<Shell section="Lists" />} screens={[
-    { title: 'DataList', content: <ui.Card {...ui.screenArea}>…</ui.Card> },   // the page "Lists"
-    { title: 'Rows', content: … },                                              // the page "Lists / Rows"
+    { title: 'DataList', content: <ui.Card {...ui.screenArea}>…</ui.Card> },   // the page "Lists": its first tab
+    { title: 'Rows', content: … },                                              // its second tab
   ]} />
 ) : <Page name="Lists">…</Page>;
 ```
 
-A tab flips to its page; the side menu lights the section's item on all
-of them.
+A tap on a tab slides the accent pill under it and shows its subpage (no
+page flip). Subpages a screen's content places (a Pager's pages, a dialog,
+a picker's sheet) go on the page - iViewer shows no subpage inside a
+subpage - and the ones that aren't modal show with their tab only.
 
 ## Joins
 
@@ -116,7 +119,7 @@ it as a value in min..max.
 | `DataList` | a CF list of headers, rows, alerts, spacers, filled at start | `join` (list), `items: [{ header } \| { icon, title, subtitle, value, alert } \| { spacer }]` |
 | `ScrollBox` | lines of text to drag through; or anything (children) scrolled as one: a list with no rows whose header subpage they are (iViewer scrolls lists only; everything in it works as anywhere, its joins the page's own) | `join` (list: lines need one), `lines`, or children + `contentH` (default: as far down as they go), `horizontal`, `w`, `h` |
 | `ScrollArea` | a page's content, scrolling when it goes further down than the panel (a ScrollBox below the header); else as it is. No lists, subpages, gestures in it (see Screen sizes) | `x`, `y` (default 72: below the header), `w`, `h`; children placed as on the page |
-| `Screens` | a section as screens a tab apart, a page each (`name`, `name / title`): tabs under the header - transparent buttons over an accent pill that slides to the tab tapped, then its page comes; the content in `ui.screenArea` | `name`, `screens: [{ title, content }]`, `shell` (on every screen: header, side menu), `bg`, `tabTransition` (how each screen comes, the first one's too: iViewer plays a page's own transition whoever flips to it - a tab, a menu), `transition` (one screen; tabTransition's default) |
+| `Screens` | a section as screens a tab apart on one page (`name`), a subpage each: tabs under the header - transparent buttons over an accent pill that slides to the tab tapped, whose subpage shows; the content in `ui.screenArea` | `name`, `screens: [{ title, content }]`, `shell` (over every screen: header, side menu), `bg`, `transition` (how the page comes), `tabTransition` (how a screen's subpage comes and goes; default: transition) |
 | `WeekDays` | seven day toggles; the bitmask (Mon 1 … Sun 64) and a summary ("Weekdays", "Sun, Mon") | `join` (bitmask), `value`, `first` (`mon`·`sun`), `labels`, `textJoin`, `size` |
 | `AlarmCard` | a titled card: on / off, the time (a TimePicker: a tap opens the drums), the days | `title`, `on`, `hour` / `minute` (analog joins, as numbers), `value` ("06:45"), `minuteStep`, `ampm`, `timeTitle`, `days`, `daysValue` |
 | `TextField` | a label, a field (an icon, a placeholder while empty), the text in a serial join | `join`, `label`, `value`, `placeholder`, `password`, `icon`, `cmd` (sent on Return) |

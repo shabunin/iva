@@ -375,21 +375,17 @@ export interface ScrollAreaProps {
   children?: Child;
 }
 export interface ScreensProps {
-  /** the section's page: its first screen (a menu, a NavCard flips to it); the others are pages named `name / title` */
+  /** the section's page: one page (a menu, a NavCard flips to it), its screens subpages on it */
   name: string;
-  /** a tab each: its title, and what's on it - placed as on a page, in ui.screenArea (under the tabs); it scrolls when it goes further down */
+  /** a tab each: its title, and what's on it - placed as on a page, in ui.screenArea (under the tabs), in a subpage of its own; it scrolls when it goes further down */
   screens: { title: string; content: Child }[];
-  /** on every screen, over its content: the header, the side menu */
+  /** over every screen: the header, the side menu */
   shell?: Child;
-  /** the pages' background (default: the theme's page colour) */
+  /** the page's background (default: the theme's page colour) */
   bg?: string;
-  /** how its page comes when flipped to, a section of one screen (a page transition: { type, from, time, ease }); tabTransition's default */
+  /** how the page comes when flipped to (a page transition: { type, from, time, ease }); tabTransition's default */
   transition?: Transition;
-  /**
-   * with tabs: how each screen's page comes, the first one's too - from a
-   * menu as well (default: transition). iViewer plays a page's own
-   * transition whoever flips to it, a tab or a menu
-   */
+  /** how a screen's subpage comes and goes when a tab is tapped (fade, moveIn, push ...; default: transition) */
   tabTransition?: Transition;
 }
 export interface WeekDaysProps {
@@ -986,6 +982,33 @@ function liftFixed(children: Child): { content: Child; lifted: VNode[] } {
 }
 
 /**
+ * Subpages a screen's content places (a Pager's pages, a dialog, a picker's
+ * sheet) taken out of it, to go on the page where they'd be (their groups'
+ * offsets added; a fixed one sits where it says): iViewer shows no subpage
+ * inside a subpage. Those that aren't modal (fixed) are the screen's own, to
+ * be shown with its tab only - their joins.
+ */
+function liftSubpages(children: Child): { content: Child; lifted: VNode[]; owned: Join[] } {
+  const lifted: VNode[] = [];
+  const owned: Join[] = [];
+  const walk = (c: Child, dx: number, dy: number): Child => {
+    if (Array.isArray(c)) return c.map((k) => walk(k, dx, dy));
+    if (!c || typeof c !== 'object') return c;
+    const n = c as VNode;
+    if (n.type === 'Subpage') {
+      if (n.props.define) return n;
+      lifted.push(n.props.fixed ? n : { ...n, props: { ...n.props, x: dx + (Number(n.props.x) || 0), y: dy + (Number(n.props.y) || 0) } });
+      if (!n.props.fixed && n.props.join !== undefined) owned.push(n.props.join);
+      return null;
+    }
+    const nx = n.type === 'Group' ? dx + (Number(n.props?.x) || 0) : dx;
+    const ny = n.type === 'Group' ? dy + (Number(n.props?.y) || 0) : dy;
+    return n.children?.length ? { ...n, children: n.children.map((k) => walk(k, nx, ny)) } : n;
+  };
+  return { content: walk(children, 0, 0), lifted, owned };
+}
+
+/**
  * How far down elements go (y + h), groups' offsets added: a ScrollBox's
  * content height. What's over it doesn't count: a sheet over the panel
  * (fixed), a dropdown (a topmost subpage).
@@ -1529,11 +1552,14 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
   const screenArea = { x: 16, y: tabs.y + tabs.h + 12, w: t.panel.width - 32, h: t.panel.height - (tabs.y + tabs.h + 12) - 16 };
 
   /**
-   * A section as screens a tab apart: a page each (the first named `name`,
-   * the others `name / title`), the tabs under the header: transparent
-   * buttons over one accent pill, under the tab shown. A tap on another tab
-   * lights it, slides the pill under it (CF.setProperties, IvaUI.tab), then
-   * flips to its page - where the pill already sits under that tab. In
+   * A section as screens a tab apart, on one page (`name`): each screen's
+   * content in a full-size subpage shown by its tab's join; the tabs under
+   * the header, transparent buttons over one accent pill, under the tab
+   * shown. A tap on another tab lights it, slides the pill under it and
+   * shows its subpage (IvaUI.tab) - no page flip. Subpages a screen's
+   * content places (a Pager's pages, a dialog, a picker's sheet) go on the
+   * page, where they'd be - iViewer shows no subpage inside a subpage - and
+   * those that aren't modal (fixed) are shown with their tab only. In
    * iViewer a ScrollArea is a list, and a list's rows (its header too) hold
    * no list, subpage or gesture: a DataList, a Pager, a Knob in one stay
    * empty or dead. Where a page of them doesn't fit (a phone), they get
@@ -1542,37 +1568,36 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
    */
   function Screens({ name, screens, shell, bg = t.page, transition, tabTransition = transition }: ScreensProps): VNode {
     const W = t.panel.width;
-    const names = screens.map((sc, i) => (i ? `${name} / ${sc.title}` : name));
+    const H = t.panel.height;
     const seg = (W - 32 - 8) / screens.length;
-    // a page comes with its own transition, whoever flips to it (a button can't give its own): with
-    // tabs the first screen is a tab too - a tab back to it would come in as the section does
-    const own = screens.length > 1 ? tabTransition : transition;
-    // the tabs' joins (the one shown lit), the pill's (slid by its join), where each tab is
+    // the tabs' joins (the one shown lit, its screen shown), the pill's (slid by its join), where each tab is
     const key = name.replace(/[^\w]/g, '_');
     const id = JSON.stringify(key);
     const tabJoin = (k: number): JoinRef => d(`ui_tabs_${key}_${k}`);
     const bar: JoinRef = s(`ui_tabs_${key}_bar`);
     const xs = screens.map((_, k) => 20 + Math.round(k * seg));
     const pill = draw.box({ w: Math.round(seg), h: tabs.h - 8, radius: t.radius - 3, fill: t.accent });
+    const parts = screens.map((sc) => liftSubpages(sc.content));
     return (
-      <>
-        {screens.map((sc, i) => (
-          <Page name={names[i]} bg={bg} transition={own}>
-            <Box x={16} y={tabs.y} w={W - 32} h={tabs.h} bg={t.raised} radius={t.radius} />
-            <Image x={xs[i]} y={tabs.y + 4} w={Math.round(seg)} h={tabs.h - 8} join={bar} src={pill} clickthrough />
-            {screens.map((tab, k) => (
-              <Button x={xs[k]} y={tabs.y + 4} w={Math.round((k + 1) * seg) - Math.round(k * seg)} h={tabs.h - 8} text={tab.title}
-                      join={tabJoin(k)} feedback="none" color={t.muted} active={{ color: t.text }} font={font} fontSize={16}
-                      js={`IvaUI.tab(${id}, ${k})`} />
-            ))}
-            <ScrollArea y={tabs.y + tabs.h + 4}>{sc.content}</ScrollArea>
-            {shell}
-            {runtime}
-            <OnStart js={`IvaUI.tabs(${id}, { pages: ${JSON.stringify(names)}, joins: [${screens.map((_, k) => jsJoin('d', tabJoin(k))).join(', ')}], bar: ${jsJoin('s', bar)}, xs: ${JSON.stringify(xs)}, time: 0.18 });`}
-                     joins={[...screens.map((_, k) => tabJoin(k)), bar]} />
-          </Page>
+      <Page name={name} bg={bg} transition={transition}>
+        {screens.map((sc, k) => (
+          <Subpage name={`ui_screen_${key}_${k}`} w={W} h={H} join={tabJoin(k)} visible={k === 0} in={tabTransition} out={tabTransition}>
+            <ScrollArea y={tabs.y + tabs.h + 4}>{parts[k].content}</ScrollArea>
+          </Subpage>
         ))}
-      </>
+        {parts.map((part) => part.lifted)}
+        <Box x={16} y={tabs.y} w={W - 32} h={tabs.h} bg={t.raised} radius={t.radius} />
+        <Image x={xs[0]} y={tabs.y + 4} w={Math.round(seg)} h={tabs.h - 8} join={bar} src={pill} clickthrough />
+        {screens.map((tab, k) => (
+          <Button x={xs[k]} y={tabs.y + 4} w={Math.round((k + 1) * seg) - Math.round(k * seg)} h={tabs.h - 8} text={tab.title}
+                  join={tabJoin(k)} feedback="none" color={t.muted} active={{ color: t.text }} font={font} fontSize={16}
+                  js={`IvaUI.tab(${id}, ${k})`} />
+        ))}
+        {shell}
+        {runtime}
+        <OnStart js={`IvaUI.tabs(${id}, { joins: [${screens.map((_, k) => jsJoin('d', tabJoin(k))).join(', ')}], bar: ${jsJoin('s', bar)}, xs: ${JSON.stringify(xs)}, time: 0.18, owned: [${parts.map((part) => `[${part.owned.map((j) => jsJoin('d', j)).join(', ')}]`).join(', ')}] });`}
+                 joins={[...screens.map((_, k) => tabJoin(k)), bar]} />
+      </Page>
     );
   }
 

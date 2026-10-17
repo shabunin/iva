@@ -559,31 +559,28 @@ test('Knob on the device: a finger\'s moves - a value at most every 40 ms and th
   assert.equal(d.joins.a1, 65535);
 });
 
-test("Screens' tabs on the device: the shown page's tab lit; a tap on another lights it, slides the pill under it, then flips - a tap meanwhile is ignored", () => {
+test("Screens' tabs on the device: the first screen shown; a tap on another tab lights it, slides the pill, swaps the screens - no page flip; a tap meanwhile is ignored; a screen's own subpages go and come back with it", () => {
   const d = device();
-  d.IvaUI.tabs('Lists', { pages: ['Lists', 'Lists / Long', 'Lists / Pages'], joins: ['d1', 'd2', 'd3'], bar: 's9', xs: [20, 433, 847], time: 0.18 });
-  d.run();
-  assert.deepEqual([d.joins.d1, d.joins.d2, d.joins.d3], [1, 0, 0], 'the first page shown: its tab lit');
+  d.joins.d7 = 1; // the third screen's pager, on its first page
+  d.IvaUI.tabs('Lists', { joins: ['d1', 'd2', 'd3'], bar: 's9', xs: [20, 433, 847], time: 0.18, owned: [[], [], ['d7', 'd8']] });
+  assert.deepEqual([d.joins.d1, d.joins.d2, d.joins.d3], [1, 0, 0], 'the first screen shown, its tab lit');
   d.IvaUI.tab('Lists', 0);
   d.run();
-  assert.deepEqual(d.flips, [], 'the tab shown: nothing to do');
-  const p0 = d.props.length;
+  assert.equal(d.props.length, 0, 'the tab shown: nothing to do');
   d.IvaUI.tab('Lists', 2);
-  assert.deepEqual([d.joins.d1, d.joins.d2, d.joins.d3], [0, 0, 1], 'lit at once');
-  assert.deepEqual(d.props.slice(p0), [{ props: { join: 's9', x: 847 }, duration: 0.18 }], 'the pill slides under it');
+  assert.deepEqual(d.props, [{ props: { join: 's9', x: 847 }, duration: 0.18 }], 'the pill slides under it');
+  assert.deepEqual([d.joins.d1, d.joins.d2, d.joins.d3], [0, 0, 1], 'the screens swapped at once');
   d.IvaUI.tab('Lists', 1);
   d.run(100);
-  assert.deepEqual(d.flips, [], 'the page waits for the slide');
+  assert.deepEqual([d.joins.d1, d.joins.d2, d.joins.d3], [0, 0, 1], 'a tap while it slides: ignored');
   d.run(100);
-  assert.deepEqual(d.flips, ['Lists / Pages']);
+  d.IvaUI.tab('Lists', 1);
   d.run();
-  assert.deepEqual([d.joins.d1, d.joins.d2, d.joins.d3], [0, 0, 1], 'the tap while sliding went nowhere');
-  // a flip from elsewhere (a menu): the tabs follow the page
-  d.CF.flipToPage('Lists / Long');
+  assert.deepEqual([d.joins.d1, d.joins.d2, d.joins.d3, d.joins.d7, d.joins.d8], [0, 1, 0, 0, 0], "the pager's page away with its screen");
+  d.run(200);
+  d.IvaUI.tab('Lists', 2);
   d.run();
-  assert.deepEqual([d.joins.d1, d.joins.d2, d.joins.d3], [0, 1, 0]);
-  d.IvaUI.tab('Lists', 0);
-  d.run();
-  assert.deepEqual(d.flips, ['Lists / Pages', 'Lists / Long', 'Lists']);
-  assert.equal(d.props.at(-1)!.props.x, 20);
+  assert.deepEqual([d.joins.d2, d.joins.d3, d.joins.d7, d.joins.d8], [0, 1, 1, 0], 'and back as it was');
+  assert.deepEqual(d.flips, [], 'no page flipped');
+  assert.equal(d.props.at(-1)!.props.x, 847);
 });

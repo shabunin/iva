@@ -25,7 +25,9 @@ test('the iva/ui gallery builds: one runtime script, the shared subpages once', 
   // the phone: what a list can't hold on screens of their own - nothing in a list it can't show
   const phone = await compile(GALLERY, { size: '1400x1400@3x' });
   assert.deepEqual(phone.warnings, []);
-  assert.ok(phone.xml.includes('<page name="Lists / ScrollBox"'));
+  // a section's screens: subpages on its one page, not pages of their own
+  assert.ok(phone.xml.includes('<subpage name="ui_screen_Lists_0" x="0" y="0"') && phone.xml.includes('<subpage name="ui_screen_Lists_1" x="0" y="0"'));
+  assert.doesNotMatch(phone.xml, /<page name="Lists \//);
 });
 
 test('iva/ui props are checked in the editor', async () => {
@@ -243,7 +245,7 @@ export default (
   assert.match(r.xml, /<page name="Q"[\s\S]*?<subpage [^>]*name="ui_select_pick"[\s\S]*?<\/page>/);
 });
 
-test('Screens: a page a tab, named after the section; transparent tabs over a pill that slides to the one tapped, then its page; content that scrolls if it can', async () => {
+test('Screens: one page, a full-size subpage a tab on its join; transparent tabs over a pill that slides to the one tapped; subpages the content places go on the page, as the tab\'s own', async () => {
   const dir = tmpDir('iva-screens-');
   fs.writeFileSync(path.join(dir, 'app.jsx'), `import { ui } from 'iva/ui';
 const A = ui.screenArea;
@@ -258,28 +260,34 @@ export default (
 );
 `);
   const r = await compile(path.join(dir, 'app.jsx'));
-  assert.deepEqual([...r.xml.matchAll(/<page name="([^"]+)"/g)].map((m) => m[1]), ['Lists', 'Lists / Long', 'Lists / Pages']);
-  // every screen comes as a tab does, the first too: a tab back to it flips with its own transition
-  assert.deepEqual([...r.xml.matchAll(/<page name="[^"]+" [^>]*transition="(\w+)"/g)].map((m) => m[1]), ['fade', 'fade', 'fade']);
-  const page = (name: string) => new RegExp(`<page name="${name}"[\\s\\S]*?</page>`).exec(r.xml)![0];
-  // the tabs: transparent buttons (no background in their theme) on their joins, a tap tells the script; no page flip of their own
-  const tab = (p: string, k: number, title: string) => new RegExp(`<btn j="${r.joins.digital[`ui_tabs_Lists_${k}`]}" [^>]*js="IvaUI\\.tab\\(&quot;Lists&quot;, ${k}\\)"[^>]*>\\s*<inactive s="0">${title}<`).test(page(p));
-  assert.ok(tab('Lists', 0, 'Rows') && tab('Lists', 1, 'Long') && tab('Lists / Pages', 0, 'Rows'), 'the tab buttons');
-  assert.doesNotMatch(page('Lists'), /flip="Lists/);
-  const theme = r.xml.match(/<theme type="button" name=".(btn_\w+)\[state='0'\]"><!\[CDATA\[([^\]]*)\]\]>/g)!.find((m) => /color: #/.test(m) && !/background/.test(m));
-  assert.ok(theme, 'a transparent button theme');
-  // the pill: one drawn image on the bar join, under the tab shown on each page (1280 wide: tabs at 20, 433, 847)
+  // one page, with the section's own transition
+  assert.deepEqual([...r.xml.matchAll(/<page name="([^"]+)"/g)].map((m) => m[1]), ['Lists']);
+  assert.match(r.xml, /<page name="Lists" [^>]*transition="push"/);
+  const page = /<page name="Lists"[\s\S]*?<\/page>/.exec(r.xml)![0];
+  // a screen's definition, less its own tag: what's in it
+  const def = (name: string) => (new RegExp(`<subpage name="${name}" w="1280" h="800"[^>]*>([\\s\\S]*?)</subpage>`).exec(r.xml)?.[1] ?? '').trim();
+  const tabJ = (k: number) => r.joins.digital[`ui_tabs_Lists_${k}`];
+  // a screen: a full-size subpage on its tab's join, the first one visible from the start, coming and going as tabTransition says
+  for (const k of [0, 1, 2]) {
+    assert.match(page, new RegExp(`<subpage name="ui_screen_Lists_${k}" x="0" y="0" j="${tabJ(k)}" transition1="fade" [^>]*time1="0.15"[^>]*transition2="fade" [^>]*v="${k ? 0 : 1}"`), `screen ${k} placed`);
+    assert.ok(def(`ui_screen_Lists_${k}`), `screen ${k} defined`);
+  }
+  // the list on the first screen in its subpage; the long one scrolls in its; the pager's pages on the page (iViewer nests no
+  // subpage), where the pager is, not in the third screen's subpage
+  assert.match(def('ui_screen_Lists_0'), /<list j="\d+"/);
+  assert.match(def('ui_screen_Lists_1'), /<list j="0" [^>]*headerSub="ui_scroll_\w+"/);
+  assert.doesNotMatch(def('ui_screen_Lists_2'), /<subpage /);
+  assert.match(page, /<subpage name="ui_pg_page_0" x="16" y="132" j="\d+"/);
+  // the tabs: transparent buttons on their joins, a tap tells the script; no page flips; the pill on its join under the first tab
+  const tab = (k: number, title: string) => new RegExp(`<btn j="${tabJ(k)}" [^>]*js="IvaUI\\.tab\\(&quot;Lists&quot;, ${k}\\)"[^>]*>\\s*<inactive s="0">${title}<`).test(page);
+  assert.ok(tab(0, 'Rows') && tab(1, 'Long') && tab(2, 'Pages'), 'the tab buttons');
+  assert.doesNotMatch(page, /flip="Lists/);
   const bar = r.joins.serial.ui_tabs_Lists_bar;
-  assert.match(page('Lists'), new RegExp(`<img x="20" y="84" w="413" h="32" j="${bar}" clickthrough="1"`));
-  assert.match(page('Lists / Pages'), new RegExp(`<img x="847" y="84" w="413" h="32" j="${bar}" clickthrough="1"`));
+  assert.match(page, new RegExp(`<img x="20" y="84" w="413" h="32" j="${bar}" clickthrough="1"`));
+  // its setup: the tabs' joins, the pill, where the tabs are, and the pager's pages as the third screen's own
   const start = r.scripts.find((x) => x.name === 'iva-start.js')!.code!;
-  assert.match(start, /IvaUI\.tabs\("Lists", \{ pages: \["Lists","Lists \/ Long","Lists \/ Pages"\], joins: \[Joins\.d\["ui_tabs_Lists_0"\], Joins\.d\["ui_tabs_Lists_1"\], Joins\.d\["ui_tabs_Lists_2"\]\], bar: Joins\.s\["ui_tabs_Lists_bar"\], xs: \[20,433,847\], time: 0\.18 \}\);/);
+  assert.match(start, /IvaUI\.tabs\("Lists", \{ joins: \[Joins\.d\["ui_tabs_Lists_0"\], Joins\.d\["ui_tabs_Lists_1"\], Joins\.d\["ui_tabs_Lists_2"\]\], bar: Joins\.s\["ui_tabs_Lists_bar"\], xs: \[20,433,847\], time: 0\.18, owned: \[\[\], \[\], \[Joins\.d\["ui_page_pg0"\], Joins\.d\["ui_page_pg1"\]\]\] \}\);/);
   assert.equal(start.match(/IvaUI\.tabs\(/g)!.length, 1, 'set up once for the section');
-  assert.ok(!/<gesture /.test(page('Lists')) && !/<gesture /.test(page('Lists / Long')));
-  // the list on a page of its own, not in a list; the long one scrolls; no warnings
-  assert.match(page('Lists'), /<list j="\d+"/);
-  assert.match(page('Lists / Long'), /<list j="0" [^>]*headerSub="ui_scroll_\w+"/);
-  assert.match(page('Lists / Pages'), /<subpage [^>]*name="ui_pg_page_0"/);
   assert.deepEqual(r.warnings, []);
 });
 
