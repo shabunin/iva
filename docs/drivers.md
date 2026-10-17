@@ -153,7 +153,7 @@ Props:
 | `slots` | UDP systems in the pool, a peer each (default 10: `matter0` ... `matter9`) |
 | `port` | the first slot's local port, the next ones following (default 5550) |
 | `devices` | by name: `{ node, cluster, join }` - `node` the id the controller gave the device when commissioning (the status join shows it), `endpoint` (default 1), `cluster` `OnOff` (`join` digital, both ways), `LevelControl` (`join` analog: 0..65535 for 0..254, `moveToLevelWithOnOff`) or `ColorControl` (`hue` and `saturation` analog, 0..65535 for 0..254, `moveToHueAndSaturation`); `address` + `port` where Bonjour can't find the node |
-| `commission` | `{ code, go, status }`: the setup code (serial: 11 digits, 21, or the QR code's `MT:` text), Go (digital, a momentary button), what the controller says (serial) - "Commissioned: node N" tells the id for `devices` |
+| `commission` | `{ code, go, status, address }`: the setup code (serial: 11 digits, 21, or the QR code's `MT:` text), Go (digital, a momentary button), what the controller says (serial), and `address` (serial, optional): where the device is when Bonjour can't find it - `host`, `host:port` or `[v6]:port`. A commissioned device gets the lowest free node id from 1 (so `devices` can name it ahead); "Commissioned: node N" tells which, and its devices are bound at once |
 | `found` | serial join: the devices Bonjour finds, JSON rows `{ name, kind, where, info, slot }` for a `ui.DataTable source` (`kind`: operational, node of ours, commissionable) |
 | `label` | the controller's name in the devices' fabrics (default `iva`) |
 | `ipv6` | IPv6 addresses too (default false) |
@@ -165,15 +165,25 @@ What it emits: the systems (`host="127.0.0.2" port={5540}` till assigned,
 `localPort` the slot's, `accept`, `offlineQueue`, the `frame` feedback), the
 tokens, `iva-matter.js` (once), and one `OnStart` line
 `IvaMatter.start({...})` with the devices' joins as `Joins.*` references.
-On the panel: `IvaMatter.driver` (the `MatterDriver`), `IvaMatter.commission(code)`.
+On the panel: `IvaMatter.driver` (the `MatterDriver`), `IvaMatter.commission(code, address?)`.
 
 Commissioning is on-network only (the device already on the Wi-Fi, in pairing
-mode; no BLE, no Thread credentials). A subscription sets a device's joins;
-a join's change (not the driver's own echo) sends the command.
+mode; no BLE, no Thread credentials). With an address given, PASE goes there
+and the node's operational name is announced at that address too, so the
+CASE step after PASE needs no Bonjour either. A subscription sets a device's
+joins; a join's change (not the driver's own echo) sends the command.
 
-Tests without a device: `test/matter.test.ts` (the pool, the Network, the
+Tests without a device: `test/matter.test.ts` - the pool, the Network, the
 DNS-SD source through matter.js's own scanner, the storage, the compile
-output). The example: `examples/matter` (`iva serve examples/matter/app.jsx`).
+output, and the whole way end to end: a matter.js light in the test process,
+the fake panel's systems real UDP sockets, commissioned from its setup code,
+controlled both ways, back from the tokens with a second driver. By hand:
+`examples/matter/virtual-light.mjs` (a matter.js light on this machine) and
+`iva dev examples/matter/app.jsx` in a browser - what the first commissioning
+ran on (2026-10-18): discovery, PASE, CASE, the subscription, hue and
+saturation, a reload from the tokens, a reconnect after the light restarted,
+each in about a second. The example: `examples/matter`
+(`iva serve examples/matter/app.jsx`).
 
 ## MQTT: `<Mqtt>` (iva/drivers/mqtt)
 
