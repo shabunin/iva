@@ -210,6 +210,7 @@ export interface SceneBarProps {
   x?: number;
   y?: number;
   w?: number;
+  /** the tiles' height (default 144: three rows of 48, a Segmented's) */
   h?: number;
   gap?: number;
 }
@@ -1216,16 +1217,17 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     const id = JSON.stringify(key);
     const option = (i: number): JoinRef => d(`ui_${key}_${i}`);
     const pillJoin: JoinRef = s(`ui_${key}_pill`);
+    const at = Math.max(0, Math.min(count - 1, value));
     const args = [
       id, jsJoin('a', join), `[${Array.from({ length: count }, (_, i) => jsJoin('d', option(i))).join(', ')}]`, String(value),
       labels && labelJoin ? JSON.stringify(labels) : 'undefined', labelJoin ? jsJoin('s', labelJoin) : 'undefined',
-      pill ? `{ join: ${jsJoin('s', pillJoin)}, xs: ${JSON.stringify(pill.xs)}${pill.ys ? `, ys: ${JSON.stringify(pill.ys)}` : ''}, time: 0.18 }` : 'undefined',
+      pill ? `{ join: ${jsJoin('s', pillJoin)}, xs: ${JSON.stringify(pill.xs)}${pill.ys ? `, ys: ${JSON.stringify(pill.ys)}` : ''}, at: ${at}, time: 0.18 }` : 'undefined',
     ];
     while (args[args.length - 1] === 'undefined') args.pop();
     const start = (
       <OnStart js={`IvaUI.group(${args.join(', ')});`} joins={[typeof join === 'object' ? join : a(join), ...(labelJoin ? [labelJoin] : []), ...(pill ? [pillJoin] : [])]} />
     );
-    const at = Math.max(0, Math.min(count - 1, value));
+    // placed under the option chosen at first (`at`): the script moves it by offsets from there, wherever the group sits
     const image = pill ? (
       <Image x={pill.xs[at]} y={pill.ys ? pill.ys[at] : pill.y ?? 0} w={pill.w} h={pill.h} join={pillJoin} clickthrough
              src={draw.box({ w: pill.w, h: pill.h, radius: pill.radius, fill: pill.color ?? t.accent })} />
@@ -1251,7 +1253,7 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     );
   }
 
-  function SceneBar({ scenes, join, value = 0, x = 0, y = 0, w = 742, h = 120, gap = 12 }: SceneBarProps): VNode {
+  function SceneBar({ scenes, join, value = 0, x = 0, y = 0, w = 742, h = 144, gap = 12 }: SceneBarProps): VNode {
     const each = (w - gap * (scenes.length - 1)) / scenes.length;
     const tw = Math.round(each);
     const xs = scenes.map((_, i) => Math.round(i * (each + gap)));

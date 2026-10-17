@@ -75,6 +75,8 @@ function device({ echo = 'change', lag = 5 }: { echo?: 'change' | 'always'; lag?
   const sets: { join: string; value: any; quiet: boolean }[] = [];
   const props: { props: any; duration: number }[] = [];
   const flips: string[] = [];
+  /** where elements sit (CF.getProperties), by join */
+  const placed: Record<string, { x: number; y: number }> = {};
   const watchers: { event: string; joins?: string | string[]; cb: (...a: any[]) => void }[] = [];
   const fire = (event: string, join: string, ...rest: any[]) => later(lag, () => {
     for (const w of watchers) {
@@ -114,6 +116,10 @@ function device({ echo = 'change', lag = 5 }: { echo?: 'change' | 'always'; lag?
     setProperties(p: any, delay = 0, duration = 0, curve?: unknown, done?: () => void) {
       props.push({ props: p, duration });
       if (done) later((delay + duration) * 1000, done);
+    },
+    getProperties(j: string, cb: (p: unknown) => void) {
+      const p = placed[j];
+      later(lag, () => cb(p ? { join: j, x: p.x, y: p.y } : null));
     },
     currentPage: 'Lists',
     // a flip: the page shown, PageFlipEvent (from, to) later
@@ -155,7 +161,7 @@ function device({ echo = 'change', lag = 5 }: { echo?: 'change' | 'always'; lag?
     joins[j] = v;
     fire('join', j, v);
   };
-  return { CF, IvaUI, joins, sets, props, flips, run, user, pending: () => tasks.length };
+  return { CF, IvaUI, joins, sets, props, flips, placed, run, user, pending: () => tasks.length };
 }
 
 /** Tones of a table: each one's row images (normal, every other, selected) and badge. */
@@ -593,31 +599,34 @@ test("Screens' tabs on the device: the first screen shown; a tap on another ligh
   assert.equal(d.props.at(-1)!.props.x, 847);
 });
 
-test("a one-of group's pill: under the first value at once, sliding to a pick or to a value from elsewhere, not twice to the same", () => {
+test("a one-of group's pill: under the first value at once, sliding to a pick or to a value from elsewhere by offsets from where it sits, not twice to the same", () => {
   const d = device();
-  d.IvaUI.group('mode', 'a1', ['d1', 'd2', 'd3'], 1, undefined, undefined, { join: 's9', xs: [4, 112, 220], time: 0.18 });
+  // the segmented sits at x 10 on the page: its pill was placed under option 1 at 10 + 112
+  d.placed.s9 = { x: 122, y: 14 };
+  d.IvaUI.group('mode', 'a1', ['d1', 'd2', 'd3'], 1, undefined, undefined, { join: 's9', xs: [4, 112, 220], at: 1, time: 0.18 });
   d.run();
   assert.deepEqual([d.joins.a1, d.joins.d1, d.joins.d2, d.joins.d3], [1, 0, 1, 0]);
-  assert.deepEqual(d.props.at(-1), { props: { join: 's9', x: 112 }, duration: 0 }, 'put under the initial choice at once');
+  assert.deepEqual(d.props.at(-1), { props: { join: 's9', x: 122 }, duration: 0 }, 'under the initial choice, where the group is');
   assert.ok(d.props.every((p) => p.duration === 0), 'nothing slides while the group starts');
   d.run(600);
   const n = d.props.length;
   d.IvaUI.pick('mode', 2);
   d.run();
   assert.deepEqual([d.joins.a1, d.joins.d2, d.joins.d3], [2, 0, 1]);
-  assert.deepEqual(d.props.slice(n), [{ props: { join: 's9', x: 220 }, duration: 0.18 }], 'slid to the one picked');
+  assert.deepEqual(d.props.slice(n), [{ props: { join: 's9', x: 230 }, duration: 0.18 }], 'slid to the one picked, by the group offset');
   // the value from a feedback: the pill follows; the same value again: no move
   d.user('a1', 0);
   d.run();
-  assert.deepEqual(d.props.at(-1), { props: { join: 's9', x: 4 }, duration: 0.18 });
+  assert.deepEqual(d.props.at(-1), { props: { join: 's9', x: 14 }, duration: 0.18 });
   const m = d.props.length;
   d.user('a1', 0);
   d.run();
   assert.equal(d.props.length, m);
-  // rows one under another (ys): a y too
-  d.IvaUI.group('pick', 'a2', ['d4', 'd5'], 0, undefined, undefined, { join: 's8', xs: [0, 0], ys: [0, 48], time: 0.18 });
+  // rows one under another (ys): a y too, offsets both ways
+  d.placed.s8 = { x: 5, y: 100 };
+  d.IvaUI.group('pick', 'a2', ['d4', 'd5'], 0, undefined, undefined, { join: 's8', xs: [0, 0], ys: [0, 48], at: 0, time: 0.18 });
   d.run(600);
   d.IvaUI.pick('pick', 1);
   d.run();
-  assert.deepEqual(d.props.at(-1), { props: { join: 's8', x: 0, y: 48 }, duration: 0.18 });
+  assert.deepEqual(d.props.at(-1), { props: { join: 's8', x: 5, y: 148 }, duration: 0.18 });
 });

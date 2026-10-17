@@ -436,7 +436,7 @@ export default (
   assert.match(page, new RegExp(`<img x="10" y="100" w="365" h="120" j="${r.joins.serial.ui_scene_pill}" clickthrough="1"`));
   assert.equal((page.match(/boxes\/365x120-r\d+-\w+\.png/g) ?? []).length, 2, 'a raised tile each');
   const start = r.scripts.find((x) => x.name === 'iva-start.js')!.code!;
-  assert.match(start, new RegExp(`IvaUI\\.group\\("mode", Joins\\.a\\["mode"\\], \\[Joins\\.d\\["ui_mode_0"\\], Joins\\.d\\["ui_mode_1"\\], Joins\\.d\\["ui_mode_2"\\]\\], 1, undefined, undefined, \\{ join: Joins\\.s\\["ui_mode_pill"\\], xs: \\[4,${4 + Math.round(seg)},${4 + Math.round(2 * seg)}\\], time: 0\\.18 \\}\\);`));
-  assert.match(start, /IvaUI\.group\("scene", [^;]*xs: \[0,377\], time: 0\.18 \}\);/);
+  assert.match(start, new RegExp(`IvaUI\\.group\\("mode", Joins\\.a\\["mode"\\], \\[Joins\\.d\\["ui_mode_0"\\], Joins\\.d\\["ui_mode_1"\\], Joins\\.d\\["ui_mode_2"\\]\\], 1, undefined, undefined, \\{ join: Joins\\.s\\["ui_mode_pill"\\], xs: \\[4,${4 + Math.round(seg)},${4 + Math.round(2 * seg)}\\], at: 1, time: 0\\.18 \\}\\);`));
+  assert.match(start, /IvaUI\.group\("scene", [^;]*xs: \[0,377\], at: 0, time: 0\.18 \}\);/);
   assert.deepEqual(r.warnings, []);
 });
