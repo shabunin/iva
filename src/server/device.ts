@@ -120,16 +120,29 @@ function liveScript(base: string, version: string, servers: PanelServer[], syste
   var version = ${JSON.stringify(version)};
   var servers = ${JSON.stringify(servers)};
   var systems = ${JSON.stringify(systems)};
-  // the log, a batch at a time
-  var queue = [], sending = false;
+  // the log, a batch at a time; kept while iva serve is out of reach (a VPN off for a Bonjour test), sent when it's back
+  var queue = [], sending = false, retry = null;
   function flush() {
-    if (sending || !queue.length) return;
+    if (sending || retry || !queue.length) return;
     sending = true;
-    var text = queue.splice(0, 20).join("\\n");
-    CF.request(base + "/__iva/log?m=" + encodeURIComponent(text.slice(0, 1500)), function () {
+    var n = Math.min(queue.length, 20);
+    var text = queue.slice(0, n).join("\\n");
+    var done = false;
+    var give = setTimeout(function () { finish(0); }, 10000);
+    function finish(status) {
+      if (done) return;
+      done = true;
+      clearTimeout(give);
       sending = false;
-      flush();
-    });
+      if (status == 200) {
+        queue.splice(0, n);
+        flush();
+        return;
+      }
+      if (queue.length > 2000) queue.splice(0, queue.length - 2000);
+      retry = setTimeout(function () { retry = null; flush(); }, 3000);
+    }
+    CF.request(base + "/__iva/log?m=" + encodeURIComponent(text.slice(0, 1500)), function (status) { finish(status); });
   }
   function out(m) {
     try {
