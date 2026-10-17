@@ -580,3 +580,29 @@ test('style: a page tiles its background image (tile), a text underlines (underl
   assert.match(xml, /background-image: url\(dots\.png\); background-repeat: repeat;/);
   assert.match(xml, /text-decoration: underline;/);
 });
+
+test("writeBuild empties its folder first, so it refuses one the project's own files are in (iva build -o .), one above it, or an unrelated non-empty one; a previous build's folder is fine", async () => {
+  const dir = tmpDir('iva-src-');
+  fs.mkdirSync(path.join(dir, 'proj'));
+  fs.writeFileSync(path.join(dir, 'proj', 'app.jsx'), wrap('<Text w={100} h={20} text="hi" />'));
+  const r = await compile(path.join(dir, 'proj', 'app.jsx'));
+  const refused = (out: string, pattern: RegExp) =>
+    assert.throws(() => writeBuild(r, out), (e: any) => e instanceof IvaError && pattern.test(e.message), `${out} not refused`);
+  refused(path.join(dir, 'proj'), /project's own files are in it \(.*app\.jsx\)/);
+  refused(dir, /project's own files/);
+  const other = tmpDir('iva-other-');
+  fs.writeFileSync(path.join(other, 'notes.txt'), 'keep me');
+  refused(other, /isn't empty and isn't a previous build/);
+  assert.equal(fs.readFileSync(path.join(other, 'notes.txt'), 'utf8'), 'keep me');
+  assert.ok(fs.existsSync(path.join(dir, 'proj', 'app.jsx')));
+  // an empty (or new) folder; then the same one again - a previous build (its .gui and joins.json): emptied and written anew
+  const out = path.join(dir, 'proj', 'dist');
+  writeBuild(r, out);
+  fs.writeFileSync(path.join(out, 'stale.png'), '');
+  writeBuild(r, out);
+  assert.ok(!fs.existsSync(path.join(out, 'stale.png')));
+  assert.ok(fs.existsSync(path.join(out, 'T.gui')));
+  // several sizes: the others' folders inside the build's are fresh
+  const sized = await compile(path.join(dir, 'proj', 'app.jsx'), { size: '800x600' });
+  assert.deepEqual(writeBuilds([r, sized], out).map((g) => path.relative(out, g)), ['T.gui', path.join('800w600h', 'T.gui')]);
+});

@@ -180,13 +180,40 @@ export const slug = (name: string) => name.replace(/[^\w.-]+/g, '-').replace(/^-
 export const scriptsDir = (layout: CompileResult['layout']): string => [layout.images, layout.scripts].filter(Boolean).join('/');
 
 /**
+ * outDir before a build empties it: not a folder the project's own files
+ * are in (iva build -o . would wipe the project), and nothing in it but a
+ * previous build (a .gui or joins.json) - anything else there is not iva's
+ * to delete.
+ */
+function checkOutDir(result: CompileResult, outDir: string) {
+  const out = path.resolve(outDir);
+  const shown = path.relative(process.cwd(), out) || '.';
+  const inside = (f: string) => {
+    const rel = path.relative(out, path.resolve(f));
+    return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+  };
+  const own = [...result.inputs.files, ...result.inputs.dirs].find(inside);
+  if (own !== undefined) {
+    throw new IvaError(`output folder ${shown}: the project's own files are in it (${path.relative(process.cwd(), own) || '.'}), and a build empties it first - give it a folder of its own, like dist/`);
+  }
+  if (!fs.existsSync(out)) return;
+  if (!fs.statSync(out).isDirectory()) throw new IvaError(`output folder ${shown}: a file, not a folder`);
+  const entries = fs.readdirSync(out);
+  if (entries.length && !entries.some((e) => e.toLowerCase().endsWith('.gui') || e === 'joins.json')) {
+    throw new IvaError(`output folder ${shown} isn't empty and isn't a previous build (no .gui or joins.json in it), and a build empties it first - give an empty folder, or a previous build's`);
+  }
+}
+
+/**
  * outDir/<name>.gui; images/ beside it (iViewer's image folder: the
  * project's images, sounds and files, iva's drawings in backgrounds/, icons/,
  * controls/, web apps in apps/, the scripts in scripts/), joins.json. With
  * <Project folders={false}> everything beside the .gui (in its image folder,
- * if it names one). Returns the .gui path.
+ * if it names one). Returns the .gui path. outDir is emptied first - so it
+ * must be a folder of the build's own (checkOutDir).
  */
 export function writeBuild(result: CompileResult, outDir: string): string {
+  checkOutDir(result, outDir);
   fs.rmSync(outDir, { recursive: true, force: true });
   fs.mkdirSync(outDir, { recursive: true });
   const gui = path.join(outDir, `${slug(result.name)}.gui`);
