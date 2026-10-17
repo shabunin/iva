@@ -7,6 +7,9 @@ var GalleryNetwork = (function () {
   var API = 'http://127.0.0.1:8899';
   // what Bonjour looks for: Web, Cast, AirPlay, Printers (the Segmented's options)
   var TYPES = ['_http._tcp.', '_googlecast._tcp.', '_airplay._tcp.', '_ipp._tcp.'];
+  // what the panel publishes itself as: named outright - the docs let '' stand for the device's name, but
+  // Android's own service discovery (iViewer's there) refuses an empty name; iva's runtime names it the same
+  var PUBLISHED = { type: '_http._tcp.', name: (CF.device && CF.device.name) || 'iva gallery', port: 8900 };
   var events = [];
   var lookingFor = null;
   var found = {};
@@ -70,9 +73,20 @@ var GalleryNetwork = (function () {
   function foundTable() {
     var rows = Object.keys(found).sort().map(function (k) {
       var s = found[k];
-      return { name: s.name, where: (s.addresses[0] || s.hostname) + ':' + s.port };
+      return { name: s.name, where: ((s.addresses || [])[0] || s.hostname || '?') + ':' + s.port };
     });
     show(Joins.s.bjFound, JSON.stringify(rows));
+  }
+
+  /**
+   * a service's TXT data as key=value pairs; a key with no value (a flag) on its own. An empty TXT
+   * record (a printer's) comes from iViewer as one empty key with a null value: nothing to show.
+   */
+  function txt(data) {
+    return Object.keys(data || {}).filter(function (k) { return k; }).map(function (k) {
+      var v = data[k];
+      return v === null || v === undefined || v === '' ? k : k + '=' + v;
+    }).join('  ');
   }
 
   /** a lookup of one type: what comes in, what goes, kept in a table */
@@ -98,8 +112,9 @@ var GalleryNetwork = (function () {
     lookingFor = null;
   }
 
+  // (the docs' text has it (type, name, port, published, error), their example (name, type, ...): both shown)
   function published(type, name, port, ok, error) {
-    show(Joins.s.bjStatus, ok ? 'Published: ' + type + ' on port ' + port : error ? 'Not published: ' + error : 'Not published');
+    show(Joins.s.bjStatus, ok ? 'Published: ' + [type, name].filter(Boolean).join(' \u00b7 ') + ', port ' + port : error ? 'Not published: ' + error : 'Not published');
   }
 
   return {
@@ -131,8 +146,8 @@ var GalleryNetwork = (function () {
         if (lookingFor) lookup(Number(v) || 0);
       });
       CF.watch(CF.JoinChangeEvent, Joins.d.bjPublish, function (j, v) {
-        if (v == '1') CF.startPublishing('_http._tcp.', '', 8900, { path: '/', from: 'iva gallery' }, published);
-        else CF.stopPublishing('_http._tcp.', '', 8900);
+        if (v == '1') CF.startPublishing(PUBLISHED.type, PUBLISHED.name, PUBLISHED.port, { path: '/', from: 'iva gallery' }, published);
+        else CF.stopPublishing(PUBLISHED.type, PUBLISHED.name, PUBLISHED.port);
       });
     },
 
@@ -171,8 +186,8 @@ var GalleryNetwork = (function () {
     detail: function (row) {
       var s = found[row.name];
       if (!s) return;
-      var data = Object.keys(s.data || {}).map(function (k) { return k + '=' + s.data[k]; }).join('  ');
-      show(Joins.s.bjDetail, s.hostname + '  ' + s.addresses.join(', ') + (data ? '\n' + data : ''));
+      var data = txt(s.data);
+      show(Joins.s.bjDetail, (s.hostname || '') + '  ' + (s.addresses || []).join(', ') + (data ? '\n' + data : ''));
     },
   };
 })();
