@@ -131,9 +131,12 @@ var GalleryNetwork = (function () {
       CF.watch(CF.FeedbackMatchedEvent, 'EchoClient', 'reply', function (fb, data) {
         event('client got "' + String(data).replace(/[\r\n]+$/, '') + '"');
       });
-      CF.watch(CF.ConnectionStatusChangeEvent, ['EchoClient', 'EchoServer'], function (system, connected, remote) {
-        event(system + (connected ? ' connected ' : ' disconnected ') + (remote || ''));
-        systems();
+      // (one system a watch: iViewer takes no array here - "Invalid parameter 1: Array is not allowed")
+      ['EchoClient', 'EchoServer'].forEach(function (name) {
+        CF.watch(CF.ConnectionStatusChangeEvent, name, function (system, connected, remote) {
+          event(system + (connected ? ' connected ' : ' disconnected ') + (remote || ''));
+          systems();
+        });
       });
       systems();
       setInterval(systems, 2000);
