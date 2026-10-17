@@ -221,7 +221,8 @@ var IvaHttp = (() => {
         // the request's number back: the page tells its own answer from another's
         if (req.query.r !== undefined) head += `X-Iva-Req: ${String(req.query.r).replace(/[^\w.-]/g, '')}\r\n`;
         for (const [k, v] of Object.entries(headers)) head += `${k}: ${v}\r\n`;
-        CF.send(system, `${head}\r\n${bytes}`, CF.BINARY);
+        // HEAD: the headers only (its Content-Length as a GET's would be)
+        CF.send(system, req.method === 'HEAD' ? `${head}\r\n` : `${head}\r\n${bytes}`, CF.BINARY);
       },
       text: (s, status) => res.bytes(TYPES.txt, utf8(String(s)), status),
       html: (s, status) => res.bytes(TYPES.html, utf8(String(s)), status),

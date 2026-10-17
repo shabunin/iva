@@ -66,8 +66,8 @@ function panel(assets: Record<string, string> = {}) {
   const FakeDate = { now: () => now } as unknown as DateConstructor;
   const IvaHttp = new Function('CF', 'setTimeout', 'clearTimeout', 'setInterval', 'Date', `${HTTP_RUNTIME}\nreturn IvaHttp;`)(
     CF, setTimeout, clearTimeout, setInterval, FakeDate);
-  const request = (system: string, target: string) => {
-    for (const f of feedback) if (f.system === system) f.cb('request', `GET ${target} HTTP/1.1\r\nHost: 127.0.0.1\r\nAccept: */*\r\n\r\n`);
+  const request = (system: string, target: string, method = 'GET') => {
+    for (const f of feedback) if (f.system === system) f.cb('request', `${method} ${target} HTTP/1.1\r\nHost: 127.0.0.1\r\nAccept: */*\r\n\r\n`);
   };
   return { CF, IvaHttp, joins, sent, request, tick, server, asked, switched, logged };
 }
@@ -100,6 +100,18 @@ test('IvaHttp.serve: the request parsed, an answer that closes, its length in by
   IvaHttp.serve('boom', () => { throw new Error('bad'); });
   request('boom', '/');
   assert.equal(parse(sent[1][1]).status, 'HTTP/1.1 500 Internal Server Error');
+});
+
+test('IvaHttp.serve: a HEAD request gets the headers only - the length a GET would get, no body', () => {
+  const { IvaHttp, sent, request } = panel();
+  IvaHttp.serve('api', (req: any, res: any) => res.bytes('text/plain', 'now=12:00', 200, { Server: 'iva gallery' }));
+  request('api', '/now', 'HEAD');
+  const raw = sent[0][1];
+  assert.ok(raw.endsWith('\r\n\r\n'), JSON.stringify(raw));
+  const a = parse(raw);
+  assert.equal(a.headers['content-length'], '9');
+  assert.equal(a.headers.server, 'iva gallery');
+  assert.equal(a.body, '');
 });
 
 test('the web server: one system for every web app (/<name>/) and swatch; every answer the boot page, its data in it', () => {
