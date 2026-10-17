@@ -54,10 +54,10 @@ export function installPlatform(env: Environment): void {
   if (!env.has(Entropy)) env.set(Entropy, env.get(Crypto));
 }
 
-export function createEnvironment(cf: CF, options: EnvironmentOptions): MatterEnvironment {
+/** the driver's environment: the panel's default one, or the one given (a test's, beside a device's) */
+export function createEnvironment(cf: CF, options: EnvironmentOptions, env: Environment = Environment.default): MatterEnvironment {
   const log = (m: string) => cf.log(`matter: ${m}`);
   logToCf(cf, options.log);
-  const env = Environment.default;
   installPlatform(env);
   const pool = new SlotPool(cf, options.slots, options.localPorts, log);
   const network = new CfNetwork(cf, pool, options.ipv6);

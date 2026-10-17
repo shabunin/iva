@@ -13,7 +13,6 @@ import { CommissioningController } from '@project-chip/matter.js';
 import type { PairedNode } from '@project-chip/matter.js/device';
 import type { CF } from './cf.js';
 import { createEnvironment, type MatterEnvironment } from './environment.js';
-import type { Found } from './mdns.js';
 import type { TokenStoreOptions } from './storage.js';
 
 export type Cluster = 'OnOff' | 'LevelControl' | 'ColorControl';
@@ -43,7 +42,8 @@ export interface StartOptions {
   ipv6?: boolean;
   log?: string;
   devices?: Record<string, DeviceSpec>;
-  commission?: { code: string; go: string; status?: string };
+  /** commissioning: the setup code, Go, the status; `address` (serial) where Bonjour can't find the device */
+  commission?: { code: string; go: string; status?: string; address?: string };
   /** serial join: the devices found, as JSON rows */
   found?: string;
   store?: Partial<TokenStoreOptions>;
@@ -59,6 +59,24 @@ export interface FoundRow {
 
 const NODE_LABEL = 32;
 
+/** an address as typed - host, host:port, [v6]:port, v6 - as matter.js takes a known one (port default 5540) */
+export function parseAddress(text: string): { type: 'udp'; ip: string; port: number } | undefined {
+  const at = text.trim();
+  if (!at) return undefined;
+  let ip = at;
+  let port = 5540;
+  const v6 = /^\[([^\]]+)\](?::(\d+))?$/.exec(at);
+  if (v6) {
+    ip = v6[1];
+    if (v6[2]) port = Number(v6[2]);
+  } else if (at.indexOf(':') === at.lastIndexOf(':')) {
+    const [host, p] = at.split(':');
+    ip = host;
+    if (p) port = Number(p);
+  }
+  return { type: 'udp', ip, port };
+}
+
 /** a join's analog value (0..65535) as a cluster's 0..254, and back */
 const toLevel = (v: number): number => Math.max(0, Math.min(254, Math.round((v / 65535) * 254)));
 const fromLevel = (level: number): number => Math.round((Math.max(0, Math.min(254, level)) / 254) * 65535);
@@ -69,10 +87,11 @@ export class MatterDriver {
   controller?: CommissioningController;
   /** what the joins were last set to by the driver: the change event that echoes it isn't a command */
   private written = new Map<string, string>();
-  private nodes = new Map<string, PairedNode>();
+  /** the nodes connected (a promise each: the devices of one node bind at the same time) */
+  private nodes = new Map<string, Promise<PairedNode>>();
   private stopped = false;
 
-  constructor(private cf: CF, options: StartOptions) {
+  constructor(private cf: CF, options: StartOptions, environment?: Environment) {
     const slots = options.slots ?? 10;
     const port = options.port ?? 5550;
     this.options = { ...options, slots, port, label: (options.label ?? 'iva').slice(0, NODE_LABEL), ipv6: options.ipv6 ?? false };
@@ -80,7 +99,7 @@ export class MatterDriver {
     this.me = createEnvironment(cf, {
       slots: names, localPorts: names.map((_, i) => port + i), ipv6: this.options.ipv6, log: options.log,
       store: { prefix: options.store?.prefix ?? 'matter_store_', chunks: options.store?.chunks ?? 8, size: options.store?.size ?? 32768 },
-    });
+    }, environment);
   }
 
   get env(): Environment {
@@ -121,10 +140,34 @@ export class MatterDriver {
     const nodes = this.controller.getCommissionedNodes();
     this.status(`Controller up: ${nodes.length} node(s) commissioned${nodes.length ? ' (' + nodes.map((n) => n.toString()).join(', ') + ')' : ''}`);
     if (this.options.commission) this.watchCommission(this.options.commission);
+    // devices known by address: as Bonjour would have found them, commissioned or not (a commission of that node
+    // id finds it there for its CASE step)
+    for (const spec of Object.values(this.options.devices ?? {})) if (spec.address) this.announceOperational(NodeId(BigInt(spec.node)), spec.address, spec.port ?? 5540);
+    this.bindDevices();
+    this.foundTable();
+  }
+
+  /** the devices of app.jsx on commissioned nodes, bound (the others say so); `node` given: that node's only */
+  private bindDevices(node?: NodeId): void {
     for (const [name, spec] of Object.entries(this.options.devices ?? {})) {
+      if (node !== undefined && BigInt(spec.node) !== BigInt(node)) continue;
       void this.bindDevice(name, spec).catch((e) => this.me.log(`${name}: ${(e as Error)?.message ?? e}`));
     }
-    this.foundTable();
+  }
+
+  /** a node's operational name at an address, as if Bonjour found it there */
+  private announceOperational(nodeId: NodeId, address: string, port: number): void {
+    const qname = getOperationalDeviceQname(this.controller!.fabric.globalId, nodeId);
+    const instance = qname.replace(/\._matter\._tcp\.local$/i, '');
+    this.me.mdns.announce({ kind: 'operational', name: instance, hostname: `${instance}.local`, addresses: [address], port, data: {} });
+  }
+
+  /** the node id the next commissioned device gets: the lowest free one from 1 (so app.jsx can name it ahead) */
+  nextNodeId(): NodeId {
+    const used = new Set((this.controller?.getCommissionedNodes() ?? []).map((n) => BigInt(n)));
+    let id = BigInt(1);
+    while (used.has(id)) id++;
+    return NodeId(id);
   }
 
   /** the node of a device (connected once), its cluster on the device's joins */
@@ -135,24 +178,20 @@ export class MatterDriver {
       this.me.log(`${name}: node ${spec.node} is not commissioned here (Commission it, then put the node id the status shows in app.jsx)`);
       return;
     }
-    if (spec.address) {
-      // known by address: as Bonjour would have found it (its name is the fabric's id and its own)
-      const qname = getOperationalDeviceQname(controller.fabric.globalId, nodeId);
-      const instance = qname.replace(/\._matter\._tcp\.local$/i, '');
-      const f: Found = { kind: 'operational', name: instance, hostname: `${instance}.local`, addresses: [spec.address], port: spec.port ?? 5540, data: {} };
-      this.me.mdns.announce(f);
-    }
     const key = String(nodeId);
-    let node = this.nodes.get(key);
-    if (!node) {
-      node = await controller.getNode(nodeId);
-      this.nodes.set(key, node);
-      node.events.stateChanged.on((state) => this.me.log(`node ${spec.node}: ${['connected', 'disconnected', 'reconnecting', 'waiting for device', 'structure changed', 'decommissioned'][state] ?? state}`));
-      node.connect();
+    let pending = this.nodes.get(key);
+    if (!pending) {
+      pending = controller.getNode(nodeId).then((n) => {
+        n.events.stateChanged.on((state) => this.me.log(`node ${spec.node}: ${['connected', 'disconnected', 'reconnecting', 'waiting for device', 'structure changed', 'decommissioned'][state] ?? state}`));
+        n.connect();
+        return n;
+      });
+      this.nodes.set(key, pending);
     }
+    const node = await pending;
     const bind = () => {
       try {
-        this.bindCluster(name, spec, node!);
+        this.bindCluster(name, spec, node);
       } catch (e) {
         this.me.log(`${name}: ${(e as Error)?.message ?? e}`);
       }
@@ -218,17 +257,26 @@ export class MatterDriver {
     this.cf.watch(this.cf.JoinChangeEvent, c.go, (_j: string, v: string) => {
       if (String(v) !== '1') return;
       this.cf.getJoin(c.code, (_jj, code) => {
-        void this.commission(String(code ?? '').trim());
+        if (!c.address) {
+          void this.commission(String(code ?? ''));
+          return;
+        }
+        this.cf.getJoin(c.address, (_ja, address) => void this.commission(String(code ?? ''), String(address ?? '')));
       });
     });
   }
 
-  /** a device commissioned from its setup code: the 11 (or 21) digits, or the QR code's MT: text */
-  async commission(code: string): Promise<NodeId | undefined> {
+  /**
+   * a device commissioned from its setup code: the 11 (or 21) digits, or the QR code's MT: text. With `address`
+   * (host, host:port, [v6]:port) the device is taken to be there - no Bonjour needed, not even for the CASE step
+   * after PASE. The node gets the lowest free node id, and the devices of app.jsx on it are bound at once.
+   */
+  async commission(code: string, address = ''): Promise<NodeId | undefined> {
     if (!this.controller) {
       this.status('The controller is not up');
       return undefined;
     }
+    code = code.trim();
     let passcode: number;
     let identifierData: { longDiscriminator: number } | { shortDiscriminator: number } | Record<string, never>;
     try {
@@ -247,16 +295,22 @@ export class MatterDriver {
       this.status(`Not a setup code: ${(e as Error)?.message ?? e}`);
       return undefined;
     }
-    this.status(`Looking for the device (${'longDiscriminator' in identifierData ? `discriminator ${identifierData.longDiscriminator}` : 'shortDiscriminator' in identifierData ? `short discriminator ${identifierData.shortDiscriminator}` : 'any'})…`);
+    const nodeId = this.nextNodeId();
+    const known = parseAddress(address);
+    if (known) this.announceOperational(nodeId, known.ip, known.port);
+    const which = 'longDiscriminator' in identifierData ? `discriminator ${identifierData.longDiscriminator}` : 'shortDiscriminator' in identifierData ? `short discriminator ${identifierData.shortDiscriminator}` : 'any';
+    this.status(`Looking for the device (${which}${known ? `, at ${known.ip}:${known.port}` : ''}) to be node ${nodeId}…`);
     try {
-      const nodeId = await this.controller.commissionNode({
-        commissioning: { regulatoryLocation: GeneralCommissioning.RegulatoryLocationType.IndoorOutdoor, regulatoryCountryCode: 'XX' },
-        discovery: { identifierData, discoveryCapabilities: { onIpNetwork: true }, timeout: Seconds(90) },
+      const id = await this.controller.commissionNode({
+        commissioning: { regulatoryLocation: GeneralCommissioning.RegulatoryLocationType.IndoorOutdoor, regulatoryCountryCode: 'XX', nodeId },
+        discovery: { identifierData, discoveryCapabilities: { onIpNetwork: true }, timeout: Seconds(90), knownAddress: known },
         passcode,
       }, { connectNodeAfterCommissioning: false });
-      this.status(`Commissioned: node ${nodeId.toString()} - put node: "${nodeId.toString()}" in <Matter devices> (app.jsx)`);
+      const mine = Object.entries(this.options.devices ?? {}).filter(([, spec]) => BigInt(spec.node) === BigInt(id)).map(([name]) => name);
+      this.status(`Commissioned: node ${id}${mine.length ? ` - connecting ${mine.join(', ')}` : ` - put node: "${id}" in <Matter devices> (app.jsx)`}`);
       this.foundTable();
-      return nodeId;
+      this.bindDevices(id);
+      return id;
     } catch (e) {
       this.status(`Commissioning failed: ${(e as Error)?.message ?? e}`);
       this.me.log(String((e as Error)?.stack ?? e));

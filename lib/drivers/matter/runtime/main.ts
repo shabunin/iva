@@ -17,9 +17,9 @@ const IvaMatter = {
     }, 1500);
     return driver;
   },
-  /** a device from its setup code (what the Commission page's Go does) */
-  commission(code: string): void {
-    void this.driver?.commission(code);
+  /** a device from its setup code (what the Commission page's Go does); `address` where Bonjour can't find it */
+  commission(code: string, address?: string): void {
+    void this.driver?.commission(code, address);
   },
   stop(): void {
     void this.driver?.stop();

@@ -1,9 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import dgram from 'node:dgram';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Bytes, ChannelType, Crypto, DnsRecordType, Environment, Network, StorageService } from '@matter/general';
-import { CommissionableMdnsScanner, MdnsService } from '@matter/protocol';
+import { CommissionableMdnsScanner, MdnsService, getOperationalDeviceQname } from '@matter/protocol';
+import { NodeId } from '@matter/types';
+// (the Node platform: a matter.js device in this process, for the end-to-end test)
+import { Endpoint, ServerNode, VendorId } from '@matter/main';
+import { DimmableLightDevice } from '@matter/main/devices/dimmable-light';
 import { compile } from '../src/compiler/index.ts';
 import { tmpDir } from './tmp.ts';
 import type { CF, FoundService, LookupCallback } from '../lib/drivers/matter/runtime/cf.ts';
@@ -13,27 +18,37 @@ import { CfNetwork, CfUdpSocket, macOf } from '../lib/drivers/matter/runtime/net
 import { CfMdnsService, CfMdnsSocket, recordsOf, typeOf } from '../lib/drivers/matter/runtime/mdns.ts';
 import { CfTokenStorageDriver, TokenStore } from '../lib/drivers/matter/runtime/storage.ts';
 import { installPlatform } from '../lib/drivers/matter/runtime/environment.ts';
+import { MatterDriver, parseAddress } from '../lib/drivers/matter/runtime/controller.ts';
 
 /**
  * Just enough of iViewer's CF for the driver: what it sends on which system
  * (a byte a char), the systems retargeted, lookups started, tokens set;
- * frames and found services fed in from the test.
+ * frames and found services fed in from the test. With `udp`, the systems
+ * are real sockets (a retargeted one bound on 127.0.0.1 at its localPort,
+ * sending to its address and port; what comes back is its frame), as a
+ * panel's are - for a matter.js device in this process.
  */
-function panel() {
+function panel(options: { udp?: boolean } = {}) {
   const sent: { system: string; bytes: number[] }[] = [];
   const props: { system: string; props: Record<string, unknown> }[] = [];
   const lookups: { type: string; name: string; cb: LookupCallback }[] = [];
   const stopped: string[] = [];
   const tokens: Record<string, string> = {};
   const joins: Record<string, string> = {};
+  const log: string[] = [];
   const watchers: { event: string; args: unknown[]; cb: (...a: any[]) => void }[] = [];
+  const sockets = new Map<string, dgram.Socket>();
   /** retargeted systems answer "connected" at once unless the test holds them (a phone binds slowly) */
   let holdConnections = false;
   const CF: CF = {
     FeedbackMatchedEvent: 'fb', JoinChangeEvent: 'join', ConnectionStatusChangeEvent: 'conn', GlobalTokensJoin: 'e0',
-    ipv4address: '192.168.2.20', ipv4netmask: '255.255.255.0', MACaddress: '', runtime: 'iva',
+    ipv4address: options.udp ? '127.0.0.1' : '192.168.2.20', ipv4netmask: '255.255.255.0', MACaddress: '', runtime: 'iva',
     systems: Object.fromEntries(Array.from({ length: 3 }, (_, i) => [`matter${i}`, { address: '127.0.0.2', port: 5540, enabled: true }])),
-    send(system, data) { sent.push({ system, bytes: [...fromBinary(data)] }); },
+    send(system, data) {
+      sent.push({ system, bytes: [...fromBinary(data)] });
+      const sys = CF.systems[system];
+      sockets.get(system)?.send(fromBinary(data), sys.port, sys.address);
+    },
     watch(event, ...args) {
       const cb = args.pop() as (...a: any[]) => void;
       watchers.push({ event, args, cb });
@@ -41,14 +56,27 @@ function panel() {
     setSystemProperties(system, p) {
       props.push({ system, props: p });
       Object.assign(CF.systems[system], p);
-      if (!holdConnections) connect(system);
+      if (!options.udp) {
+        if (!holdConnections) connect(system);
+        return;
+      }
+      // the way the driver retargets: off (the socket closed), the address, on (bound again at its localPort)
+      if (p.enabled === false) {
+        sockets.get(system)?.close();
+        sockets.delete(system);
+      } else if (p.enabled === true) {
+        const sock = dgram.createSocket('udp4');
+        sock.on('message', (msg) => frame(system, [...msg]));
+        sock.bind(CF.systems[system].localPort ?? 0, '127.0.0.1', () => connect(system));
+        sockets.set(system, sock);
+      }
     },
     startLookup(type, name, cb) { lookups.push({ type, name, cb }); },
     stopLookup(type) { stopped.push(type); },
     setToken(_join, name, value) { tokens[name] = value; },
     getJoin(join, cb) { cb(join, joins[join] ?? '', { ...tokens }); },
     setJoin(join, value) { joins[join] = String(value); },
-    log() {},
+    log(m) { log.push(m); },
   };
   /** the system's socket bound again: its ConnectionStatusChangeEvent */
   const connect = (system: string) => {
@@ -62,7 +90,25 @@ function panel() {
   const found = (type: string, s: FoundService) => {
     for (const l of lookups) if (l.type === type) l.cb([s], [], undefined);
   };
-  return { CF, sent, props, lookups, stopped, tokens, joins, frame, found, connect, hold: (h: boolean) => { holdConnections = h; } };
+  /** a join changed on the panel (a button, a slider): its JoinChangeEvent */
+  const change = (join: string, value: string) => {
+    joins[join] = value;
+    for (const w of watchers) if (w.event === 'join' && w.args[0] === join) w.cb(join, value);
+  };
+  const close = () => {
+    for (const s of sockets.values()) s.close();
+    sockets.clear();
+  };
+  return { CF, sent, props, lookups, stopped, tokens, joins, log, frame, found, change, connect, close, hold: (h: boolean) => { holdConnections = h; } };
+}
+
+/** until `check` holds (polled), else the panel's log in the error */
+async function until(check: () => boolean, what: string, log: string[], ms = 15000): Promise<void> {
+  const t0 = Date.now();
+  while (!check()) {
+    if (Date.now() - t0 > ms) throw new Error(`${what}: not within ${ms} ms\n  ${log.slice(-15).join('\n  ')}`);
+    await new Promise((r) => setTimeout(r, 50));
+  }
 }
 
 test('a byte a char: CF.send\'s strings from bytes and back', () => {
@@ -299,10 +345,94 @@ test('the matter example builds, at both sizes, with the driver\'s script once; 
   }
   const { createEnvironment } = await import('../lib/drivers/matter/runtime/environment.ts');
   const p = panel();
-  const me = createEnvironment(p.CF, { slots: ['matter0'], localPorts: [5550], ipv6: false, store: { prefix: 'matter_store_', chunks: 2, size: 1000 } });
+  const me = createEnvironment(p.CF, { slots: ['matter0'], localPorts: [5550], ipv6: false, store: { prefix: 'matter_store_', chunks: 2, size: 1000 } }, new Environment('matter-env-test'));
   assert.equal(me.env.get(StorageService).defaultDriver, 'cf-tokens');
   assert.ok(me.env.has(Network));
   // (Node's default environment brings its own crypto; a panel gets StandardCrypto over Web Crypto)
   assert.ok(['JS', 'Node.js'].includes(me.env.get(Crypto).implementationName), me.env.get(Crypto).implementationName);
   assert.equal(Bytes.of(me.env.get(Crypto).randomBytes(4)).length, 4);
+});
+
+test('an address as typed on the Commission page: host, host:port, [v6]:port, v6; empty: none', () => {
+  assert.deepEqual(parseAddress(' 192.168.2.40 '), { type: 'udp', ip: '192.168.2.40', port: 5540 });
+  assert.deepEqual(parseAddress('192.168.2.40:5541'), { type: 'udp', ip: '192.168.2.40', port: 5541 });
+  assert.deepEqual(parseAddress('[fe80::1%wlan0]:5542'), { type: 'udp', ip: 'fe80::1%wlan0', port: 5542 });
+  assert.deepEqual(parseAddress('fe80::1'), { type: 'udp', ip: 'fe80::1', port: 5540 });
+  assert.equal(parseAddress('  '), undefined);
+});
+
+const LIGHT_PORT = 55540;
+
+/**
+ * The whole way, as on a phone: a matter.js dimmable light in this process
+ * (on 127.0.0.1), the fake panel's systems real UDP sockets, Bonjour's
+ * findings fed in. The driver commissions the light from its setup code
+ * (PASE, the certificates, CASE, commissioning complete), binds the
+ * devices of app.jsx to it (a join's change is a command, the light's own
+ * change sets the join through the subscription), and a second driver
+ * (a reload) comes back from the tokens with the node and controls it.
+ */
+test('end to end: a matter.js light commissioned over the fake panel\'s UDP systems, controlled both ways, back from the tokens after a reload', async () => {
+  Environment.default.vars.set('storage.path', tmpDir('iva-matter-light-'));
+  const light = await ServerNode.create({
+    id: 'iva-test-light',
+    network: { port: LIGHT_PORT, listeningAddressIpv4: '127.0.0.1' },
+    commissioning: { passcode: 20202021, discriminator: 3840 },
+    productDescription: { name: 'iva test light', deviceType: DimmableLightDevice.deviceType },
+    basicInformation: {
+      vendorName: 'iva', vendorId: VendorId(0xfff1), nodeLabel: 'iva test light', productName: 'Test light', productLabel: 'Test light',
+      productId: 0x8000, serialNumber: 'iva-test-light-1', uniqueId: 'iva-test-light-1',
+    },
+  });
+  const bulb = new Endpoint(DimmableLightDevice, { id: 'bulb' });
+  await light.add(bulb);
+  await light.start();
+  const p = panel({ udp: true });
+  const options = {
+    slots: 3, port: 56550, store: { prefix: 'matter_store_', chunks: 4, size: 32768 },
+    devices: { lamp: { node: '1', cluster: 'OnOff' as const, join: 'd1' }, level: { node: '1', cluster: 'LevelControl' as const, join: 'a1' } },
+    commission: { code: 's1', go: 'd9', status: 's2', address: 's3' }, found: 's4',
+  };
+  let driver = new MatterDriver(p.CF, options, new Environment('cf-e2e'));
+  try {
+    await driver.start();
+    assert.match(p.joins.s2, /Controller up: 0 node/);
+    assert.ok(p.log.some((l) => /lamp: node 1 is not commissioned/.test(l)), p.log.join('\n'));
+    // Bonjour finds the light, commissionable (as the panel would tell the driver); and, once it's node 1 of our
+    // fabric, operational under that name - told now, asked for by matter.js after PASE
+    p.found('_matterc._udp.', { name: 'LIGHT01', hostname: 'light.local', addresses: ['127.0.0.1'], port: LIGHT_PORT, data: { D: '3840', CM: '1', VP: '65521+32768', DN: 'iva test light' } });
+    const operational = getOperationalDeviceQname(driver.controller!.fabric.globalId, NodeId(BigInt(1))).replace(/\._matter\._tcp\.local$/i, '');
+    p.found('_matter._tcp.', { name: operational, hostname: 'light.local', addresses: ['127.0.0.1'], port: LIGHT_PORT, data: {} });
+    assert.match(p.joins.s4, /"kind":"commissionable"/);
+    // the Commission page: the code, Go
+    p.change('s1', '34970112332');
+    p.change('d9', '1');
+    await until(() => /^Commissioned: node 1/.test(p.joins.s2) || /failed/.test(p.joins.s2), 'commissioned', p.log, 30000);
+    assert.equal(p.joins.s2, 'Commissioned: node 1 - connecting lamp, level');
+    assert.ok(light.state.commissioning.commissioned, 'the light says so too');
+    assert.deepEqual(driver.controller!.getCommissionedNodes().map(String), ['1']);
+    await until(() => p.log.some((l) => /level: LevelControl bound/.test(l)) && p.log.some((l) => /lamp: OnOff bound/.test(l)), 'bound', p.log);
+    assert.match(p.joins.s4, /"kind":"node of ours"/);
+    // a join's change is a command to the light
+    p.change('d1', '1');
+    await until(() => bulb.state.onOff.onOff === true, 'the lamp on', p.log);
+    p.change('a1', String(Math.round((127 / 254) * 65535)));
+    await until(() => bulb.state.levelControl.currentLevel === 127, 'the level at 127', p.log);
+    // the light's own change sets the join (the subscription)
+    await bulb.set({ onOff: { onOff: false } });
+    await until(() => p.joins.d1 === '0', 'the lamp join off', p.log);
+    // a reload: the driver again from the same tokens - the node is back, connected, controlled
+    await driver.stop();
+    assert.ok(p.tokens['[matter_store_0]'].length > 1000, 'the store in the tokens');
+    driver = new MatterDriver(p.CF, options, new Environment('cf-e2e-again'));
+    await driver.start();
+    assert.match(p.joins.s2, /Controller up: 1 node\(s\) commissioned \(1\)/);
+    await until(() => p.log.filter((l) => /lamp: OnOff bound/.test(l)).length === 2, 'bound again', p.log);
+    p.change('d1', '1');
+    await until(() => bulb.state.onOff.onOff === true, 'the lamp on again', p.log);
+  } finally {
+    await driver.stop();
+    p.close();
+    await light.close();
+  }
 });

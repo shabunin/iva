@@ -161,12 +161,15 @@ export class CfMdnsSocket {
     this.changed.emit();
   }
 
-  /** everything found (and known) */
+  /** everything found (and known: a device both found and known by address is one, with both addresses) */
   all(): Found[] {
-    const out: Found[] = [];
-    for (const m of this.lookups.values()) out.push(...m.values());
-    out.push(...this.known.values());
-    return out;
+    const out = new Map<string, Found>();
+    for (const m of this.lookups.values()) for (const f of m.values()) out.set(`${f.kind}/${f.name}`, f);
+    for (const [key, k] of this.known) {
+      const f = out.get(key);
+      out.set(key, f ? { ...f, addresses: [...new Set([...f.addresses, ...k.addresses])] } : k);
+    }
+    return [...out.values()];
   }
 
   private emit(f: Found, ttl?: number): void {

@@ -14,7 +14,7 @@ const matter = (
     lamp: { node: '1', cluster: 'OnOff', join: d('lamp') },
     level: { node: '1', cluster: 'LevelControl', join: a('level') },
     colour: { node: '1', cluster: 'ColorControl', hue: a('hue'), saturation: a('sat') },
-  }} commission={{ code: s('setupCode'), go: d('commission'), status: s('matterStatus') }} found={s('matterFound')} />
+  }} commission={{ code: s('setupCode'), go: d('commission'), status: s('matterStatus'), address: s('setupAddress') }} found={s('matterFound')} />
 );
 
 export default (

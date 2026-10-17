@@ -3,3 +3,4 @@ dist/
 fixtures/DemoUserInterfaces/
 panel/src-tauri/target/
 panel/src-tauri/gen/schemas/
+examples/matter/.virtual-light/

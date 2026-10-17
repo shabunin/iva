@@ -45,8 +45,8 @@ export interface MatterProps {
   port?: number;
   /** the devices, by name */
   devices?: Record<string, MatterDevice>;
-  /** commissioning: the setup code (serial), Go (digital, momentary), what the controller says (serial) */
-  commission?: { code: Join; go: Join; status?: Join };
+  /** commissioning: the setup code (serial), Go (digital, momentary), what the controller says (serial); `address` (serial): where the device is, when Bonjour can't find it */
+  commission?: { code: Join; go: Join; status?: Join; address?: Join };
   /** serial join: the devices Bonjour finds, as JSON rows { name, kind, where, info, slot } for a DataTable */
   found?: Join;
   /** the controller's name in the devices' fabrics (default 'iva') */
@@ -106,6 +106,10 @@ export function Matter({ slots = 10, port = 5550, devices = {}, commission, foun
     if (commission.status !== undefined) {
       c.push(`status: ${jsJoin('s', commission.status)}`);
       joins.push(ref('s', commission.status));
+    }
+    if (commission.address !== undefined) {
+      c.push(`address: ${jsJoin('s', commission.address)}`);
+      joins.push(ref('s', commission.address));
     }
     parts.push(`commission: { ${c.join(', ')} }`);
   }
