@@ -7,7 +7,7 @@ const L = ui.grid({
   stepper: [416, 260],
   // narrow: the two one under the other
   segmented: [1248, (w) => (w < 900 ? 280 : 170)],
-  scenes: [1248, 232],
+  scenes: [1248, 184],
 }, [['toggle', 'slider', 'stepper'], ['segmented'], ['scenes']]);
 
 const note = (c, x, y, text) => <Text x={x} y={y} w={Math.min(500, c.w - x - 28)} h={24} text={text} color={t.muted} font={t.font} fontSize={16} />;

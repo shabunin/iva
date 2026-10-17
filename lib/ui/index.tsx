@@ -210,7 +210,7 @@ export interface SceneBarProps {
   x?: number;
   y?: number;
   w?: number;
-  /** the tiles' height (default 144: three rows of 48, a Segmented's) */
+  /** the tiles' height (default 96: two rows of 48, a Segmented's) */
   h?: number;
   gap?: number;
 }
@@ -1212,11 +1212,15 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
    * in `join`. With a `pill`: one accent image under the options (transparent
    * buttons over it), slid under the one chosen - a tap's or a value's.
    */
+  let pills = 0;
   function oneOf(join: Join, count: number, value: number, labels?: string[], labelJoin?: JoinRef, pill?: Pill) {
     const key = keyOf(join);
-    const id = JSON.stringify(key);
+    // with a pill, the group is this bar's own: two bars on one join (the same scene on two pages) share the
+    // options' joins, and each slides a pill of its own, placed where it is
+    const n = pill ? pills++ : -1;
+    const id = JSON.stringify(pill ? `${key}#${n}` : key);
     const option = (i: number): JoinRef => d(`ui_${key}_${i}`);
-    const pillJoin: JoinRef = s(`ui_${key}_pill`);
+    const pillJoin: JoinRef = s(`ui_${key}_pill_${n}`);
     const at = Math.max(0, Math.min(count - 1, value));
     const args = [
       id, jsJoin('a', join), `[${Array.from({ length: count }, (_, i) => jsJoin('d', option(i))).join(', ')}]`, String(value),
@@ -1253,7 +1257,7 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     );
   }
 
-  function SceneBar({ scenes, join, value = 0, x = 0, y = 0, w = 742, h = 144, gap = 12 }: SceneBarProps): VNode {
+  function SceneBar({ scenes, join, value = 0, x = 0, y = 0, w = 742, h = 96, gap = 12 }: SceneBarProps): VNode {
     const each = (w - gap * (scenes.length - 1)) / scenes.length;
     const tw = Math.round(each);
     const xs = scenes.map((_, i) => Math.round(i * (each + gap)));
