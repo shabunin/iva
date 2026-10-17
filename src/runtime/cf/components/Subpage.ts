@@ -52,10 +52,11 @@ export function renderSubpage(
             const initialVal = !!joinStore.get(dJoin, "d");
             animateSubpage(initialVal, true);
             
+            // in the page's scope (a list row's): gone with it, not kept past every flip
             joinStore.on(dJoin, "d", (val) => {
                 if (container.destroyed) return;
                 animateSubpage(!!val, false);
-            });
+            }, renderer.currentScope ?? undefined);
         } else {
             const initialVal = node.v !== "0";
             animateSubpage(initialVal, true);

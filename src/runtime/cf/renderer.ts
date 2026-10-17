@@ -183,7 +183,8 @@ export class CFRenderer {
   }
 
   initStore() {
-    joinStore.clear();
+    // the GUI's joins afresh; the CF object's JoinChangeEvent bridge (set up before) stays
+    joinStore.reset();
     const allNodes: CFNode[] = [];
     Object.values(this.project.pages).forEach(page => {
       if (page.landscape) allNodes.push(...page.landscape);

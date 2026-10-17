@@ -1,4 +1,4 @@
-import { joinStore, normalizeJoinString } from "./joinStore";
+import { joinStore, normalizeJoinString, type JoinType } from "./joinStore";
 import { indexGui, type GuiIndex, type GuiDescription } from "./guiIndex";
 import { Mdns } from "./mdns/mdns";
 import { CFRenderer } from "./renderer";
@@ -356,15 +356,21 @@ export class CFAPI implements CFContext {
             }
         }
 
-        // Bridge internal joinStore changes to CF API JoinChangeEvent
-        joinStore.onAny((id: string, type: string, val: any) => {
+        // Bridge internal joinStore changes to CF API JoinChangeEvent: one bridge, this CF
+        // object's - the last GUI's goes (a GUI loaded anew doesn't stack another)
+        if (CFAPI.bridge) joinStore.offAny(CFAPI.bridge);
+        CFAPI.bridge = (id: string, type: JoinType, val: any) => {
             // the join as a script names it ("s1"; a list item's "l1:0:s1")
             const j = normalizeJoinString(type, id);
             const tokens = this.tokensStore[j] || {};
             // a string, as iViewer hands values to scripts ("1" / "0" for a digital join)
             this.dispatchEvent(this.JoinChangeEvent, j, joinText(val) ?? "", tokens, this.tagsOf(j));
-        });
+        };
+        joinStore.onAny(CFAPI.bridge);
     }
+
+    /** the join store's one JoinChangeEvent bridge: the CF object made last (init) */
+    private static bridge: ((id: string, type: JoinType, val: any) => void) | null = null;
 
     /**
      * Start all external systems connections.

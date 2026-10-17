@@ -44,6 +44,10 @@ export class JoinStore {
       this.globalListeners.add(callback);
   }
 
+  offAny(callback: (id: string, type: JoinType, val: any) => void) {
+      this.globalListeners.delete(callback);
+  }
+
   set(id: string, type: JoinType, value: JoinValue) {
       if (!id || id === "0") return;
       const key = this.getKey(id, type);
@@ -180,10 +184,17 @@ export class JoinStore {
       this.joins = moved;
   }
 
-  clear() {
+  /** the GUI's joins and their listeners gone (a GUI starting); the onAny bridges stay (the CF object's) */
+  reset() {
       this.joins.clear();
       this.listeners.clear();
       this.scopedListeners.clear();
+  }
+
+  /** everything gone, the onAny bridges too (a GUI loaded anew brings its own CF object, with its own) */
+  clear() {
+      this.reset();
+      this.globalListeners.clear();
   }
 }
 

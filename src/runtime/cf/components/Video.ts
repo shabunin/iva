@@ -37,9 +37,10 @@ export function renderVideo(
     if (typeof initVal === 'string') tryLoadVideo(initVal);
     
     if (videoJoin) {
+        // in the page's scope (a list row's): gone with it, not kept past every flip
         joinStore.on(videoJoin, "s", (val) => {
             if (container.destroyed) return;
             if (typeof val === 'string') tryLoadVideo(val);
-        });
+        }, renderer.currentScope ?? undefined);
     }
 }
