@@ -11,6 +11,7 @@ import ts from 'typescript';
 
 const COMPILER = path.join(path.dirname(fileURLToPath(import.meta.url)), 'compiler');
 const UI = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'ui', 'index.tsx');
+const DRIVERS = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'drivers');
 const WEB = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'web', 'client.ts');
 
 /** A source file's declarations; imports dropped (keep: those from these modules). */
@@ -64,8 +65,14 @@ declare module 'iva/ui' {
 ${indent(declarations(UI, ['iva']))}
 }
 
-${GLOBALS.map((g) => `declare const ${g}: typeof import('iva').${g};`).join('\n')}
+${driverModules()}${GLOBALS.map((g) => `declare const ${g}: typeof import('iva').${g};`).join('\n')}
 `;
+}
+
+/** iva/drivers/<name>: each driver's component (lib/drivers/<name>/index.tsx) */
+function driverModules(): string {
+  const names = fs.readdirSync(DRIVERS).filter((d) => fs.existsSync(path.join(DRIVERS, d, 'index.tsx'))).sort();
+  return names.map((d) => `declare module 'iva/drivers/${d}' {\n${indent(declarations(path.join(DRIVERS, d, 'index.tsx'), ['iva']))}\n}\n\n`).join('');
 }
 
 export const JSCONFIG = {

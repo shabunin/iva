@@ -76,9 +76,9 @@ Build errors point at the file and line, with "did you mean" for typos.
 
 `iva create` gives a folder with `app.jsx` (the entry), `assets/` (images,
 found by bare name as iViewer finds them), `scripts/` (iViewer JavaScript),
-`IVA.md`, `IVA-UI.md` and `IVA-WEB.md` (this repo's docs, copied in: the
-elements, iva/ui, web apps - so an assistant working in the project has
-them), `AGENTS.md` / `CLAUDE.md` (for AI assistants), and `iva.d.ts` +
+`IVA.md`, `IVA-UI.md`, `IVA-WEB.md` and `IVA-DRIVERS.md` (this repo's docs,
+copied in: the elements, iva/ui, web apps, the drivers - so an assistant
+working in the project has them), `AGENTS.md` / `CLAUDE.md` (for AI assistants), and `iva.d.ts` +
 `jsconfig.json`: open the folder in VS Code
 and elements, props and their values autocomplete, with docs on hover and
 mistakes underlined as you type (`fontSise` → "Did you mean 'fontSize'?").
@@ -259,9 +259,12 @@ examples/hello/        a small JSX project
 docs/components.md     the elements, their props and what they become
 docs/ui.md             iva/ui: the components
 docs/web.md            web apps the panel serves (<WebApp>, <HttpServer>, iva/web)
+docs/drivers.md        iva/drivers: devices as components (MQTT)
 lib/ui/                iva/ui: the components and their panel script
+lib/drivers/           iva/drivers/<name>: a device's component and its panel script
 lib/web/               iva/web (a web app's side) and the built-in apps (trend, chart)
 examples/gallery/      every iva/ui component (and examples/elements: shapes, icons)
+examples/mqtt/         an MQTT broker's topics on a page (iva/drivers/mqtt)
 fixtures/local/        small hand-written .gui projects
 fixtures/DemoUserInterfaces/   CommandFusion's demos (npm run fixtures; not committed)
 ```

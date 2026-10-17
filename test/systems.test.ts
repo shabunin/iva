@@ -230,6 +230,17 @@ test('Heartbeat: Initiate sends Tx every 3 s and closes after 15 s without Rx; R
   }
 });
 
+test('Text Encoding ISO-8859-1: a byte a char in and out, even bytes that would read as UTF-8 (a binary protocol: iva/drivers/mqtt)', () => {
+  const latin = new TextIn('ISO-8859-1');
+  const utf8 = new TextEncoder().encode('héllo');
+  assert.equal(latin.decode(utf8), 'h\xc3\xa9llo');
+  assert.equal(latin.decode(Uint8Array.from([0x30, 0x0a, 0x80, 0x9f, 0xff])), '\x30\x0a\x80\x9f\xff');
+  assert.equal(text(encodeText('\x80\x9f\xff', 'iso-8859-1')), '\x80\x9f\xff');
+  assert.equal(text(encodeText('a€', 'latin1')), 'a?');
+  // none set: the same bytes are the UTF-8 they look like
+  assert.equal(new TextIn('').decode(utf8), 'héllo');
+});
+
 test('Text Encoding: a server\'s windows-1251 read as such, commands sent in it; none set: UTF-8 text is read as UTF-8, binary stays a char a byte', () => {
   const cp1251 = new TextIn('windows-1251');
   assert.equal(cp1251.decode(Uint8Array.from([0xcf, 0xf0, 0xe8, 0xe2, 0xe5, 0xf2])), 'Привет');

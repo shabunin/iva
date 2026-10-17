@@ -22,7 +22,7 @@ Usage:
   iva create <dir>     a new project: --template blank|demo (default blank),
                        --device "iPad" | "iPhone X" | ..., or --from file.gui
   iva check [entry]    what the editor underlines + a test build
-  iva types [dir]      (re)write iva.d.ts and jsconfig.json for editors, and IVA.md, IVA-UI.md, IVA-WEB.md (the references)
+  iva types [dir]      (re)write iva.d.ts and jsconfig.json for editors, and IVA.md, IVA-UI.md, IVA-WEB.md, IVA-DRIVERS.md (the references)
   iva build [entry]    compile a JSX project (default: app.jsx) into dist/:
                        the .gui, its images and scripts, joins.json; with
                        <Project sizes>, a GUI per size in dist/<W>w<H>h/
