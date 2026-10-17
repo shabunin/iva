@@ -236,32 +236,6 @@ export interface BlindsProps {
   y?: number;
   w?: number;
 }
-export interface DialProps {
-  /** analog join (0..65535, standing for min..max) */
-  join: Join;
-  min?: number;
-  max?: number;
-  /** where it starts, in min..max */
-  value?: number;
-  /** a touch / the -+ buttons snap to this */
-  step?: number;
-  decimals?: number;
-  unit?: string;
-  /** under the value */
-  label?: string;
-  /** serial join for the label */
-  labelJoin?: Join;
-  size?: number;
-  /** ring thickness (default: 7.5 % of the size) */
-  thickness?: number;
-  color?: string;
-  /** degrees of the ring (default 270, the gap at the bottom) */
-  sweep?: number;
-  /** arc frames drawn (default 50: every 2 %) */
-  steps?: number;
-  x?: number;
-  y?: number;
-}
 export interface KnobProps {
   /** analog join (0..65535, standing for min..max) */
   join: Join;
@@ -271,7 +245,10 @@ export interface KnobProps {
   step?: number;
   decimals?: number;
   unit?: string;
+  /** under the value */
   label?: string;
+  /** serial join for the label */
+  labelJoin?: Join;
   size?: number;
   /** the knob */
   color?: string;
@@ -890,7 +867,6 @@ export interface Ui {
   Segmented: (p: SegmentedProps) => VNode;
   SceneBar: (p: SceneBarProps) => VNode;
   Dimmer: (p: DimmerProps) => VNode;
-  Dial: (p: DialProps) => VNode;
   RadioGroup: (p: RadioGroupProps) => VNode;
   CheckBox: (p: CheckBoxProps) => VNode;
   CheckBoxGroup: (p: CheckBoxGroupProps) => VNode;
@@ -1269,52 +1245,8 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     );
   }
 
-  /**
-   * A ring the value runs round: a track, an arc (drawn frames: iViewer has no
-   * arcs), a thumb that turns with the value, the value in the middle.
-   * Touch or drag anywhere on the ring.
-   */
-  function Dial({ join, min = 0, max = 100, value, step, decimals = 0, unit = '%', label, labelJoin, size = 220, thickness, color = t.accent,
-                  sweep = 270, steps = 50, x = 0, y = 0 }: DialProps): VNode {
-    const th = thickness ?? Math.max(8, Math.round(size * 0.075));
-    const key = keyOf(join);
-    const id = JSON.stringify(key);
-    const from = -sweep / 2;
-    // its drawings in a folder of its own, named after it (dials/thermostat/): the frames 0.png ..., the track, the dot
-    const prefix = `${drawnSet('dials', `${size}|${th}|${sweep}|${steps}|${color}|${t.raised}`, label ?? joinLabel(join, 'dial'), 'dial', variant(), placeOf('dials'))}/`;
-    const frames = Array.from({ length: steps + 1 }, (_, i) => draw.arc({ size, thickness: th, from, to: from + (sweep * i) / steps, color, name: `${prefix}${i}` }));
-    const arcJoin: JoinRef = s(`ui_${key}_arc`);
-    const thumbJoin: JoinRef = s(`ui_${key}_thumb`);
-    const text: JoinRef = s(`ui_${key}_value`);
-    const touch = `IvaUI.dialTouch(${id}, gesture.x, gesture.y)`;
-    const o = { prefix, steps, sweep, size, min, max, step: step ?? 0, decimals, unit };
-    return (
-      <Group x={x} y={y}>
-        <Image w={size} h={size} src={draw.arc({ size, thickness: th, from, to: -from, color: t.raised, name: `${prefix}track` })}>
-          <Gesture type="tap" onBegin={touch} />
-          <Gesture type="pan" onBegin={touch} onChange={touch} />
-        </Image>
-        <Image w={size} h={size} join={arcJoin} src={frames[0]} clickthrough />
-        <Image w={size} h={size} join={thumbJoin} src={draw.dot({ size, ring: size / 2 - th / 2 - 1, at: from, diameter: Math.round(th * 1.7), color: '#FFFFFF', name: `${prefix}dot` })} clickthrough />
-        <Text y={Math.round(size * 0.33)} w={size} h={Math.round(size * 0.26)} join={text} align="center" font={font} fontSize={Math.round(size * 0.18)} />
-        {(label || labelJoin) && (
-          <Text y={Math.round(size * 0.58)} w={size} h={Math.round(size * 0.12)} text={label} join={labelJoin} align="center" color={t.muted} font={font} fontSize={Math.round(size * 0.075)} />
-        )}
-        {/* every frame in the .gui, so iViewer ships / caches them: in a subpage only defined - one on the page,
-            hidden or not, had the device load all 51 at full size each time the page showed */}
-        <Subpage name={`ui_frames_${prefix.replace(/\W/g, '_')}`} define w={1} h={1}>
-          {frames.map((f) => <Image w={1} h={1} src={f} />)}
-        </Subpage>
-        {runtime}
-        <OnStart js={`IvaUI.dial(${id}, ${JSON.stringify(o).slice(0, -1)}, join: ${jsJoin('a', join)}, arc: ${jsJoin('s', arcJoin)}, thumb: ${jsJoin('s', thumbJoin)}, text: ${jsJoin('s', text)} });`}
-                 joins={[typeof join === 'object' ? join : a(join), arcJoin, thumbJoin, text]} />
-        {value !== undefined && <OnStart js={`IvaUI.set(${jsJoin('a', join)}, ${value}, ${min}, ${max});`} />}
-      </Group>
-    );
-  }
-
   /** A knob that turns, tick marks round it (GUI Designer's Dial demo); the value under it. */
-  function Knob({ join, min = 0, max = 100, value, step, decimals = 0, unit = '%', label, size = 200, color = t.raised, pointer = t.accent,
+  function Knob({ join, min = 0, max = 100, value, step, decimals = 0, unit = '%', label, labelJoin, size = 200, color = t.raised, pointer = t.accent,
                   sweep = 270, x = 0, y = 0 }: KnobProps): VNode {
     const key = keyOf(join);
     const id = JSON.stringify(key);
@@ -1323,7 +1255,7 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     const knobJoin: JoinRef = s(`ui_${key}_knob`);
     const text: JoinRef = s(`ui_${key}_value`);
     const touch = `IvaUI.dialTouch(${id}, gesture.x, gesture.y)`;
-    const o = { prefix: '', steps: 0, sweep, size, min, max, step: step ?? 0, decimals, unit };
+    const o = { sweep, size, min, max, step: step ?? 0, decimals, unit };
     // its drawings in a folder of its own, named after it (knobs/volume/): the ticks, the knob
     const folder = drawnSet('knobs', `${size}|${disc}|${color}|${pointer}|${sweep}|${t.muted}`, label ?? joinLabel(join, 'knob'), 'knob', variant(), placeOf('knobs'));
     return (
@@ -1335,7 +1267,7 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
         <Image x={(size - disc) / 2} y={(size - disc) / 2} w={disc} h={disc} join={knobJoin} clickthrough
                src={draw.knob({ size: disc, color, pointer, at: from, name: `${folder}/knob` })} />
         <Text y={size + 4} w={size} h={36} join={text} align="center" font={font} fontSize={24} />
-        {label && <Text y={size + 40} w={size} h={24} text={label} align="center" color={t.muted} font={font} fontSize={16} />}
+        {(label || labelJoin) && <Text y={size + 40} w={size} h={24} text={label} join={labelJoin} align="center" color={t.muted} font={font} fontSize={16} />}
         {runtime}
         <OnStart js={`IvaUI.dial(${id}, ${JSON.stringify(o).slice(0, -1)}, join: ${jsJoin('a', join)}, thumb: ${jsJoin('s', knobJoin)}, text: ${jsJoin('s', text)} });`}
                  joins={[typeof join === 'object' ? join : a(join), knobJoin, text]} />
@@ -1344,19 +1276,21 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     );
   }
 
-  /** A setpoint dial, the room temperature, - and + under it; modes (Segmented) below. */
+  /** A setpoint knob, the room temperature under it, - and + either side of the value; modes (Segmented) below. */
   function Thermostat({ setpoint, value, current, currentJoin, min = 16, max = 30, step = 0.5, unit = '\u00B0', size = 240, modes, mode, modeValue = 0, x = 0, y = 0 }: ThermostatProps): VNode {
     const id = JSON.stringify(keyOf(setpoint));
     const b = Math.round(size * 0.18);
     const btn = { w: b, h: b, radius: b / 2, bg: t.raised, active: { bg: t.accent }, font };
     const segW = Math.round(size * 0.85);
+    // the knob's value sits under it (size + 4, 36 tall): - and + either side of it
+    const row = size + 4 + Math.round((36 - b) / 2);
     return (
       <Group x={x} y={y}>
-        <Dial join={setpoint} value={value} min={min} max={max} step={step} decimals={1} unit={unit} size={size}
+        <Knob join={setpoint} value={value} min={min} max={max} step={step} decimals={1} unit={unit} size={size}
               label={current !== undefined ? `Now ${current}` : undefined} labelJoin={currentJoin} />
-        <Button x={Math.round(size / 2 - b * 1.45)} y={size - b - 4} {...btn} icon={fa('minus', { size: Math.round(b * 0.4) })} js={`IvaUI.dialStep(${id}, -1)`} />
-        <Button x={Math.round(size / 2 + b * 0.45)} y={size - b - 4} {...btn} icon={fa('plus', { size: Math.round(b * 0.4) })} js={`IvaUI.dialStep(${id}, 1)`} />
-        {modes && mode !== undefined && <Segmented x={Math.round((size - segW) / 2)} y={size + 14} w={segW} h={44} options={modes} join={mode} value={modeValue} />}
+        <Button x={Math.round(size / 2 - b * 2.2)} y={row} {...btn} icon={fa('minus', { size: Math.round(b * 0.4) })} js={`IvaUI.dialStep(${id}, -1)`} />
+        <Button x={Math.round(size / 2 + b * 1.2)} y={row} {...btn} icon={fa('plus', { size: Math.round(b * 0.4) })} js={`IvaUI.dialStep(${id}, 1)`} />
+        {modes && mode !== undefined && <Segmented x={Math.round((size - segW) / 2)} y={size + 72} w={segW} h={44} options={modes} join={mode} value={modeValue} />}
       </Group>
     );
   }
@@ -1545,7 +1479,9 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
       // named after what's in it, its colours aside (the same name in every look): the same content (a
       // side menu on every page) is one subpage
       const look = /^#[0-9a-f]{3,8}$|iva_\w*[0-9a-f]{8}/i;
-      const shape = JSON.stringify([content, w, h, horizontal], (_k, v) => (typeof v === 'string' && look.test(v) ? '' : v));
+      // (a drawing's file name carries the look's where its colours differ - knobs/volume-light/knob: its drawing counts, not its name)
+      const shape = JSON.stringify([content, w, h, horizontal], (_k, v) =>
+        typeof v === 'string' && look.test(v) ? '' : v && typeof v === 'object' && v.$$draw === 1 ? { ...v, name: undefined } : v);
       const sub = `ui_scroll_${join !== undefined ? keyOf(join) : hash(shape)}`;
       const size = contentH ?? (horizontal ? Math.max(w, rightOf(content)) : Math.max(h, bottomOf(content)));
       return (
@@ -1597,7 +1533,7 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
    * the others `name / title`), the tabs under the header - a tap on one
    * flips to its page. In iViewer a ScrollArea is a list, and a list's
    * rows (its header too) hold no list, subpage or gesture: a DataList, a
-   * Pager, a Dial in one stay empty or dead. Where a page of them doesn't fit
+   * Pager, a Knob in one stay empty or dead. Where a page of them doesn't fit
    * (a phone), they get screens of their own; content that goes further down
    * than the screen scrolls, if it can.
    */
@@ -2631,7 +2567,7 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
   }
 
   return {
-    theme: t, grid, Card, Icon, IconButton, Tile, Badge, Stat, Toggle, Slider, Stepper, Segmented, SceneBar, Dimmer, Dial, Knob, Thermostat, Blinds,
+    theme: t, grid, Card, Icon, IconButton, Tile, Badge, Stat, Toggle, Slider, Stepper, Segmented, SceneBar, Dimmer, Knob, Thermostat, Blinds,
     RadioGroup, CheckBox, CheckBoxGroup, SelectBox, ListRow, DataList, ScrollBox, ScrollArea, Screens, screenArea, WeekDays, PinPad, AlarmCard, NavCard, Header, SideMenu, ConfirmDialog,
     ColorPicker, TextField, SearchSelect, TimePicker, DatePicker, NumberField, DataTable, AlarmTable, AlarmBanner, Breadcrumbs, Loader, Pager,
     Trend, Chart, DragDrop,
@@ -2778,7 +2714,6 @@ export const Segmented: Ui['Segmented'] = ui.Segmented;
 export const SceneBar: Ui['SceneBar'] = ui.SceneBar;
 export const Dimmer: Ui['Dimmer'] = ui.Dimmer;
 export const Blinds: Ui['Blinds'] = ui.Blinds;
-export const Dial: Ui['Dial'] = ui.Dial;
 export const Knob: Ui['Knob'] = ui.Knob;
 export const Thermostat: Ui['Thermostat'] = ui.Thermostat;
 export const RadioGroup: Ui['RadioGroup'] = ui.RadioGroup;

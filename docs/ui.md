@@ -63,8 +63,8 @@ with the page).
 
 What a list's cell can't hold, a ScrollArea can't scroll: iViewer shows no
 list, subpage or gesture in a list's header, footer or rows - a `DataList`,
-`DataTable`, `AlarmTable`, `ScrollBox`, `Pager`, `ColorPicker`, `Dial`,
-`Knob`, `Thermostat` (the ring), `DragDrop` in one stays empty or dead on the
+`DataTable`, `AlarmTable`, `ScrollBox`, `Pager`, `ColorPicker`,
+`Knob`, `Thermostat` (the knob), `DragDrop` in one stays empty or dead on the
 device (the build warns). On a phone, give them screens of their own with
 `<ui.Screens>`: a page a tab, under the header; each screen's content goes in
 `ui.screenArea`, and still scrolls if it goes further down and can.
@@ -107,9 +107,8 @@ it as a value in min..max.
 | `SceneBar` | one of several scenes, icon tiles | `scenes: [{ icon, title, cmd }]`, `join`, `value` |
 | `Dimmer` | a light: icon, name, on / off, level | `label`, `icon`, `on`, `level` |
 | `Blinds` | up / stop / down and the position | `label`, `position`, `onOpen` / `onStop` / `onClose` |
-| `Dial` | a ring the value runs round: arc, thumb, the value in the middle; touch / drag the ring | `join`, `min`, `max`, `value`, `step`, `decimals`, `unit`, `label` / `labelJoin`, `size`, `thickness`, `color`, `sweep`, `steps` |
-| `Knob` | a knob that turns, tick marks round it (GUI Designer's Dial demo); the value under it | `join`, `min`, `max`, `value`, `step`, `unit`, `label`, `size`, `color`, `pointer`, `sweep` |
-| `Thermostat` | a setpoint Dial, the room temperature, − / +; modes below | `setpoint`, `value`, `current` / `currentJoin`, `min`, `max`, `step`, `unit`, `size`, `modes` + `mode` |
+| `Knob` | a knob that turns, tick marks round it (GUI Designer's Dial demo); the value under it; touch / drag it | `join`, `min`, `max`, `value`, `step`, `decimals`, `unit`, `label` / `labelJoin`, `size`, `color`, `pointer`, `sweep` |
+| `Thermostat` | a setpoint Knob, the room temperature under it, − / + beside the value; modes below | `setpoint`, `value`, `current` / `currentJoin`, `min`, `max`, `step`, `unit`, `size`, `modes` + `mode` |
 | `RadioGroup` | one of a few, as radio buttons | `options`, `join` (the index), `value` |
 | `CheckBox` / `CheckBoxGroup` | on / off boxes | `label`, `join`, `value`; group: `options: [{ label, join, value }]` |
 | `SelectBox` | a field opening the options: a sheet over the page, or a dropdown under the field | `options`, `join` (the index), `value`, `title`, `mode` (`sheet`·`dropdown`) |
@@ -147,15 +146,13 @@ iva keeps one definition.
 
 ## How the circular ones work
 
-iViewer can't draw an arc, so a Dial's arc is drawn by iva as frames
-(`steps`, default 50: one every 2 %; 1x and @2x) and the panel shows the
-frame for the value (an image's serial join), as CommandFusion's
-ImageLevel demo does. The thumb (Dial) or the knob (Knob) is one image the
-panel turns with `CF.setProperties({ zrotation })`, as in their Dial demo,
-so it moves smoothly to the exact value. A touch or a drag on the ring
-(tap and pan gestures) becomes an angle, then a value, snapped to `step`.
-Dials that look the same share their frames; each look costs `steps + 1`
-small images (× 2 for retina) - fewer `steps` for lighter projects.
+iViewer draws nothing itself, so a Knob is two images iva draws at build
+time: the tick marks round it, and the knob, which the panel turns with
+`CF.setProperties({ zrotation })`, as CommandFusion's Dial demo does, so it
+moves smoothly to the exact value. A touch or a drag on it (tap and pan
+gestures) becomes an angle, then a value, snapped to `step`. Knobs that
+look the same share their two images (1x and @2x). (An earlier arc Dial
+shown as 51 drawn frames is gone: too many images for what it did.)
 
 The ColorPicker's swatch: iViewer can't colour anything from a script, so
 (as CommandFusion's ColorPicker2 demo does) it's a web view loading a page

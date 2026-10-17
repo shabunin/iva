@@ -197,12 +197,11 @@ var IvaUI = (function () {
       if (CF.currentPage) show(CF.currentPage);
     },
     /**
-     * a dial: the value in an analog join (min..max as 0..65535); shown as an
-     * arc (one of steps + 1 drawn frames, named prefix + i + '.png', in a
-     * serial join), a rotating thumb / knob (zrotation), and a serial join text.
-     * Under a finger: a value at most every 40 ms, the thumb following it
+     * a knob (a dial): the value in an analog join (min..max as 0..65535);
+     * shown as the knob turned (its image's zrotation) and a serial join text.
+     * Under a finger: a value at most every 40 ms, the knob following it
      * straight (an animation a move piled up on the device); what's shown
-     * already isn't again (an image a frame loads, a move or not).
+     * already isn't again (a move or not).
      */
     dial: function (id, o) {
       dials[id] = o;
@@ -212,11 +211,7 @@ var IvaUI = (function () {
       var o = dials[id], f = clamp((Number(v) || 0) / 65535, 0, 1);
       // another value than a finger put: the next touch puts its own, even the same
       if (Number(v) !== o.put) o.put = undefined;
-      var img = o.arc && file(o.prefix + Math.round(f * o.steps) + '.png'), turn = f * o.sweep, text = fmt(fromJoin(v, o.min, o.max), o.decimals, o.unit);
-      if (o.arc && img !== o.img) {
-        o.img = img;
-        CF.setJoin(o.arc, img);
-      }
+      var turn = f * o.sweep, text = fmt(fromJoin(v, o.min, o.max), o.decimals, o.unit);
       if (o.thumb && turn !== o.turn) {
         o.turn = turn;
         CF.setProperties({ join: o.thumb, zrotation: turn }, 0, Date.now() - (o.touched || 0) < 400 ? 0 : 0.12);
@@ -277,7 +272,7 @@ var IvaUI = (function () {
       if (CF.listClear) CF.listClear(list); else CF.listRemove(list);
       CF.listAdd(list, rows);
     },
-    /** after a runtime theme switch (IvaTheme calls it): lists and dials in the new look */
+    /** after a runtime theme switch (IvaTheme calls it): lists and knobs in the new look */
     themeChanged: function () {
       for (var list in filled) IvaUI.fill(list, filled[list]);
       for (var id in dials) {

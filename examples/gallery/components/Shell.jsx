@@ -5,7 +5,7 @@ export const sections = [
   { page: 'Overview', icon: 'table-cells-large', text: 'Overview' },
   { page: 'Buttons', icon: 'hand-pointer', text: 'Buttons & status', sub: 'IconButton, Tile, Badge, Stat, Icon' },
   { page: 'Controls', icon: 'sliders', text: 'Controls', sub: 'Toggle, Slider, Stepper, Segmented, SceneBar' },
-  { page: 'Dials', icon: 'circle-half-stroke', text: 'Dials', sub: 'Dial, Knob, Thermostat' },
+  { page: 'Dials', icon: 'circle-half-stroke', text: 'Dials', sub: 'Knob, Thermostat' },
   { page: 'Devices', icon: 'lightbulb', text: 'Devices', sub: 'Dimmer, Blinds, ColorPicker, Web, a camera, HTTP' },
   { page: 'Forms', icon: 'square-check', text: 'Forms', sub: 'RadioGroup, CheckBox, SelectBox, SearchSelect, TextField' },
   { page: 'Pickers', icon: 'calendar-days', text: 'Pickers', sub: 'TimePicker, DatePicker, NumberField' },

@@ -45,7 +45,7 @@ iva serve          # to iViewer on a real device (GUI File URL http://<this mach
   unknown font is a warning.
 - Ready-made components: `import { createUi } from 'iva/ui'` (Card, Tile,
   IconButton, Toggle, Slider, Stepper, Segmented, SceneBar, Dimmer, Blinds,
-  Dial, Knob, Thermostat, ColorPicker, RadioGroup, CheckBox, SelectBox,
+  Knob, Thermostat, ColorPicker, RadioGroup, CheckBox, SelectBox,
   TextField, SearchSelect, TimePicker, DatePicker, NumberField, DataList,
   WeekDays, AlarmCard, PinPad, Header, SideMenu, ConfirmDialog, DataTable,
   AlarmTable, AlarmBanner, Breadcrumbs, Loader, Pager, Trend, Chart,
@@ -61,7 +61,7 @@ iva serve          # to iViewer on a real device (GUI File URL http://<this mach
   scaled up by iViewer). Lay pages out from `screen()` (the size being
   built): iva/ui's `ui.grid()` places cards for the size, `<ui.ScrollArea>`
   scrolls a page that doesn't fit. A ScrollArea is a list: iViewer shows no
-  list, subpage or gesture in one (DataList, DataTable, Pager, Dial,
+  list, subpage or gesture in one (DataList, DataTable, Pager, Knob,
   DragDrop... - the build warns); on a phone give those `<ui.Screens>` (a
   page a tab). See iva's docs/components.md and docs/ui.md, Screen sizes.
 - Devices: `<System host port>` with `<Command>` and `<Feedback>`; button

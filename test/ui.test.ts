@@ -41,38 +41,38 @@ export default (
   assert.ok(c.problems.some((p) => /'titel' does not exist.*Did you mean 'title'\?/s.test(p)), c.problems.join('\n'));
 });
 
-test('Dial: a track with gestures, arc frames named for the look, a thumb, its setup', async () => {
-  const dir = tmpDir('iva-dial-');
-  fs.writeFileSync(path.join(dir, 'app.jsx'), `import { Dial, Knob } from 'iva/ui';
+test('Knob: ticks with gestures and a knob, drawn once per look and named for it; its setup; no Dial (its 51 arc frames) any more', async () => {
+  const dir = tmpDir('iva-knob-');
+  fs.writeFileSync(path.join(dir, 'app.jsx'), `import { Knob } from 'iva/ui';
 export default (
   <Project name="T" width={1280} height={800}>
     <Page name="P">
-      <Dial join="level" value={65} steps={10} size={200} />
-      <Dial x={300} join="other" steps={10} size={200} />
-      <Knob x={600} join="vol" min={-10} max={10} step={1} />
+      <Knob join="level" value={65} size={200} label="Level" />
+      <Knob x={300} join="other" size={200} />
+      <Knob x={600} join="vol" min={-10} max={10} step={1} size={150} />
     </Page>
   </Project>
 );
 `);
   const r = await compile(path.join(dir, 'app.jsx'));
-  // a dial's drawings in a folder of its own, named after it: the frames 0..10, the track, the dot - one folder
-  // for the two dials that look the same (named after the first); the knob's in its own
-  const frames = r.assets.filter((x) => /^dials\/level\/\d+\.png$/.test(x.name));
-  assert.equal(frames.length, 11);
-  assert.equal(r.assets.filter((x) => /^dials\/level\/\d+@2x\.png$/.test(x.name)).length, 11);
-  for (const f of ['dials/level/track.png', 'dials/level/dot.png', 'knobs/vol/ticks.png', 'knobs/vol/knob.png']) assert.ok(r.assets.some((x) => x.name === f), f);
-  assert.ok(!r.assets.some((x) => x.name.startsWith('dials/other')));
-  assert.equal((r.xml.match(/<gesture /g) ?? []).length, 6); // tap + pan on each control's ring
+  // a knob's two drawings in a folder of its own, named after it - one folder for the two that look the same
+  // (named after the first); the smaller one's in its own. 1x and @2x each: eight images, not frames
+  for (const f of ['knobs/level/ticks.png', 'knobs/level/knob.png', 'knobs/level/ticks@2x.png', 'knobs/vol/ticks.png', 'knobs/vol/knob.png']) assert.ok(r.assets.some((x) => x.name === f), f);
+  assert.ok(!r.assets.some((x) => x.name.startsWith('knobs/other')));
+  assert.equal(r.assets.filter((x) => x.name.startsWith('knobs/')).length, 8);
+  assert.ok(!r.assets.some((x) => x.name.startsWith('dials/')));
+  assert.equal((r.xml.match(/<gesture /g) ?? []).length, 6); // tap + pan on each knob
   assert.match(r.xml, /js="IvaUI\.dialTouch\(&quot;level&quot;, gesture\.x, gesture\.y\)"/);
-  // every frame named in the .gui, so it ships with the project: in a subpage only defined - not on the page,
-  // where the device would load them all each time it shows
-  assert.equal((r.xml.match(/<subpage name="ui_frames_dials_level_" w=/g) ?? []).length, 1);
-  assert.equal((r.xml.match(/name="ui_frames_/g) ?? []).length, 1);
+  assert.doesNotMatch(r.xml, /ui_frames_/);
   const start = r.scripts.find((x) => x.name === 'iva-start.js')!.code!;
   assert.equal(start.match(/IvaUI\.dial\(/g)!.length, 3);
   assert.match(start, /IvaUI\.set\(Joins\.a\["level"\], 65, 0, 100\)/);
-  // the frames by name: its folder, then 0.png ... (the script adds them)
-  assert.match(start, /"prefix":"dials\/level\/"/);
+  assert.doesNotMatch(start, /prefix|steps|arc/);
+  // Dial is gone from iva/ui
+  fs.writeFileSync(path.join(dir, 'old.jsx'), `import { Dial } from 'iva/ui';
+export default <Project name="T" width={100} height={100}><Page name="P"><Dial join="x" /></Page></Project>;
+`);
+  await assert.rejects(compile(path.join(dir, 'old.jsx')), /Dial/);
 });
 
 test('forms, lists, schedule: popups last, list rows defined, icons drawn at their size', async () => {
@@ -345,4 +345,23 @@ export default (
   assert.doesNotMatch(shade, /<btn /);
   // the panel: a swipe to the left closes it
   assert.equal(xml.match(/type="swipe" direction="left"[^>]*>\s*<action phase="begin" js="IvaUI.off\(/g)?.length, 2);
+});
+
+test('a ScrollBox named after what is in it, in every look the same: a knob drawn in each look\'s colours (knobs/vol, knobs/vol-light) is the same knob', async () => {
+  const dir = tmpDir('iva-scroll-looks-');
+  fs.writeFileSync(path.join(dir, 'app.jsx'), `import { Knob, ScrollBox, Thermostat } from 'iva/ui';
+export default (
+  <Project name="T" width={400} height={700} themes={['dark', 'light']}>
+    <Page name="P">
+      <ScrollBox w={400} h={600}>
+        <Knob join="vol" size={150} color={variant() === 'light' ? '#EEEEEE' : '#333333'} />
+        <Thermostat y={260} size={160} setpoint="heat" value={21} current="20.5°" />
+      </ScrollBox>
+    </Page>
+  </Project>
+);
+`);
+  const r = await compile(path.join(dir, 'app.jsx'));
+  for (const f of ['knobs/vol/knob.png', 'knobs/vol-light/knob.png', 'knobs/now-20-5/knob.png']) assert.ok(r.assets.some((x) => x.name === f), f);
+  assert.equal((r.xml.match(/<subpage name="ui_scroll_[0-9a-f]{8}" w=/g) ?? []).length, 1);
 });

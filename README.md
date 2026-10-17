@@ -40,9 +40,7 @@ dist/
   my-panel.gui          <imagefolder>assets</imagefolder>
   assets/               the project's own images and files (from assets/), and
                         iva's drawings, a folder per component type:
-    dials/thermostat/     a dial's own folder (named after its label): its
-                          frames 0.png ... 50.png, track.png, dot.png
-    knobs/volume/         a knob's: ticks.png, knob.png
+    knobs/volume/         a knob's own folder (named after its label): ticks.png, knob.png
     pickers/lamp/         a colour picker's: wheel.png, marker.png, frame.png
     buttons/              120x44-r12-2b3137.png: size, corner radius, colour
     boxes/ rows/ banners/ sliders/ backgrounds/    (a page's: its name)
@@ -56,8 +54,8 @@ dist/
 
 A drawing made twice is one file, named after the first element it's for.
 In a build of several looks (`<Project themes>`) a drawing that differs gets
-the look's name too: `dials/thermostat-light/`, `backgrounds/home-light.png`.
-Russian labels are transliterated: `Термостат` makes `dials/termostat/`.
+the look's name too: `knobs/volume-light/`, `backgrounds/home-light.png`.
+Russian labels are transliterated: `Термостат` makes `knobs/termostat/`.
 
 `<Project folders={false}>` puts everything beside the .gui instead (a
 decompiled .gui keeps its own layout this way). `iva build --zip` also writes

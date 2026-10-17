@@ -504,13 +504,15 @@ test('ColorPicker on the device (its own joins told back, later): a touch, the s
   }
 });
 
-test('Dial on the device: a finger\'s moves - a value at most every 40 ms and the last always, nothing shown twice, no animation under it', () => {
+test('Knob on the device: a finger\'s moves - a value at most every 40 ms and the last always, nothing turned twice, no animation under it', () => {
   const d = device();
-  d.IvaUI.dial('level', { prefix: 'f_', steps: 50, sweep: 270, size: 200, min: 0, max: 100, step: 1, decimals: 0, unit: '%', join: 'a1', arc: 's1', thumb: 's2', text: 's3' });
+  d.IvaUI.dial('level', { sweep: 270, size: 200, min: 0, max: 100, step: 1, decimals: 0, unit: '%', join: 'a1', thumb: 's2', text: 's3' });
   d.IvaUI.set('a1', 65, 0, 100);
   d.run();
-  assert.deepEqual([d.joins.s1, d.joins.s3], ['f_33.png', '65 %']);
-  // a finger round the ring, a move every 4 ms for 400 ms
+  assert.equal(d.joins.s3, '65 %');
+  const turn = (p: { props: any }) => p.props.zrotation as number;
+  assert.ok(Math.abs(turn(d.props.at(-1)!) - 0.65 * 270) < 0.01, 'the knob turned to the value');
+  // a finger round the knob, a move every 4 ms for 400 ms
   const at = (deg: number): [number, number] => [100 + 80 * Math.sin(deg * Math.PI / 180), 100 - 80 * Math.cos(deg * Math.PI / 180)];
   let from = d.sets.length;
   const p0 = d.props.length;
@@ -522,10 +524,11 @@ test('Dial on the device: a finger\'s moves - a value at most every 40 ms and th
   assert.equal(d.pending(), 0);
   const puts = d.sets.slice(from).filter((x) => x.join === 'a1');
   assert.ok(puts.length >= 5 && puts.length <= 12, `${puts.length} values put in 400 ms`);
-  assert.deepEqual([d.joins.a1, d.joins.s1, d.joins.s3], [65535, 'f_50.png', '100 %']);
+  assert.deepEqual([d.joins.a1, d.joins.s3], [65535, '100 %']);
+  assert.equal(turn(d.props.at(-1)!), 270);
   assert.ok(d.props.slice(p0).every((p) => p.duration === 0), 'no animation under a finger');
-  const frames = d.sets.slice(from).filter((x) => x.join === 's1').map((x) => x.value);
-  assert.ok(frames.every((f, i) => !i || f !== frames[i - 1]), 'no frame twice in a row');
+  const turns = d.props.slice(p0).map(turn);
+  assert.ok(turns.every((f, i) => !i || f !== turns[i - 1]), 'no turn twice in a row');
   // the finger still: nothing more
   from = d.sets.length;
   for (let i = 0; i < 10; i++) {

@@ -1,13 +1,13 @@
 /**
  * The names of a build's drawings in its image folder: readable - the element
- * they're for (dials/thermostat/12.png), or what they look like
+ * they're for (knobs/volume/knob.png), or what they look like
  * (buttons/120x44-r12-2b3137.png) - one drawing a name, and a drawing made
  * again (the same key: what it's drawn from) under the name it got first.
  *
  * One registry a build, shared by the compiler and iva/ui (bundled with the
  * project, it reaches this through globalThis, as the build's look and screen
  * size), across the build's looks: a drawing the same in every look keeps one
- * name, one that differs gets another (dials/thermostat-light).
+ * name, one that differs gets another (knobs/volume-light).
  */
 
 interface Registry {
@@ -73,7 +73,7 @@ export function drawnFile(key: string, names: string[]): string {
  * In a build of several looks (each the same elements, in the same order),
  * the set at `place` (its kind's n-th) is the same set in each: drawn the
  * same, the same folder; drawn otherwise, the first look's name and this
- * look's after it (dials/thermostat-light). @internal
+ * look's after it (knobs/volume-light). @internal
  */
 export function drawnSet(kind: string, key: string, wanted: string | undefined, fallback: string, look?: string, place?: string): string {
   const g = globalThis as Globals;

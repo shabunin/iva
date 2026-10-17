@@ -1081,32 +1081,6 @@ declare module 'iva/ui' {
       y?: number;
       w?: number;
   }
-  export interface DialProps {
-      /** analog join (0..65535, standing for min..max) */
-      join: Join;
-      min?: number;
-      max?: number;
-      /** where it starts, in min..max */
-      value?: number;
-      /** a touch / the -+ buttons snap to this */
-      step?: number;
-      decimals?: number;
-      unit?: string;
-      /** under the value */
-      label?: string;
-      /** serial join for the label */
-      labelJoin?: Join;
-      size?: number;
-      /** ring thickness (default: 7.5 % of the size) */
-      thickness?: number;
-      color?: string;
-      /** degrees of the ring (default 270, the gap at the bottom) */
-      sweep?: number;
-      /** arc frames drawn (default 50: every 2 %) */
-      steps?: number;
-      x?: number;
-      y?: number;
-  }
   export interface KnobProps {
       /** analog join (0..65535, standing for min..max) */
       join: Join;
@@ -1116,7 +1090,10 @@ declare module 'iva/ui' {
       step?: number;
       decimals?: number;
       unit?: string;
+      /** under the value */
       label?: string;
+      /** serial join for the label */
+      labelJoin?: Join;
       size?: number;
       /** the knob */
       color?: string;
@@ -1762,7 +1739,6 @@ declare module 'iva/ui' {
       Segmented: (p: SegmentedProps) => VNode;
       SceneBar: (p: SceneBarProps) => VNode;
       Dimmer: (p: DimmerProps) => VNode;
-      Dial: (p: DialProps) => VNode;
       RadioGroup: (p: RadioGroupProps) => VNode;
       CheckBox: (p: CheckBoxProps) => VNode;
       CheckBoxGroup: (p: CheckBoxGroupProps) => VNode;
@@ -1878,7 +1854,6 @@ declare module 'iva/ui' {
   export declare const SceneBar: Ui['SceneBar'];
   export declare const Dimmer: Ui['Dimmer'];
   export declare const Blinds: Ui['Blinds'];
-  export declare const Dial: Ui['Dial'];
   export declare const Knob: Ui['Knob'];
   export declare const Thermostat: Ui['Thermostat'];
   export declare const RadioGroup: Ui['RadioGroup'];
