@@ -2002,6 +2002,83 @@ declare module 'iva/drivers/matter' {
   export declare function Matter({ slots, port, devices, commission, found, label, ipv6, log, store, textEncoding }: MatterProps): VNode;
 }
 
+declare module 'iva/drivers/mqtt' {
+  /**
+   * iva/drivers/mqtt - an MQTT broker on the panel: topics in and out of joins.
+   *
+   *   import { Mqtt } from 'iva/drivers/mqtt';
+   *   <Mqtt name="mqtt" host="192.168.1.10" port={1883} status={s('mqttStatus')}
+   *         subscribe={{ 'home/lamp': d('lamp'), 'home/temp': { join: a('temp'), path: 'value', range: [0, 50] } }}
+   *         publish={{ 'home/lamp/set': { join: d('lamp'), on: 'ON', off: 'OFF', retain: true } }} />
+   *
+   * The component brings its own <System> (TCP, no EOM: the bytes as they
+   * come, a char a byte) with a catch-all <Feedback>, and the client itself -
+   * CONNECT, SUBSCRIBE, PUBLISH (QoS 0 and 1), PINGREQ on the keepalive - is
+   * one script, iva-mqtt.js (runtime.ts), wired up with <OnStart>. Works on
+   * CommandFusion iViewer and on iva's own runtime.
+   */
+  import { type JoinRef, type VNode } from 'iva';
+  /** a join with its type: d('lamp'), a(12), s('text'), or 'd:lamp', 'a12' */
+  export type MqttJoin = JoinRef | string;
+  /** A topic (a filter: + a level, # the rest) into a join. */
+  export interface MqttSubscription {
+      /** digital from 1/0, true/false, on/off; analog a number mapped from `range` onto 0..65535; serial the text */
+      join: MqttJoin;
+      /** a field of a JSON payload, dotted: 'value', 'state.on' */
+      path?: string;
+      /** what 0..65535 stands for (analog; default 0..65535) */
+      range?: [number, number];
+      /** the QoS asked of the broker (default 0) */
+      qos?: 0 | 1;
+  }
+  /** A join's changes published to a topic. */
+  export interface MqttPublication {
+      join: MqttJoin;
+      /** digital: the payloads (default '1' / '0') */
+      on?: string;
+      off?: string;
+      /** analog: the join's 0..65535 mapped back to this (default 0..65535), a whole number unless `decimals` */
+      range?: [number, number];
+      decimals?: number;
+      /** the payload with {value} in it: '{"state": {value}}' */
+      template?: string;
+      /** 1: delivered at least once (a PUBACK awaited; sent again on the next connect if none came) */
+      qos?: 0 | 1;
+      retain?: boolean;
+  }
+  export interface MqttProps {
+      /** the system's name: this <Mqtt> brings the <System> (host, port, ... here) */
+      name?: string;
+      /** another <Mqtt>'s system: these topics on its broker (no host or port here) */
+      system?: string;
+      host?: string;
+      /** default 1883 (8883 with ssl) */
+      port?: number;
+      /** MQTT over TLS (where the runtime has it: iva's does, with any certificate) */
+      ssl?: boolean;
+      /** default 'iva' */
+      clientId?: string;
+      user?: string;
+      password?: string;
+      /** seconds between pings (default 60; 0: none) */
+      keepalive?: number;
+      /** default true (false: the broker keeps the session's subscriptions) */
+      cleanSession?: boolean;
+      /** serial join: Connecting / Connected / Disconnected / Refused (code N) */
+      status?: MqttJoin;
+      /** serial join: the last messages in and out, a line each */
+      log?: MqttJoin;
+      /** how many (default 8) */
+      logLines?: number;
+      /** topic filter -> join (or { join, path, range, qos }) */
+      subscribe?: Record<string, MqttJoin | MqttSubscription>;
+      /** topic -> join (or { join, on, off, range, decimals, template, qos, retain }) */
+      publish?: Record<string, MqttJoin | MqttPublication>;
+  }
+  export declare function Mqtt(props: MqttProps): VNode;
+  export default Mqtt;
+}
+
 declare const Project: typeof import('iva').Project;
 declare const Page: typeof import('iva').Page;
 declare const Landscape: typeof import('iva').Landscape;

@@ -14,6 +14,12 @@ import { Matter } from 'iva/drivers/matter';
 <Matter slots={10} devices={{ lamp: { node: '1', cluster: 'OnOff', join: d('lamp') } }}
         commission={{ code: s('setupCode'), go: d('commission'), status: s('matterStatus') }}
         found={s('matterFound')} />
+
+import { Mqtt } from 'iva/drivers/mqtt';
+
+<Mqtt name="mqtt" host="192.168.1.10" port={1883} status={s('mqttStatus')}
+      subscribe={{ 'home/lamp': d('lamp'), 'home/temp': { join: a('temp'), path: 'value', range: [0, 50] } }}
+      publish={{ 'home/lamp/set': { join: d('lamp'), on: 'ON', off: 'OFF', retain: true } }} />
 ```
 
 What the convention rests on, all of it iViewer's own API (so a driver runs
@@ -54,6 +60,19 @@ in official iViewer as well as in iva's runtime and the iva panel):
 - **The start.** `<OnStart js="IvaMatter.start({...})" joins={[...]} />`
   with the joins as `Joins.*` references (`jsJoin` in `lib/ui`), listed in
   `joins` so they exist for scripts even where no element has them.
+- **A stream too.** A TCP `<System>` with no `eom` ([IVA.md](components.md#systems-and-logic))
+  hands the bytes over as they come, in reads that split or merge the
+  protocol's frames: the script puts them back together (the MQTT driver's
+  `parse`). `alwaysOn` connects again by itself 3 s after a drop; the driver
+  logs in again on `CF.watch(CF.ConnectionStatusChangeEvent, system, cb)` -
+  one watch a system (iViewer takes no list of names there).
+- **No echo.** iViewer fires a join's change event for a script's own
+  `CF.setJoin` too: a driver remembers what it last wrote to each join and
+  swallows that one event, so what a device reported isn't sent back to it.
+- **Where it lives.** `lib/drivers/<name>/index.tsx` is `iva/drivers/<name>`
+  (the compiler resolves any folder there; `iva types` declares each in a
+  project's `iva.d.ts`); the panel script beside it (`runtime.ts` as a
+  template literal, or a bundled `runtime/main.ts`).
 
 ## The probe (examples/matter, Probe page)
 
@@ -150,3 +169,62 @@ a join's change (not the driver's own echo) sends the command.
 Tests without a device: `test/matter.test.ts` (the pool, the Network, the
 DNS-SD source through matter.js's own scanner, the storage, the compile
 output). The example: `examples/matter` (`iva serve examples/matter/app.jsx`).
+
+## MQTT: `<Mqtt>` (iva/drivers/mqtt)
+
+An MQTT 3.1.1 client written by hand (no npm package on the panel): CONNECT
+with client id, user, password, keepalive and clean session; CONNACK and its
+return code; PUBLISH at QoS 0 and 1 (PUBACK, packet ids); SUBSCRIBE /
+SUBACK, UNSUBSCRIBE; PINGREQ / PINGRESP on the keepalive; DISCONNECT; topic
+filters with `+` and `#`; packets split or merged across TCP reads put back
+together.
+
+| Prop | What it is |
+|---|---|
+| `name` | the broker's system: this `<Mqtt>` brings the `<System>` of that name (host, port, credentials here) |
+| `system` | topics on a broker another `<Mqtt name>` brings - several elements, one connection (no host, port or credentials here) |
+| `host`, `port` | the broker (port: 1883, 8883 with `ssl`) |
+| `ssl` | MQTT over TLS, where the runtime has it (iva's: any certificate, as a system's Enable SSL) |
+| `clientId`, `user`, `password`, `keepalive`, `cleanSession` | the CONNECT: `iva`, none, none, 60 s (0: no pings), true |
+| `status` | serial join: `Connecting`, `Connected`, `Disconnected`, `Refused (code N)` |
+| `log`, `logLines` | serial join with the last messages, a line each: `< topic: payload` in, `> topic: payload` out (8 lines) |
+| `subscribe` | `{ 'home/lamp': d('lamp'), 'home/temp': { join: a('temp'), path: 'value', range: [0, 50], qos: 1 } }`: a topic filter (`+` a level, `#` the rest) into a join |
+| `publish` | `{ 'home/lamp/set': { join: d('lamp'), on: 'ON', off: 'OFF', retain: true, qos: 1 }, 'home/dim/set': { join: a('dim'), range: [0, 100], decimals: 1, template: '{"level": {value}}' } }`: a join's changes to a topic |
+
+A join is `d('lamp')`, `a(12)`, `s('text')` (or `'d:lamp'`, `'a12'`): its
+type says how the payload is read and written.
+
+**Payload to join** (a message on a subscribed topic): digital from `1` /
+`0`, `true` / `false`, `on` / `off` in any case (another number: on unless
+0); analog a number mapped from `range` (default 0..65535) onto 0..65535,
+clamped (`21.5 C` reads as 21.5); serial the text (an object: its JSON).
+`path` reads a field of a JSON payload, dotted (`value`, `state.on`,
+`readings.0.t`); a payload without it leaves the join alone, as does one the
+join can't take (`maybe` for a digital).
+
+**Join to payload** (the join changed on the panel): digital `on` / `off`
+(default `1` / `0`); analog back through `range`, a whole number unless
+`decimals`; serial as it is; then `template` with `{value}` in it. What a
+subscription just set isn't published back, so one join can take `home/lamp`
+in and give `home/lamp/set` out. QoS 1 publishes wait for their PUBACK and
+go again (DUP) on the next connect if none came, while the connection is
+down too; QoS 0 ones while down are dropped (the log says).
+
+**The connection:** CONNECT when the system connects; SUBSCRIBE to every
+filter on CONNACK, so a reconnect subscribes again; PINGREQ every
+`keepalive` seconds, and when a PINGRESP hasn't come by the next, the system
+is started over (`CF.setSystemProperties` enabled off, then on) and connects
+afresh. A refused CONNACK shows its code in the status (4: bad user name or
+password, 5: not authorised, 2: identifier rejected); the broker closes the
+connection and the system tries again in 3 s.
+
+**From a script** (iva-mqtt.js, `IvaMqtt`):
+
+```js
+IvaMqtt.publish('mqtt', 'home/say', 'hello', { qos: 1, retain: true });
+IvaMqtt.subscribe('mqtt', 'sensors/#', function (topic, payload) { CF.log(topic + ': ' + payload); });
+IvaMqtt.reconnect('mqtt', host, port);   // another broker (the example's Host / Port fields): off, the address, on
+IvaMqtt.encode.publish('t', IvaMqtt.utf8('hi'));   // the codec: encode, decode, parse, matches, utf8, text
+```
+
+Not in it: QoS 2, will messages, MQTT 5, WebSocket transport.
