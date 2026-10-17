@@ -12,7 +12,7 @@ const tmp = () => path.join(tmpDir('iva-create-'), 'panel');
 for (const template of templates()) {
   test(`template ${template}: created, checks clean, builds`, async () => {
     const r = await create(tmp(), { template });
-    for (const f of ['app.jsx', 'iva.d.ts', 'jsconfig.json', 'IVA.md', 'IVA-UI.md', 'IVA-WEB.md', 'AGENTS.md', 'CLAUDE.md', 'README.md', '.gitignore']) {
+    for (const f of ['app.jsx', 'iva.d.ts', 'jsconfig.json', 'IVA.md', 'IVA-UI.md', 'IVA-WEB.md', 'IVA-DRIVERS.md', 'AGENTS.md', 'CLAUDE.md', 'README.md', '.gitignore']) {
       assert.ok(fs.existsSync(path.join(r.dir, f)), f);
     }
     assert.deepEqual(r.warnings, []);
@@ -56,9 +56,13 @@ test("the references in a project: iva's docs copied, their links to each other 
   assert.match(main, /# iva base components/);
   // the notes point an assistant at them
   const agents = fs.readFileSync(path.join(r.dir, 'AGENTS.md'), 'utf8');
-  assert.ok(agents.includes('IVA-UI.md') && agents.includes('IVA-WEB.md') && !agents.includes("iva's docs/"));
+  assert.ok(agents.includes('IVA-UI.md') && agents.includes('IVA-WEB.md') && agents.includes('IVA-DRIVERS.md') && !agents.includes("iva's docs/"));
+  // the drivers' doc: its links to the examples point at iva's repo (a project has no examples/)
+  const drivers = fs.readFileSync(path.join(r.dir, 'IVA-DRIVERS.md'), 'utf8');
+  assert.match(drivers, /# iva drivers/);
+  assert.ok(drivers.includes('iva/drivers/upnp'));
   // written again (a newer iva): the same files
   fs.writeFileSync(path.join(r.dir, 'IVA-UI.md'), 'stale');
-  assert.deepEqual(writeDocs(r.dir), ['IVA.md', 'IVA-UI.md', 'IVA-WEB.md']);
+  assert.deepEqual(writeDocs(r.dir), ['IVA.md', 'IVA-UI.md', 'IVA-WEB.md', 'IVA-DRIVERS.md']);
   assert.notEqual(fs.readFileSync(path.join(r.dir, 'IVA-UI.md'), 'utf8'), 'stale');
 });

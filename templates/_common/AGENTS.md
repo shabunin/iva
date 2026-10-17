@@ -21,9 +21,9 @@ iva serve          # to iViewer on a real device (GUI File URL http://<this mach
   bare name (`image="bg.png"`), as iViewer finds them.
 - `scripts/`: iViewer JavaScript (the `CF.*` API), shipped as is with `<Script src>`.
 - `IVA.md`: every element and prop; `IVA-UI.md`: the iva/ui components;
-  `IVA-WEB.md`: web apps - iva's docs, copied in (`iva types` rewrites them;
-  don't edit). `iva.d.ts`: the types (don't edit;
-  `iva types` rewrites it).
+  `IVA-WEB.md`: web apps; `IVA-DRIVERS.md`: the network drivers (UPnP) -
+  iva's docs, copied in (`iva types` rewrites them; don't edit).
+  `iva.d.ts`: the types (don't edit; `iva types` rewrites it).
 
 ## Rules that matter
 
@@ -67,6 +67,8 @@ iva serve          # to iViewer on a real device (GUI File URL http://<this mach
   DragDrop... - the build warns); on a phone give those `<ui.Screens>` (a
   subpage a tab, on one page). See IVA.md (Screen sizes) and IVA-UI.md.
 - Devices: `<System host port>` with `<Command>` and `<Feedback>`; button
-  `cmd="Name"` sends a command.
+  `cmd="Name"` sends a command. Network protocols with a driver of their
+  own: `import { Upnp } from 'iva/drivers/upnp'` (a component that brings
+  its systems and script; the lists and joins are yours). See IVA-DRIVERS.md.
 - Keep it valid for the real iViewer: prefer iva's props; `xml={{...}}` and
   `<Raw>` exist for what iva doesn't model, rarely needed.

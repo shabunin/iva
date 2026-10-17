@@ -13,7 +13,15 @@ import type { Child } from './runtime.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
-/** `iva`, `iva/jsx-runtime`, `iva/jsx-dev-runtime` -> the compiler's own modules. */
+const LIB = path.join(HERE, '..', '..', 'lib');
+/** the drivers in lib/drivers: `iva/drivers/<name>` -> lib/drivers/<name>/index.tsx */
+export function drivers(): string[] {
+  const dir = path.join(LIB, 'drivers');
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir).filter((d) => fs.existsSync(path.join(dir, d, 'index.tsx'))).sort();
+}
+
+/** `iva`, `iva/jsx-runtime`, `iva/jsx-dev-runtime`, `iva/ui`, `iva/drivers/<name>` -> the compiler's own modules. */
 const ivaModules: Plugin = {
   name: 'iva',
   setup(b) {
@@ -21,8 +29,11 @@ const ivaModules: Plugin = {
       const sub = args.path.slice(3);
       if (sub === '' ) return { path: path.join(HERE, 'prelude.ts') };
       if (sub === '/jsx-runtime' || sub === '/jsx-dev-runtime') return { path: path.join(HERE, 'runtime.ts') };
-      if (sub === '/ui') return { path: path.join(HERE, '..', '..', 'lib', 'ui', 'index.tsx') };
-      return { errors: [{ text: `no module "${args.path}" (iva has: iva, iva/ui, iva/jsx-runtime)` }] };
+      if (sub === '/ui') return { path: path.join(LIB, 'ui', 'index.tsx') };
+      const driver = /^\/drivers\/([\w-]+)$/.exec(sub);
+      if (driver && drivers().includes(driver[1])) return { path: path.join(LIB, 'drivers', driver[1], 'index.tsx') };
+      const has = ['iva', 'iva/ui', ...drivers().map((d) => `iva/drivers/${d}`), 'iva/jsx-runtime'];
+      return { errors: [{ text: `no module "${args.path}" (iva has: ${has.join(', ')})` }] };
     });
   },
 };

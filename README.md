@@ -259,6 +259,7 @@ examples/hello/        a small JSX project
 docs/components.md     the elements, their props and what they become
 docs/ui.md             iva/ui: the components
 docs/web.md            web apps the panel serves (<WebApp>, <HttpServer>, iva/web)
+docs/drivers.md        network drivers: iva/drivers/upnp (a UPnP AV control point)
 lib/ui/                iva/ui: the components and their panel script
 lib/web/               iva/web (a web app's side) and the built-in apps (trend, chart)
 examples/gallery/      every iva/ui component (and examples/elements: shapes, icons)

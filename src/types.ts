@@ -12,6 +12,13 @@ import ts from 'typescript';
 const COMPILER = path.join(path.dirname(fileURLToPath(import.meta.url)), 'compiler');
 const UI = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'ui', 'index.tsx');
 const WEB = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'web', 'client.ts');
+const DRIVERS = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'drivers');
+
+/** the drivers (lib/drivers/<name>/index.tsx): `iva/drivers/<name>` */
+function drivers(): string[] {
+  if (!fs.existsSync(DRIVERS)) return [];
+  return fs.readdirSync(DRIVERS).filter((d) => fs.existsSync(path.join(DRIVERS, d, 'index.tsx'))).sort();
+}
 
 /** A source file's declarations; imports dropped (keep: those from these modules). */
 function declarations(file: string, keepImportsFrom: string[] = []): string {
@@ -63,7 +70,11 @@ ${indent(components)}
 declare module 'iva/ui' {
 ${indent(declarations(UI, ['iva']))}
 }
-
+${drivers().map((name) => `
+declare module 'iva/drivers/${name}' {
+${indent(declarations(path.join(DRIVERS, name, 'index.tsx'), ['iva']))}
+}
+`).join('')}
 ${GLOBALS.map((g) => `declare const ${g}: typeof import('iva').${g};`).join('\n')}
 `;
 }
