@@ -148,6 +148,11 @@ over ZeroTier for the GUI and the console:
 - The Control page: on, off, on and the colour wheel's picks each answered
   "Success" by the light in about 100 ms; the ON state and the 100 % level
   came from the light through the subscription.
+- A reload (the panel app's live reload after a build): the store read back
+  from the tokens (22 KB in one token), the slot bound again in 47 ms (the
+  panel app does send the connection event), node 1 reconnected, and the
+  Control page went on working - a level drag's every step and each colour
+  pick answered in time.
 - Official iViewer 5.0.7, same phone, same GUI: the controller starts, but
   its Bonjour reported nothing with the VPN on, and the one commissioning
   attempt by address failed ("Could not connect to device") because the
