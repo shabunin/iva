@@ -1,0 +1,301 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { Bytes, ChannelType, Crypto, DnsRecordType, Environment, Network, StorageService } from '@matter/general';
+import { CommissionableMdnsScanner, MdnsService } from '@matter/protocol';
+import { compile } from '../src/compiler/index.ts';
+import { tmpDir } from './tmp.ts';
+import type { CF, FoundService, LookupCallback } from '../lib/drivers/matter/runtime/cf.ts';
+import { fromBinary, toBinary } from '../lib/drivers/matter/runtime/cf.ts';
+import { SlotPool } from '../lib/drivers/matter/runtime/slots.ts';
+import { CfNetwork, CfUdpSocket, macOf } from '../lib/drivers/matter/runtime/network.ts';
+import { CfMdnsService, CfMdnsSocket, recordsOf, typeOf } from '../lib/drivers/matter/runtime/mdns.ts';
+import { CfTokenStorageDriver, TokenStore } from '../lib/drivers/matter/runtime/storage.ts';
+import { installPlatform } from '../lib/drivers/matter/runtime/environment.ts';
+
+/**
+ * Just enough of iViewer's CF for the driver: what it sends on which system
+ * (a byte a char), the systems retargeted, lookups started, tokens set;
+ * frames and found services fed in from the test.
+ */
+function panel() {
+  const sent: { system: string; bytes: number[] }[] = [];
+  const props: { system: string; props: Record<string, unknown> }[] = [];
+  const lookups: { type: string; name: string; cb: LookupCallback }[] = [];
+  const stopped: string[] = [];
+  const tokens: Record<string, string> = {};
+  const joins: Record<string, string> = {};
+  const watchers: { event: string; args: unknown[]; cb: (...a: any[]) => void }[] = [];
+  /** retargeted systems answer "connected" at once unless the test holds them (a phone binds slowly) */
+  let holdConnections = false;
+  const CF: CF = {
+    FeedbackMatchedEvent: 'fb', JoinChangeEvent: 'join', ConnectionStatusChangeEvent: 'conn', GlobalTokensJoin: 'e0',
+    ipv4address: '192.168.2.20', ipv4netmask: '255.255.255.0', MACaddress: '', runtime: 'iva',
+    systems: Object.fromEntries(Array.from({ length: 3 }, (_, i) => [`matter${i}`, { address: '127.0.0.2', port: 5540, enabled: true }])),
+    send(system, data) { sent.push({ system, bytes: [...fromBinary(data)] }); },
+    watch(event, ...args) {
+      const cb = args.pop() as (...a: any[]) => void;
+      watchers.push({ event, args, cb });
+    },
+    setSystemProperties(system, p) {
+      props.push({ system, props: p });
+      Object.assign(CF.systems[system], p);
+      if (!holdConnections) connect(system);
+    },
+    startLookup(type, name, cb) { lookups.push({ type, name, cb }); },
+    stopLookup(type) { stopped.push(type); },
+    setToken(_join, name, value) { tokens[name] = value; },
+    getJoin(join, cb) { cb(join, joins[join] ?? '', { ...tokens }); },
+    setJoin(join, value) { joins[join] = String(value); },
+    log() {},
+  };
+  /** the system's socket bound again: its ConnectionStatusChangeEvent */
+  const connect = (system: string) => {
+    for (const w of watchers) if (w.event === 'conn' && w.args[0] === system) w.cb(system, true, '');
+  };
+  /** a frame on a system, as its catch-all feedback matched it */
+  const frame = (system: string, bytes: number[]) => {
+    for (const w of watchers) if (w.event === 'fb' && w.args[0] === system && w.args[1] === 'frame') w.cb('frame', toBinary(Uint8Array.from(bytes)));
+  };
+  /** a service found by a lookup of the type */
+  const found = (type: string, s: FoundService) => {
+    for (const l of lookups) if (l.type === type) l.cb([s], [], undefined);
+  };
+  return { CF, sent, props, lookups, stopped, tokens, joins, frame, found, connect, hold: (h: boolean) => { holdConnections = h; } };
+}
+
+test('a byte a char: CF.send\'s strings from bytes and back', () => {
+  const all = Uint8Array.from({ length: 256 }, (_, i) => i);
+  assert.equal(toBinary(all).length, 256);
+  assert.deepEqual([...fromBinary(toBinary(all))], [...all]);
+  assert.deepEqual([...fromBinary('€')], [0xac]);
+});
+
+test('the slot pool: a peer gets a free system, retargeted to it; its frames are the peer\'s; the longest unused slot goes to the next peer', () => {
+  const p = panel();
+  const pool = new SlotPool(p.CF, ['matter0', 'matter1', 'matter2'], [5550, 5551, 5552]);
+  const got: [string, number, number[]][] = [];
+  pool.onFrame((slot, bytes) => got.push([slot.host!, slot.port!, [...bytes]]));
+  // a frame before any peer: nobody's
+  p.frame('matter0', [1]);
+  assert.deepEqual(got, []);
+  pool.send('192.168.2.40', 5540, Uint8Array.from([1, 2, 255]));
+  assert.deepEqual(p.props, [{ system: 'matter0', props: { address: '192.168.2.40', port: 5540, enabled: true } }]);
+  assert.deepEqual(p.sent, [{ system: 'matter0', bytes: [1, 2, 255] }]);
+  // the same peer again: the same slot, nothing retargeted
+  pool.send('192.168.2.40', 5540, Uint8Array.from([3]));
+  assert.equal(p.props.length, 1);
+  assert.equal(p.sent[1].system, 'matter0');
+  p.frame('matter0', [0, 128, 255]);
+  assert.deepEqual(got, [['192.168.2.40', 5540, [0, 128, 255]]]);
+  // two more peers fill the pool; a fourth takes the slot longest unused (the first one, idle since its frame)
+  pool.send('192.168.2.41', 5540, Uint8Array.from([4]));
+  pool.send('192.168.2.42', 5540, Uint8Array.from([5]));
+  pool.send('192.168.2.42', 5540, Uint8Array.from([6]));
+  pool.send('192.168.2.41', 5540, Uint8Array.from([7]));
+  pool.send('192.168.2.43', 5540, Uint8Array.from([8]));
+  assert.deepEqual(p.props.at(-1), { system: 'matter0', props: { address: '192.168.2.43', port: 5540, enabled: true } });
+  assert.equal(pool.slotOf('192.168.2.40', 5540), undefined);
+  assert.equal(pool.slotOf('192.168.2.43', 5540)?.name, 'matter0');
+});
+
+test('a retargeted slot binds its socket again: what\'s sent meanwhile waits for its connection event, then goes in order', () => {
+  const p = panel();
+  const pool = new SlotPool(p.CF, ['matter0', 'matter1'], [5550, 5551]);
+  p.hold(true);
+  pool.send('192.168.2.40', 5540, Uint8Array.from([1]));
+  pool.send('192.168.2.40', 5540, Uint8Array.from([2]));
+  assert.deepEqual(p.sent, [], 'held till the system says it is connected');
+  assert.equal(p.props.length, 1);
+  p.connect('matter0');
+  assert.deepEqual(p.sent, [{ system: 'matter0', bytes: [1] }, { system: 'matter0', bytes: [2] }]);
+  pool.send('192.168.2.40', 5540, Uint8Array.from([3]));
+  assert.equal(p.sent.length, 3, 'bound: sent at once');
+  // another peer, its slot never says so: sent after READY_MS anyway
+  pool.send('192.168.2.41', 5540, Uint8Array.from([4]));
+  assert.equal(p.sent.length, 3);
+});
+
+test('the Network: a udp4 and a udp6 socket over the pool, each its family; IPv6 refused unless on; the device\'s address and a MAC', async () => {
+  const p = panel();
+  const pool = new SlotPool(p.CF, ['matter0', 'matter1', 'matter2'], [5550, 5551, 5552]);
+  const net = new CfNetwork(p.CF, pool, false);
+  assert.deepEqual(net.getNetInterfaces().map((i) => i.name), ['cf']);
+  const details = net.getIpMac('cf')!;
+  assert.deepEqual(details.ipV4, ['192.168.2.20']);
+  assert.match(details.mac, /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/);
+  assert.equal(macOf({ ...p.CF, MACaddress: 'AA:BB:CC:DD:EE:01' }), 'aa:bb:cc:dd:ee:01');
+  const v6 = (await net.createUdpSocket({ type: 'udp6', listeningPort: 5550 })) as CfUdpSocket;
+  const v4 = (await net.createUdpSocket({ type: 'udp4', listeningPort: 5550 })) as CfUdpSocket;
+  assert.equal(v4.port, 5550);
+  assert.ok(v4.supports(ChannelType.UDP, '10.0.0.1') && !v4.supports(ChannelType.UDP, 'fe80::1'));
+  assert.ok(!v6.supports(ChannelType.UDP, 'fe80::1'), 'IPv6 off: the udp6 socket routes nothing');
+  assert.ok(!v4.supports(ChannelType.TCP, '10.0.0.1'));
+  const data4: string[] = [];
+  const data6: string[] = [];
+  const l4 = v4.onData((intf, host, port, bytes) => data4.push(`${intf} ${host}:${port} ${[...(bytes as Uint8Array)].join(',')}`));
+  v6.onData((_i, host) => data6.push(host));
+  await v4.send('192.168.2.40', 5540, Uint8Array.from([9, 8]));
+  assert.deepEqual(p.sent, [{ system: 'matter0', bytes: [9, 8] }]);
+  p.frame('matter0', [7]);
+  assert.deepEqual(data4, ['cf 192.168.2.40:5540 7']);
+  assert.deepEqual(data6, []);
+  await assert.rejects(v6.send('fe80::1', 5540, Uint8Array.from([1])), /IPv6 is off/);
+  await l4.close();
+  p.frame('matter0', [6]);
+  assert.equal(data4.length, 1);
+  // with IPv6 on: the udp6 socket takes IPv6 peers (a slot targeted at the address)
+  const net6 = new CfNetwork(p.CF, pool, true);
+  const s6 = await net6.createUdpSocket({ type: 'udp6' });
+  assert.ok(s6.supports(ChannelType.UDP, 'fe80::1'));
+  await s6.send('fe80::1', 5540, Uint8Array.from([1]));
+  assert.equal(p.props.at(-1)!.props.address, 'fe80::1');
+});
+
+test('DNS-SD from lookups: a found device as the records a responder sends (PTR with the subtypes, SRV, TXT, A); IPv6 only when on', () => {
+  assert.equal(typeOf('_matterc._udp.local'), '_matterc._udp.');
+  assert.equal(typeOf('_L3840._sub._matterc._udp.local'), '_matterc._udp.');
+  assert.equal(typeOf('ABCD-1234._matter._tcp.local'), '_matter._tcp.');
+  assert.equal(typeOf('host.local'), undefined);
+  const r = recordsOf({ kind: 'commissionable', name: 'A1B2C3D4E5F60718', hostname: 'lamp.local', addresses: ['192.168.2.40', 'fe80::1'], port: 5540, data: { D: '3840', CM: '1', VP: '65521+32769', DN: 'Lamp', DT: '257' } }, false);
+  const ptrs = r.answers.filter((x) => x.recordType === DnsRecordType.PTR).map((x) => x.name);
+  assert.deepEqual(ptrs, ['_matterc._udp.local', '_L3840._sub._matterc._udp.local', '_S15._sub._matterc._udp.local', '_V65521._sub._matterc._udp.local', '_CM._sub._matterc._udp.local', '_T257._sub._matterc._udp.local']);
+  const srv = r.answers.find((x) => x.recordType === DnsRecordType.SRV)!;
+  assert.deepEqual(srv.value, { priority: 0, weight: 0, port: 5540, target: 'lamp.local' });
+  assert.equal(srv.name, 'A1B2C3D4E5F60718._matterc._udp.local');
+  const txt = r.answers.find((x) => x.recordType === DnsRecordType.TXT)!;
+  assert.deepEqual((txt.value as Uint8Array[]).map((b) => new TextDecoder().decode(b)), ['D=3840', 'CM=1', 'VP=65521+32769', 'DN=Lamp', 'DT=257']);
+  assert.deepEqual(r.additional.map((x) => [x.recordType, x.name, x.value]), [[DnsRecordType.A, 'lamp.local', '192.168.2.40']]);
+  const r6 = recordsOf({ kind: 'operational', name: 'F1-01', hostname: 'lamp.local', addresses: ['fe80::1%wlan0'], port: 5540, data: {} }, true);
+  assert.deepEqual(r6.additional.map((x) => [x.recordType, x.value]), [[DnsRecordType.AAAA, 'fe80::1']]);
+  assert.equal(r6.answers.filter((x) => x.recordType === DnsRecordType.PTR).length, 1);
+});
+
+test('the DNS-SD source in matter.js\'s own scanner: a query starts the lookup, a found device is a commissionable device with its address, discriminator and name', async () => {
+  const p = panel();
+  const pool = new SlotPool(p.CF, ['matter0'], [5550]);
+  const net = new CfNetwork(p.CF, pool, false);
+  const env = new Environment('matter-test');
+  installPlatform(env);
+  env.set(Network, net);
+  const socket = new CfMdnsSocket(p.CF, net, { ipv6: false });
+  const service = new CfMdnsService(env, socket);
+  assert.equal(env.get(MdnsService), service as unknown as MdnsService);
+  const scanner = new CommissionableMdnsScanner(service.names);
+  // the scanner asks: the lookup starts (once), nothing found yet
+  const search = scanner.findCommissionableDevicesContinuously({ longDiscriminator: 3840 }, () => {});
+  await new Promise((r) => setTimeout(r, 30));
+  assert.deepEqual(p.lookups.map((l) => l.type), ['_matterc._udp.']);
+  // iViewer finds the lamp (its TXT as the device publishes it; hostname with a dot at the end; an empty key as iViewer gives one)
+  p.found('_matterc._udp.', { name: 'A1B2C3D4E5F60718', type: '_matterc._udp.', hostname: 'lamp-7a3f.local.', addresses: ['192.168.2.40'], port: 5540, data: { D: '3840', CM: '1', VP: '65521+32769', DN: 'Lamp', PI: null } });
+  await new Promise((r) => setTimeout(r, 30));
+  const devices = scanner.getDiscoveredCommissionableDevices({ longDiscriminator: 3840 });
+  assert.equal(devices.length, 1, 'found through DnssdNames');
+  assert.equal(devices[0].D, 3840);
+  assert.equal(devices[0].CM, 1);
+  assert.equal(devices[0].DN, 'Lamp');
+  assert.deepEqual(devices[0].addresses.map((a) => ('ip' in a ? `${a.ip}:${a.port}` : a.type)), ['192.168.2.40:5540']);
+  assert.deepEqual(scanner.getDiscoveredCommissionableDevices({ longDiscriminator: 1 }), []);
+  // what's found, for the table: the hostname's dot gone, an empty value kept as a flag
+  assert.deepEqual(socket.all().map((f) => [f.kind, f.name, f.hostname, f.data]), [['commissionable', 'A1B2C3D4E5F60718', 'lamp-7a3f.local', { D: '3840', CM: '1', VP: '65521+32769', DN: 'Lamp', PI: '' }]]);
+  scanner.cancelCommissionableDeviceDiscovery({ longDiscriminator: 3840 });
+  await search;
+  await scanner.close();
+  await service.close();
+  assert.deepEqual(p.stopped, ['_matterc._udp.']);
+});
+
+test('storage on persisted tokens: written as base64 chunks, read back by a new store; too much for the tokens is an error', async () => {
+  const p = panel();
+  const store = new TokenStore(p.CF, { prefix: 'matter_store_', chunks: 4, size: 64 });
+  CfTokenStorageDriver.store = store;
+  const driver = await CfTokenStorageDriver.create({ namespace: 'iva' } as any);
+  assert.ok(driver.initialized);
+  driver.set(['fabric'], 'label', 'iva');
+  driver.set(['nodes', '1'], { name: 'Lamp', on: true, id: 7 });
+  assert.equal(driver.get(['fabric'], 'label'), 'iva');
+  assert.deepEqual(driver.keys(['nodes', '1']).sort(), ['id', 'name', 'on']);
+  assert.deepEqual(driver.contexts(['nodes']), ['1']);
+  assert.deepEqual(p.tokens, {}, 'not written yet');
+  driver.commit();
+  assert.deepEqual(Object.keys(p.tokens), ['[matter_store_0]', '[matter_store_1]', '[matter_store_2]', '[matter_store_3]']);
+  assert.ok(p.tokens['[matter_store_0]'].length === 64 && p.tokens['[matter_store_1]'].length > 0, 'chunked');
+  assert.match(p.tokens['[matter_store_0]'], /^[A-Za-z0-9+/=]+$/, 'base64: nothing a token substitution would touch');
+  // a new store (a restart) reads it back from the tokens
+  const again = new TokenStore(p.CF, { prefix: 'matter_store_', chunks: 4, size: 64 });
+  CfTokenStorageDriver.store = again;
+  const driver2 = await CfTokenStorageDriver.create({ namespace: 'iva' } as any);
+  assert.equal(driver2.get(['fabric'], 'label'), 'iva');
+  assert.deepEqual(driver2.values(['nodes', '1']), { name: 'Lamp', on: true, id: 7 });
+  driver2.delete(['fabric'], 'label');
+  driver2.commit();
+  const third = new TokenStore(p.CF, { prefix: 'matter_store_', chunks: 4, size: 64 });
+  await third.load();
+  assert.equal(third.all.iva.fabric?.label, undefined);
+  // more than the tokens hold
+  driver2.set(['big'], 'x', 'y'.repeat(400));
+  assert.throws(() => again.save(), /don't fit 4 tokens of 64/);
+  await driver.close();
+  await driver2.close();
+});
+
+test('<Matter>: the pool of UDP systems with the catch-all feedback, the tokens, the bundled script once, the start line with the joins', async () => {
+  const dir = tmpDir('iva-matter-');
+  fs.writeFileSync(path.join(dir, 'app.jsx'), `
+import { Matter } from 'iva/drivers/matter';
+const driver = (
+  <Matter slots={3} port={6000} store={{ chunks: 2, size: 1000 }} devices={{
+    lamp: { address: '192.168.2.40', node: '0x1', cluster: 'OnOff', join: d('lamp') },
+    level: { node: 2, endpoint: 3, cluster: 'LevelControl', join: a('level') },
+    colour: { node: '2', cluster: 'ColorControl', hue: a('hue'), saturation: a('sat') },
+  }} commission={{ code: s('setupCode'), go: d('commission'), status: s('matterStatus') }} found={s('matterFound')} />
+);
+export default (
+  <Project name="T" width={1024} height={768}>
+    <Page name="A"><Text w={10} h={10} join={s('matterStatus')} />{driver}</Page>
+    <Page name="B">{driver}</Page>
+  </Project>
+);`);
+  const r = await compile(path.join(dir, 'app.jsx'));
+  assert.deepEqual(r.warnings, []);
+  const systems = [...r.xml.matchAll(/<system name="(matter\d)" ip="([^"]*)" port="(\d+)" origin="(\d+)" protocol="udp" alwayson="1" offlinequeue="1" accept="1"[^>]*textEncoding="([^"]*)"[^>]*>\s*<fb name="frame" regex="([^"]*)"/g)].map((m) => m.slice(1));
+  assert.deepEqual(systems, [
+    ['matter0', '127.0.0.2', '5540', '6000', 'iso-8859-1', '(?s)(.+)'],
+    ['matter1', '127.0.0.2', '5540', '6001', 'iso-8859-1', '(?s)(.+)'],
+    ['matter2', '127.0.0.2', '5540', '6002', 'iso-8859-1', '(?s)(.+)'],
+  ]);
+  assert.deepEqual([...r.xml.matchAll(/<token name="([^"]+)" value="" persist="1" \/>/g)].map((m) => m[1]), ['[matter_store_0]', '[matter_store_1]']);
+  assert.deepEqual(r.scripts.map((s) => s.name), ['iva-joins.js', 'iva-matter.js', 'iva-start.js']);
+  const bundle = r.scripts.find((s) => s.name === 'iva-matter.js')!.code!;
+  assert.ok(bundle.length > 1_000_000 && bundle.length < 4_000_000, `${bundle.length} bytes`);
+  assert.ok(bundle.includes('IvaMatter') && bundle.includes('adminFabricLabel'), 'the driver and matter.js in one script');
+  assert.doesNotThrow(() => new Function(bundle));
+  const start = r.scripts.find((s) => s.name === 'iva-start.js')!.code!;
+  assert.equal(start.match(/IvaMatter\.start\(/g)!.length, 1, 'started once');
+  assert.match(start, /IvaMatter\.start\(\{ slots: 3, port: 6000, label: "iva", ipv6: false, store: \{ prefix: "matter_store_", chunks: 2, size: 1000 \}, devices: \{ "lamp": \{ address: "192\.168\.2\.40", node: "0x1", cluster: "OnOff", join: Joins\.d\["lamp"\] \}, "level": \{ node: "2", endpoint: 3, cluster: "LevelControl", join: Joins\.a\["level"\] \}, "colour": \{ node: "2", cluster: "ColorControl", hue: Joins\.a\["hue"\], saturation: Joins\.a\["sat"\] \} \}, commission: \{ code: Joins\.s\["setupCode"\], go: Joins\.d\["commission"\], status: Joins\.s\["matterStatus"\] \}, found: Joins\.s\["matterFound"\] \}\);/);
+  // the joins the driver uses exist for scripts (held by hidden elements where no element has them)
+  assert.deepEqual(Object.keys(r.joins.digital).sort(), ['commission', 'lamp']);
+  assert.deepEqual(Object.keys(r.joins.analog).sort(), ['hue', 'level', 'sat']);
+  assert.deepEqual(Object.keys(r.joins.serial).sort(), ['matterFound', 'matterStatus', 'setupCode']);
+});
+
+test('the matter example builds, at both sizes, with the driver\'s script once; the environment comes up (Web Crypto, the token storage)', async () => {
+  const entry = path.resolve(import.meta.dirname, '../examples/matter/app.jsx');
+  for (const size of [undefined, '1400x1400@3x']) {
+    const r = await compile(entry, size ? { size } : {});
+    assert.deepEqual(r.warnings, [], size);
+    assert.equal(r.scripts.filter((s) => s.name === 'iva-matter.js').length, 1);
+    assert.equal((r.xml.match(/<system name="matter\d"/g) ?? []).length, 10);
+    assert.ok(r.xml.includes('<system name="ProbeEcho"'));
+    for (const sc of r.scripts) if (sc.code) assert.doesNotThrow(() => new Function(sc.code!), sc.name);
+  }
+  const { createEnvironment } = await import('../lib/drivers/matter/runtime/environment.ts');
+  const p = panel();
+  const me = createEnvironment(p.CF, { slots: ['matter0'], localPorts: [5550], ipv6: false, store: { prefix: 'matter_store_', chunks: 2, size: 1000 } });
+  assert.equal(me.env.get(StorageService).defaultDriver, 'cf-tokens');
+  assert.ok(me.env.has(Network));
+  // (Node's default environment brings its own crypto; a panel gets StandardCrypto over Web Crypto)
+  assert.ok(['JS', 'Node.js'].includes(me.env.get(Crypto).implementationName), me.env.get(Crypto).implementationName);
+  assert.equal(Bytes.of(me.env.get(Crypto).randomBytes(4)).length, 4);
+});
