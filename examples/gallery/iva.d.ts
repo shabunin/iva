@@ -779,7 +779,7 @@ declare module 'iva' {
   export interface StepProps extends XmlProp {
       /** command name */
       command: string;
-      /** ms from the macro start */
+      /** ms after the previous step runs (the delays add up, as iViewer runs a macro; the first: after the start) */
       delay?: number;
   }
   export interface TokenProps extends XmlProp {
@@ -1265,9 +1265,13 @@ declare module 'iva/ui' {
       shell?: Child;
       /** the pages' background (default: the theme's page colour) */
       bg?: string;
-      /** how the section's first page comes when flipped to (a page transition: { type, from, time, ease }) */
+      /** how its page comes when flipped to, a section of one screen (a page transition: { type, from, time, ease }); tabTransition's default */
       transition?: Transition;
-      /** how its other tabs' pages come (default: as the first) */
+      /**
+       * with tabs: how each screen's page comes, the first one's too - from a
+       * menu as well (default: transition). iViewer plays a page's own
+       * transition whoever flips to it, a tab or a menu
+       */
       tabTransition?: Transition;
   }
   export interface WeekDaysProps {
@@ -1716,8 +1720,14 @@ declare module 'iva/ui' {
       /** digital join: open (default 'menu') */
       menu?: Join;
       w?: number;
-      /** slide in from the left (default: fade in) */
+      /** slide in from the left and back out (default); false: fade */
       slide?: boolean;
+      /** open by a swipe from the left edge, closed by one to the left (default true) */
+      swipe?: boolean;
+      /** where the edge a swipe opens it from starts (under the header: default 72) */
+      top?: number;
+      /** how wide that edge is (default 16) */
+      edge?: number;
   }
   export interface ConfirmDialogProps {
       /** digital join: shown while on */

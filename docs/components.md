@@ -42,7 +42,7 @@ All items take `x`, `y` (default 0), `w`, `h` (required) and `tags`.
 | `<Feedback>` | `<fb>` | `name`, `regex` (`(?ims)` flags allowed); children `<Capture>`, `<OnMatch>` |
 | `<Capture>` | `<group>` | `join` (`d(5)`, `'s12'`, `'a:level'`), `type` (how it's read, default: the join's type: `type="a" join="s2"` = a number, transformed, into a serial join), `index`, `name`, `onVal` / `offVal`, `transform`, `min` / `max`, `unit`, `setToken` |
 | `<OnMatch>` | `<onmatch>` | `target`, `value`, `cmd`, `token` |
-| `<Macro>` + `<Step>` | `<macros><macro>` + `<command delay>` | `name`; steps: `command`, `delay` (ms from the start) |
+| `<Macro>` + `<Step>` | `<macros><macro>` + `<command delay>` | `name`; steps: `command`, `delay` (ms after the previous step runs: the delays add up) |
 | `<Token>` | `<tokens><token>` | `name` (`[brackets]` optional), `value`, `persist` |
 | `<Script>` | `<scripts><script>` + the file | `src` (copied), or `name` + `code`. Anywhere (a component can bring one): lifted to the project, the same script once |
 | `<Sound>` | `<sounds><sound>` + the file | `name`, `src`, `join` digital, `loop`, `releaseStop` |

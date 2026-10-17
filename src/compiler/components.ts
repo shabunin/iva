@@ -810,7 +810,7 @@ export interface MacroProps extends XmlProp {
 export interface StepProps extends XmlProp {
   /** command name */
   command: string;
-  /** ms from the macro start */
+  /** ms after the previous step runs (the delays add up, as iViewer runs a macro; the first: after the start) */
   delay?: number;
 }
 export interface TokenProps extends XmlProp {
