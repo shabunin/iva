@@ -127,10 +127,10 @@ test('the slot pool: a peer gets a free system, retargeted to it; its frames are
   p.frame('matter0', [1]);
   assert.deepEqual(got, []);
   pool.send('192.168.2.40', 5540, Uint8Array.from([1, 2, 255]));
-  // off, retargeted (its own localPort again: iViewer keeps the old address without a restart), on
+  // off, retargeted (iViewer keeps the old address without a restart), on
   assert.deepEqual(p.props, [
     { system: 'matter0', props: { enabled: false } },
-    { system: 'matter0', props: { address: '192.168.2.40', port: 5540, localPort: 5550 } },
+    { system: 'matter0', props: { address: '192.168.2.40', port: 5540 } },
     { system: 'matter0', props: { enabled: true } },
   ]);
   assert.deepEqual(p.sent, [{ system: 'matter0', bytes: [1, 2, 255] }]);
@@ -146,7 +146,7 @@ test('the slot pool: a peer gets a free system, retargeted to it; its frames are
   pool.send('192.168.2.42', 5540, Uint8Array.from([6]));
   pool.send('192.168.2.41', 5540, Uint8Array.from([7]));
   pool.send('192.168.2.43', 5540, Uint8Array.from([8]));
-  assert.deepEqual(p.props.at(-2), { system: 'matter0', props: { address: '192.168.2.43', port: 5540, localPort: 5550 } });
+  assert.deepEqual(p.props.at(-2), { system: 'matter0', props: { address: '192.168.2.43', port: 5540 } });
   assert.equal(pool.slotOf('192.168.2.40', 5540), undefined);
   assert.equal(pool.slotOf('192.168.2.43', 5540)?.name, 'matter0');
 });
@@ -167,6 +167,24 @@ test('a retargeted slot sends at once, bound again or not (iViewer says nothing 
   assert.equal(log.length, 1, 'later events of the slot: nothing to say');
   pool.send('192.168.2.40', 5540, Uint8Array.from([3]));
   assert.equal(p.sent.length, 3);
+});
+
+test('a slot handed its own datagram back as a frame (iViewer, a retargeted UDP system): dropped, said once', () => {
+  const p = panel();
+  const log: string[] = [];
+  const pool = new SlotPool(p.CF, ['matter0'], [5550], (m) => log.push(m));
+  const got: number[][] = [];
+  pool.onFrame((_slot, bytes) => got.push([...bytes]));
+  pool.send('192.168.2.40', 5540, Uint8Array.from([1, 2, 3]));
+  p.frame('matter0', [1, 2, 3]);
+  p.frame('matter0', [1, 2, 3]);
+  assert.deepEqual(got, [], 'its own datagram: not the peer\'s');
+  assert.equal(log.filter((l) => /its own datagram came back/.test(l)).length, 1);
+  p.frame('matter0', [9, 2, 3]);
+  assert.deepEqual(got, [[9, 2, 3]], 'the peer\'s answer: through');
+  pool.send('192.168.2.40', 5540, Uint8Array.from([4]));
+  p.frame('matter0', [1, 2, 3]);
+  assert.deepEqual(got, [[9, 2, 3], [1, 2, 3]], 'an earlier datagram\'s bytes from the peer later: through (only the last one sent is the panel\'s echo)');
 });
 
 test('the Network: a udp4 and a udp6 socket over the pool, each its family; IPv6 refused unless on; the device\'s address and a MAC', async () => {

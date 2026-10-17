@@ -4,9 +4,8 @@
  * Matter session exists over it. A Matter node answers to the address and
  * port a request came from, so a slot's frames are its peer's. A peer gets
  * a free slot, else the one longest unused. A retarget is the system off,
- * its address, port and localPort set, and on again: iViewer keeps sending
- * to the old address when only the address and port change (the probe
- * showed). A restart binds the socket again, which takes a moment on a
+ * its address and port set, and on again: iViewer keeps sending to the old
+ * address when only the address and port change (the probe showed). A restart binds the socket again, which takes a moment on a
  * phone; what's sent meanwhile goes at once all the same - iva's runtime
  * queues it till the socket is bound (offlineQueue), iViewer sends no
  * ConnectionStatusChangeEvent for a UDP system at all (seen 2026-10-18:
@@ -25,6 +24,8 @@ export interface Slot {
   port?: number;
   /** when it last sent or received (a counter) */
   used: number;
+  /** the last datagram sent (a panel that hands it back as a frame is caught by it) */
+  sent?: string;
 }
 
 export type FrameListener = (slot: Slot, bytes: Uint8Array) => void;
@@ -35,6 +36,8 @@ export class SlotPool {
   private clock = 0;
   /** when a retargeted slot said it was bound again (a log line the first time: how long the phone takes) */
   private retargeted = new Map<number, number>();
+  /** slots seen handing their own datagrams back (said once each) */
+  private loopers = new Set<number>();
 
   constructor(private cf: CF, names: string[], localPorts: number[], private log: (m: string) => void = () => {}) {
     this.slots = names.map((name, i) => ({ index: i, name, localPort: localPorts[i], used: 0 }));
@@ -63,7 +66,8 @@ export class SlotPool {
       const target = slot;
       this.tell(target, 'retarget', () => {
         this.cf.setSystemProperties(target.name, { enabled: false });
-        this.cf.setSystemProperties(target.name, { address: host, port, localPort: target.localPort });
+        // (the GUI's localPort stays: setting it again was one of the probe's retarget ways that only looked right on iViewer)
+        this.cf.setSystemProperties(target.name, { address: host, port });
         this.cf.setSystemProperties(target.name, { enabled: true });
       });
     }
@@ -78,7 +82,9 @@ export class SlotPool {
 
   send(host: string, port: number, bytes: Uint8Array): void {
     const slot = this.slotFor(host, port);
-    this.tell(slot, `send ${bytes.length} B`, () => this.cf.send(slot.name, toBinary(bytes)));
+    const data = toBinary(bytes);
+    slot.sent = data;
+    this.tell(slot, `send ${bytes.length} B`, () => this.cf.send(slot.name, data));
   }
 
   /** a CF call on a slot: what it throws (a panel's API refusing something) said in the log, then thrown on */
@@ -102,6 +108,15 @@ export class SlotPool {
   private frame(slot: Slot, data: string): void {
     // a slot targeted at nobody: what comes is nobody's
     if (slot.host === undefined) return;
+    // the datagram just sent, back as a frame: the panel looped it (official iViewer 5.0.7 does, for a UDP system
+    // retargeted at runtime: nothing reaches the network) - not the peer's, dropped
+    if (data === slot.sent) {
+      if (!this.loopers.has(slot.index)) {
+        this.loopers.add(slot.index);
+        this.log(`slot ${slot.name}: its own datagram came back as a frame (${data.length} B to ${slot.host}:${slot.port}) - this panel loops a retargeted UDP system's sends; the peer gets nothing`);
+      }
+      return;
+    }
     slot.used = ++this.clock;
     const bytes = fromBinary(data);
     for (const l of this.listeners) l(slot, bytes);
