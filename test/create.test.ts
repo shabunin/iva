@@ -63,5 +63,7 @@ test("the references in a project: iva's docs copied, their links to each other 
   const drivers = fs.readFileSync(path.join(r.dir, 'IVA-DRIVERS.md'), 'utf8');
   assert.match(drivers, /\n# Drivers: a component bringing its systems and script\n/);
   assert.ok(drivers.includes('](IVA.md#systems-and-logic)') && !drivers.includes('](components.md'), 'drivers.md links to components.md as the copy');
+  // every driver's section; its links to the examples point at iva's repo (a project has no examples/)
+  assert.ok(drivers.includes('iva/drivers/matter') && drivers.includes('iva/drivers/mqtt') && drivers.includes('iva/drivers/upnp'));
   assert.notEqual(fs.readFileSync(path.join(r.dir, 'IVA-UI.md'), 'utf8'), 'stale');
 });

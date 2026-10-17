@@ -259,12 +259,13 @@ examples/hello/        a small JSX project
 docs/components.md     the elements, their props and what they become
 docs/ui.md             iva/ui: the components
 docs/web.md            web apps the panel serves (<WebApp>, <HttpServer>, iva/web)
-docs/drivers.md        drivers: a component bringing its systems and script; Matter (iva/drivers/matter), MQTT (iva/drivers/mqtt)
+docs/drivers.md        drivers: a component bringing its systems and script; Matter (iva/drivers/matter), MQTT (iva/drivers/mqtt), UPnP (iva/drivers/upnp)
 lib/ui/                iva/ui: the components and their panel script
 lib/drivers/           iva/drivers/<name>: a device's component and its panel script
 lib/web/               iva/web (a web app's side) and the built-in apps (trend, chart)
 examples/gallery/      every iva/ui component (and examples/elements: shapes, icons)
 examples/mqtt/         an MQTT broker's topics on a page (iva/drivers/mqtt)
+examples/upnp/         a UPnP AV control point: servers, renderers, browsing, playback (iva/drivers/upnp)
 fixtures/local/        small hand-written .gui projects
 fixtures/DemoUserInterfaces/   CommandFusion's demos (npm run fixtures; not committed)
 ```
