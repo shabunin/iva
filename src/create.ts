@@ -2,7 +2,7 @@
  * iva create: a new project folder from a template (blank, demo), or from an
  * existing .gui (decompiled). Every project gets its types (iva.d.ts,
  * jsconfig.json), the references (IVA.md: the elements; IVA-UI.md: iva/ui;
- * IVA-WEB.md: web apps - iva's docs, copied) and notes for people and AI
+ * IVA-WEB.md: web apps; IVA-DRIVERS.md: drivers - iva's docs, copied) and notes for people and AI
  * assistants (README.md, AGENTS.md, CLAUDE.md). A project has iva's docs in
  * it because it has nothing else of iva: `iva/ui` resolves inside the
  * compiler, not in node_modules, and an assistant working in the folder
@@ -35,7 +35,7 @@ export function templates(): string[] {
 }
 
 /** iva's docs as a project has them: docs/<file> -> <name> in the project */
-export const DOCS: [string, string][] = [['components.md', 'IVA.md'], ['ui.md', 'IVA-UI.md'], ['web.md', 'IVA-WEB.md']];
+export const DOCS: [string, string][] = [['components.md', 'IVA.md'], ['ui.md', 'IVA-UI.md'], ['web.md', 'IVA-WEB.md'], ['drivers.md', 'IVA-DRIVERS.md']];
 
 /**
  * The references written into a project (iva create, iva types): iva's docs,

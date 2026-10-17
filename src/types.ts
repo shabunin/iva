@@ -12,6 +12,7 @@ import ts from 'typescript';
 const COMPILER = path.join(path.dirname(fileURLToPath(import.meta.url)), 'compiler');
 const UI = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'ui', 'index.tsx');
 const WEB = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'web', 'client.ts');
+const MATTER = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'drivers', 'matter', 'index.tsx');
 
 /** A source file's declarations; imports dropped (keep: those from these modules). */
 function declarations(file: string, keepImportsFrom: string[] = []): string {
@@ -62,6 +63,10 @@ ${indent(components)}
 
 declare module 'iva/ui' {
 ${indent(declarations(UI, ['iva']))}
+}
+
+declare module 'iva/drivers/matter' {
+${indent(declarations(MATTER, ['iva']))}
 }
 
 ${GLOBALS.map((g) => `declare const ${g}: typeof import('iva').${g};`).join('\n')}
