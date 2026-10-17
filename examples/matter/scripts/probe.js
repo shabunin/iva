@@ -146,8 +146,9 @@ var MatterProbe = (function () {
   /** the next frame on a system, or null after `ms` */
   function nextFrame(system, ms) {
     return new Promise(function (resolve) {
-      var t = setTimeout(function () { waiters[system] = null; resolve(null); }, ms);
-      waiters[system] = function (s) { clearTimeout(t); waiters[system] = null; resolve(s); };
+      var me = function (s) { clearTimeout(t); if (waiters[system] === me) waiters[system] = null; resolve(s); };
+      var t = setTimeout(function () { if (waiters[system] === me) waiters[system] = null; resolve(null); }, ms);
+      waiters[system] = me;
     });
   }
   /** every frame on a system within `ms` */
@@ -176,7 +177,8 @@ var MatterProbe = (function () {
     var got = await reply;
     var line = compare('Bytes 0x00-0xFF, client -> echo -> client', got, all);
     say('UDP', line);
-    if (frames.ProbeEcho.length) say('UDP', compare('  the echo server got', frames.ProbeEcho[0], all));
+    await sleep(100);
+    say('UDP', frames.ProbeEcho.length ? compare('  the echo server got', frames.ProbeEcho[0], all) : '  the echo server\'s frame: none seen by the script (its feedback fired - the echo came)');
     if (got === null || differs(got, all) >= 0) ok = false;
     // 2. bytes that are UTF-8 text (a runtime that decodes text would turn them into fewer chars)
     var utf8 = [0xc3, 0xa9, 0xe2, 0x82, 0xac, 0xf0, 0x9f, 0x98, 0x80, 0x41];
@@ -184,7 +186,8 @@ var MatterProbe = (function () {
     sendTo('ProbeUdp', utf8);
     got = await reply;
     say('UDP', compare('Bytes that read as UTF-8', got, utf8));
-    if (got === null || differs(got, utf8) >= 0) ok = false;
+    // (a runtime reading them as text is fine if iso-8859-1 - what the driver's systems use - carries them: line 5)
+    var utf8Ok = got !== null && differs(got, utf8) < 0;
     // 3. a Matter-sized packet
     var big = bytesOf(1232, function (i) { return i * 7 + 3; });
     reply = nextFrame('ProbeUdp', 1500);
@@ -205,35 +208,55 @@ var MatterProbe = (function () {
     sendTo('ProbeLatin', all);
     got = await reply;
     say('UDP', compare('Bytes 0x00-0xFF, textEncoding iso-8859-1', got, all));
+    if (!utf8Ok && (got === null || differs(got, all) >= 0)) ok = false;
     // 6. IPv6: a system whose host is ::1, to itself
     var v6 = CF.systems && CF.systems.ProbeV6;
     reply = nextFrame('ProbeV6', 1500);
     try { sendTo('ProbeV6', bytesOf(16, function (i) { return i + 65; })); } catch (e) { say('UDP', 'IPv6 send threw: ' + e); }
     got = await reply;
     say('UDP', 'IPv6 (host ::1): ' + yesNo(got !== null && got.length === 16, got !== null ? got.length + ' bytes back' : 'nothing back; CF.systems says ' + (v6 ? v6.address + ':' + v6.port + (v6.enabled ? ', enabled' : ', disabled') + ', ' + (v6.connections || []).length + ' connection(s)' : 'no such system')));
-    // 7. retargeting: the client to a port where ProbeLatin listens; the echo server to a new client port, the client bound there.
-    //    A retargeted system binds its socket again: the driver waits for its ConnectionStatusChangeEvent (up to 1.5 s) - how long?
-    var t0 = Date.now();
-    var up = connected('ProbeUdp', 1500);
-    reply = nextFrame('ProbeLatin', 1500);
-    CF.setSystemProperties('ProbeUdp', { address: '127.0.0.2', port: 5544 });
-    var ready = await up;
-    sendTo('ProbeUdp', [1, 2, 3, 4]);
-    got = await reply;
-    say('UDP', 'Retarget a system (address, port): ' + yesNo(got !== null && got.length === 4, (ready ? 'connected again after ' + (Date.now() - t0) + ' ms' : 'no connection event in 1.5 s') + (got !== null ? ', the packet came where it was sent' : ', nothing came')));
-    if (got === null) ok = false;
-    t0 = Date.now();
-    up = connected('ProbeUdp', 1500);
-    reply = nextFrame('ProbeUdp', 1500);
-    CF.setSystemProperties('ProbeEcho', { port: 5547 });
-    CF.setSystemProperties('ProbeUdp', { address: '127.0.0.2', port: 5541, localPort: 5547 });
-    ready = await up;
-    sendTo('ProbeUdp', [5, 6, 7, 8]);
-    got = await reply;
-    say('UDP', 'Rebind a system (localPort): ' + yesNo(got !== null && got.length === 4, (ready ? 'connected again after ' + (Date.now() - t0) + ' ms' : 'no connection event in 1.5 s') + (got !== null ? ', the echo came to the new port' : ', nothing came')));
-    if (got === null) ok = false;
-    CF.setSystemProperties('ProbeEcho', { port: 5542 });
-    CF.setSystemProperties('ProbeUdp', { localPort: 5542 });
+    // 7. retargeting, three ways - each tells whether a ConnectionStatusChangeEvent came (in how long) and where the
+    //    next packet went: ProbeLatin's own frame (5544: the new target) or the echo back on ProbeUdp (5541: the old
+    //    one). iViewer keeps sending to the old address when only address and port change; the driver does the third.
+    var ways = [
+      { what: 'address + port', expect: 'ProbeLatin', set: function () { CF.setSystemProperties('ProbeUdp', { address: '127.0.0.2', port: 5544 }); } },
+      { what: 'address + port + localPort', expect: 'ProbeUdp', set: function () { CF.setSystemProperties('ProbeUdp', { address: '127.0.0.2', port: 5541, localPort: 5542 }); } },
+      { what: 'off, address + port, on', expect: 'ProbeLatin', set: function () {
+        CF.setSystemProperties('ProbeUdp', { enabled: false });
+        CF.setSystemProperties('ProbeUdp', { address: '127.0.0.2', port: 5544 });
+        CF.setSystemProperties('ProbeUdp', { enabled: true });
+      } },
+    ];
+    var anyWay = false;
+    for (var w = 0; w < ways.length; w++) {
+      var way = ways[w];
+      var t0 = Date.now();
+      var up = connected('ProbeUdp', 1500);
+      var onLatin = nextFrame('ProbeLatin', 1500);
+      var onUdp = nextFrame('ProbeUdp', 1500);
+      way.set();
+      var ready = await up;
+      var took = Date.now() - t0;
+      var marker = 0xa0 + w;
+      sendTo('ProbeUdp', [marker, 1, 2, 3]);
+      var came = await Promise.race([
+        onLatin.then(function (f) { return f === null ? null : { on: 'ProbeLatin', f: f }; }),
+        onUdp.then(function (f) { return f === null ? null : { on: 'ProbeUdp', f: f }; }),
+      ]);
+      waiters.ProbeLatin = null;
+      waiters.ProbeUdp = null;
+      var event = ready ? 'connected again after ' + took + ' ms' : 'no connection event in 1.5 s';
+      var okWay = !!came && came.on === way.expect && came.f.charCodeAt(0) === marker;
+      var whereLine = !came ? 'nothing came' : came.f.charCodeAt(0) !== marker ? 'an older packet came on ' + came.on : came.on === way.expect ? 'the packet came where it was sent' : 'the packet went to the old target';
+      say('UDP', 'Retarget (' + way.what + '): ' + yesNo(okWay, event + ', ' + whereLine));
+      if (okWay) anyWay = true;
+      await sleep(200);
+    }
+    if (!anyWay) ok = false;
+    // back where it started (the way the driver does it)
+    CF.setSystemProperties('ProbeUdp', { enabled: false });
+    CF.setSystemProperties('ProbeUdp', { address: '127.0.0.2', port: 5541, localPort: 5542 });
+    CF.setSystemProperties('ProbeUdp', { enabled: true });
     return ok;
   }
 
@@ -244,10 +267,16 @@ var MatterProbe = (function () {
     });
   }
   function tokenOf(all, name) { return all['[' + name + ']'] !== undefined ? all['[' + name + ']'] : all[name]; }
+  /** the tokens as names (brackets off: a text join would put the token's value in their place) and lengths */
+  function tokenSummary(all) {
+    var keys = Object.keys(all).filter(function (k) { return /probe/i.test(k); });
+    return keys.length ? keys.map(function (k) { return k.replace(/[\[\]]/g, '') + '=' + String(all[k] === null || all[k] === undefined ? '' : all[k]).length; }).join(' ') : 'none';
+  }
   async function tokenChecks() {
     clear('Tokens');
     var before = tokensAtStart || await tokens();
     var ok = true;
+    say('Tokens', 'At start (name=chars): ' + tokenSummary(before));
     var sizes = [4, 16, 64];
     for (var i = 0; i < sizes.length; i++) {
       var kb = sizes[i];
@@ -263,13 +292,17 @@ var MatterProbe = (function () {
       if (!back) ok = false;
       say('Tokens', kb + ' KB: ' + (back ? 'written and read back' : 'No (' + (now === undefined ? 'not there' : now.length + ' chars back') + ')') + '; ' + keptLine);
     }
-    // a value with brackets and braces: a store must give it back as it is (JSON has them everywhere)
+    // a token written without the brackets its declaration has: read back, kept?
+    var kept = tokenOf(before, 'probeNoBr');
+    var stamp = 'nb' + Date.now();
+    CF.setToken(CF.GlobalTokensJoin, 'probeNoBr', stamp);
+    var nb = tokenOf(await tokens(), 'probeNoBr');
+    say('Tokens', 'Written without brackets: ' + yesNo(nb === stamp, (nb === stamp ? 'read back' : 'read back ' + JSON.stringify(nb)) + '; at start ' + (kept ? JSON.stringify(kept) : 'empty')));
+    // a value with brackets and braces: iViewer's substitution ({{1+1}}, [@s1]) changes it - the driver keeps base64 (not counted)
     var tricky = '{"a":[1,2],"b":"[x]","c":"{{1+1}}","d":"[@s1]"}';
     CF.setToken(CF.GlobalTokensJoin, '[probeJson]', tricky);
     var tk = tokenOf(await tokens(), 'probeJson');
-    say('Tokens', 'A JSON value verbatim: ' + yesNo(tk === tricky, tk === tricky ? undefined : 'came back as ' + JSON.stringify(tk)));
-    if (tk !== tricky) ok = false;
-    say('Tokens', 'Token names seen: ' + Object.keys(before).filter(function (k) { return /probe/.test(k); }).join(' ') || 'none at start');
+    say('Tokens', 'A JSON value verbatim: ' + yesNo(tk === tricky, tk === tricky ? undefined : 'came back as ' + JSON.stringify(tk) + ' - base64 then'));
     return ok;
   }
 
@@ -335,7 +368,10 @@ var MatterProbe = (function () {
           if (up && ups[name]) ups[name]();
         });
       });
-      CF.getJoin(CF.GlobalTokensJoin, function (j, v, tokens) { tokensAtStart = tokens || {}; });
+      CF.getJoin(CF.GlobalTokensJoin, function (j, v, tokens) {
+        tokensAtStart = tokens || {};
+        CF.log('probe tokens at start: ' + JSON.stringify(tokensAtStart).slice(0, 300));
+      });
       lookups();
       // the systems connect a moment after the scripts start (iViewer); the echo path needs both up
       setTimeout(run, 1500);

@@ -28,10 +28,12 @@ in official iViewer as well as in iva's runtime and the iva panel):
 - **A system a peer.** `<System protocol="udp" host port localPort accept>`
   is a socket: what `CF.send(name, data)` sends goes to `host:port` from
   `localPort`; what comes in (from anyone, with `accept`) goes through its
-  feedbacks. `CF.setSystemProperties(name, { address, port })` retargets it
-  (the socket is bound again: wait for its `ConnectionStatusChangeEvent`
-  before sending, up to 1.5 s - `offlineQueue` keeps what's sent meanwhile).
-  A pool of systems (`matter0` ... `matter9`) is a pool of peers.
+  feedbacks. To retarget it: `CF.setSystemProperties(name, { enabled: false })`,
+  then `{ address, port, localPort }`, then `{ enabled: true }` - iViewer
+  keeps the old address when only `address` and `port` change - and wait for
+  its `ConnectionStatusChangeEvent` before sending (up to 1.5 s;
+  `offlineQueue` keeps what's sent meanwhile). A pool of systems (`matter0`
+  ... `matter9`) is a pool of peers.
 - **Bytes.** `CF.send`'s string is sent a char a byte; a feedback's match
   comes a char a byte. The systems take `textEncoding="iso-8859-1"` (GUI
   Designer's own option) so nothing is read as UTF-8 either way - iva's
@@ -75,28 +77,45 @@ in official iViewer as well as in iva's runtime and the iva panel):
 ## The probe (examples/matter, Probe page)
 
 What `examples/matter` checks first on the panel it runs on, each a line on
-the page and in `iva serve`'s console (`iva serve examples/matter/app.jsx`):
+the page and in `iva serve`'s console (`iva serve examples/matter/app.jsx`).
+Run on 2026-10-17/18 on the user's Unihertz Titan 2 (Android 16): official
+iViewer 5.0.7 and the iva panel app (its APK of 2026-10-17 19:21, so with
+the runtime before this driver's codec fix), and iva's preview in a browser.
 
-| Check | iva runtime (preview, 2026-10-17) | iva panel app, Android (Titan 2, 2026-10-17) | iViewer 5.0.7 Android |
+| Check | iViewer 5.0.7 Android | iva panel app, Android | iva runtime (preview) |
 |---|---|---|---|
-| `crypto.subtle`, secure context | Yes | Yes | pending |
-| SHA-256, ECDH P-256 (one agreement), ECDSA, AES-CTR, AES-CBC, HKDF, HMAC | Yes; ECDH 5 ms | Yes; ECDH 1 ms | pending |
-| PBKDF2 (a PASE: up to 100000 rounds) | 1000 rounds 41 ms | 1000 rounds 5 ms | pending |
-| UDP: bytes 0x00-0xFF through an echo peer, in order | Yes | Yes | pending |
-| UDP: bytes that read as UTF-8 (no encoding) | No: read as text (fixed since: `iso-8859-1`) | Yes | pending |
-| UDP: 1232 bytes in one packet | Yes | Yes | pending |
-| UDP: four packets at once, four frames | Yes | Yes | pending |
-| UDP: `textEncoding="iso-8859-1"`, a byte a char | Yes (since 2026-10-17) | Yes | pending |
-| UDP: a system to `::1` (IPv6) | No (IPv4 socket) | Yes | pending |
-| UDP: retarget (address, port) with `CF.setSystemProperties` | Yes | Yes, once the connection event is waited for (300 ms was too soon) | pending |
-| UDP: rebind (localPort) | Yes | Yes | pending |
-| Tokens: 4, 16, 64 KB written, read back, kept to the next run | Yes | Yes (kept: pending a second load) | pending |
-| Tokens: a JSON value verbatim | No: `{{ }}` and `[@..]` substituted (so: base64) | No (the same) | pending |
-| A 1.5 MB script | Yes | Yes | pending |
+| `crypto.subtle`, secure context (the page: `file://`, `http://tauri.localhost`) | Yes | Yes | Yes |
+| SHA-256, ECDH P-256 (one agreement), ECDSA, AES-CTR, AES-CBC, HKDF, HMAC | Yes; ECDH 1 ms | Yes; ECDH 1-2 ms | Yes; ECDH 5 ms |
+| PBKDF2, 1000 rounds (a PASE: up to 100000) | 5 ms (about 0.4 s) | 21-23 ms (about 2.2 s) | 41 ms (about 4 s) |
+| UDP: bytes 0x00-0xFF through an echo peer, in order | Yes | Yes | Yes |
+| UDP: bytes that read as UTF-8, no encoding set | Yes | No: read as text (the fix is in the runtime since, the APK not yet) | No: read as text |
+| UDP: 1232 bytes in one packet | Yes | Yes | Yes |
+| UDP: four packets at once, four frames | Yes | Yes | Yes |
+| UDP: `textEncoding="iso-8859-1"`, a byte a char | Yes | No: windows-1252 (fixed in the runtime since) | Yes (since the fix) |
+| UDP: a system to `::1` (IPv6) | Yes | No (a v6 socket for a v6 address in the runtime since; the APK not yet) | Yes (since 2026-10-18) |
+| UDP: retarget with `CF.setSystemProperties({ address, port })` alone | No: keeps sending to the old address | Yes (after its connection event; 300 ms was too soon) | Yes |
+| UDP: rebind (`localPort` too) | Yes | Yes | Yes |
+| Tokens: 4, 16, 64 KB written and read back | Yes | Yes | Yes |
+| Tokens: kept to the next load | Not seen in two loads a minute apart (open: were they app restarts?) | pending (the card was hidden) | Yes |
+| Tokens: a JSON value verbatim | No: `{{1+1}}` and `[@s1]` substituted | No (the same) | No (the same) |
+| A 1.5 MB script | Yes | Yes | Yes |
+| Bonjour (`_matter._tcp.`) | not exercised (VPN on) | not exercised | works (the gallery's page) |
 
-The driver needs the Web Crypto lines, the first four UDP lines, retarget
-and the tokens. IPv6 is off in the driver unless `<Matter ipv6>`; the
-panel's JSON value line is why the storage is base64.
+What the driver does with it: the pool retargets a slot as iViewer takes
+it - the system off, `address`, `port` and its own `localPort` set, on
+again - and holds what's sent until the system's connection event (1.5 s at
+most). IPv6 stays off unless `<Matter ipv6>`. The storage is base64 (the
+JSON line). One more thing both runtimes do: a text join's value with
+`[name]` in it shows the token's value in its place - the probe's first
+"Token names seen" line showed 64 KB of token (a black texture on the
+panel, seven garbled lines on iViewer); names in text go without brackets.
+
+The panel app needs a new APK (CI, on push) for the two encoding lines and
+IPv6; on the current one the driver's bytes would be read as text. The
+runtime's text fitting (a value too long for a texture, cut to its box) and
+bracket-less token names came the same day. On official
+iViewer the driver's needs are all met, if persisted tokens turn out to be
+kept across app restarts (the probe's "At start" line tells).
 
 ## Matter: `<Matter>` (iva/drivers/matter)
 

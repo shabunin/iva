@@ -81,11 +81,16 @@ test('the slot pool: a peer gets a free system, retargeted to it; its frames are
   p.frame('matter0', [1]);
   assert.deepEqual(got, []);
   pool.send('192.168.2.40', 5540, Uint8Array.from([1, 2, 255]));
-  assert.deepEqual(p.props, [{ system: 'matter0', props: { address: '192.168.2.40', port: 5540, enabled: true } }]);
+  // off, retargeted (its own localPort again: iViewer keeps the old address without a restart), on
+  assert.deepEqual(p.props, [
+    { system: 'matter0', props: { enabled: false } },
+    { system: 'matter0', props: { address: '192.168.2.40', port: 5540, localPort: 5550 } },
+    { system: 'matter0', props: { enabled: true } },
+  ]);
   assert.deepEqual(p.sent, [{ system: 'matter0', bytes: [1, 2, 255] }]);
   // the same peer again: the same slot, nothing retargeted
   pool.send('192.168.2.40', 5540, Uint8Array.from([3]));
-  assert.equal(p.props.length, 1);
+  assert.equal(p.props.length, 3);
   assert.equal(p.sent[1].system, 'matter0');
   p.frame('matter0', [0, 128, 255]);
   assert.deepEqual(got, [['192.168.2.40', 5540, [0, 128, 255]]]);
@@ -95,7 +100,7 @@ test('the slot pool: a peer gets a free system, retargeted to it; its frames are
   pool.send('192.168.2.42', 5540, Uint8Array.from([6]));
   pool.send('192.168.2.41', 5540, Uint8Array.from([7]));
   pool.send('192.168.2.43', 5540, Uint8Array.from([8]));
-  assert.deepEqual(p.props.at(-1), { system: 'matter0', props: { address: '192.168.2.43', port: 5540, enabled: true } });
+  assert.deepEqual(p.props.at(-2), { system: 'matter0', props: { address: '192.168.2.43', port: 5540, localPort: 5550 } });
   assert.equal(pool.slotOf('192.168.2.40', 5540), undefined);
   assert.equal(pool.slotOf('192.168.2.43', 5540)?.name, 'matter0');
 });
@@ -107,7 +112,7 @@ test('a retargeted slot binds its socket again: what\'s sent meanwhile waits for
   pool.send('192.168.2.40', 5540, Uint8Array.from([1]));
   pool.send('192.168.2.40', 5540, Uint8Array.from([2]));
   assert.deepEqual(p.sent, [], 'held till the system says it is connected');
-  assert.equal(p.props.length, 1);
+  assert.equal(p.props.length, 3);
   p.connect('matter0');
   assert.deepEqual(p.sent, [{ system: 'matter0', bytes: [1] }, { system: 'matter0', bytes: [2] }]);
   pool.send('192.168.2.40', 5540, Uint8Array.from([3]));
@@ -126,6 +131,8 @@ test('the Network: a udp4 and a udp6 socket over the pool, each its family; IPv6
   assert.deepEqual(details.ipV4, ['192.168.2.20']);
   assert.match(details.mac, /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/);
   assert.equal(macOf({ ...p.CF, MACaddress: 'AA:BB:CC:DD:EE:01' }), 'aa:bb:cc:dd:ee:01');
+  // Android's placeholder (iViewer shows it) is no MAC
+  assert.notEqual(macOf({ ...p.CF, MACaddress: '02:00:00:00:00:00' }), '02:00:00:00:00:00');
   const v6 = (await net.createUdpSocket({ type: 'udp6', listeningPort: 5550 })) as CfUdpSocket;
   const v4 = (await net.createUdpSocket({ type: 'udp4', listeningPort: 5550 })) as CfUdpSocket;
   assert.equal(v4.port, 5550);
@@ -150,7 +157,7 @@ test('the Network: a udp4 and a udp6 socket over the pool, each its family; IPv6
   const s6 = await net6.createUdpSocket({ type: 'udp6' });
   assert.ok(s6.supports(ChannelType.UDP, 'fe80::1'));
   await s6.send('fe80::1', 5540, Uint8Array.from([1]));
-  assert.equal(p.props.at(-1)!.props.address, 'fe80::1');
+  assert.equal(p.props.at(-2)!.props.address, 'fe80::1');
 });
 
 test('DNS-SD from lookups: a found device as the records a responder sends (PTR with the subtypes, SRV, TXT, A); IPv6 only when on', () => {

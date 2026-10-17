@@ -3,9 +3,12 @@
  * one peer (host:port) at a time with CF.setSystemProperties - before any
  * Matter session exists over it. A Matter node answers to the address and
  * port a request came from, so a slot's frames are its peer's. A peer gets
- * a free slot, else the one longest unused. A retargeted system binds its
- * socket again, which takes a moment (longer on a phone): what's sent
- * meanwhile waits for its ConnectionStatusChangeEvent (or READY_MS).
+ * a free slot, else the one longest unused. A retarget is the system off,
+ * its address, port and localPort set, and on again: iViewer keeps sending
+ * to the old address when only the address and port change (the probe
+ * showed), and a restart binds the socket again, which takes a moment
+ * (longer on a phone) - what's sent meanwhile waits for the system's
+ * ConnectionStatusChangeEvent (or READY_MS).
  */
 
 import { fromBinary, toBinary, type CF } from './cf.js';
@@ -56,7 +59,9 @@ export class SlotPool {
       if (old) clearTimeout(old.timer);
       const index = slot.index;
       this.pending.set(index, { queue: [], timer: setTimeout(() => this.ready(this.slots[index], true), READY_MS) });
-      this.cf.setSystemProperties(slot.name, { address: host, port, enabled: true });
+      this.cf.setSystemProperties(slot.name, { enabled: false });
+      this.cf.setSystemProperties(slot.name, { address: host, port, localPort: slot.localPort });
+      this.cf.setSystemProperties(slot.name, { enabled: true });
     }
     slot.used = ++this.clock;
     return slot;
