@@ -41,6 +41,7 @@ export class CFAPI implements CFContext {
     DevicePropertyChangedEvent = EVENTS.DevicePropertyChangedEvent;
     ApplicationCallbackEvent = EVENTS.ApplicationCallbackEvent;
     PushNotificationEvent = EVENTS.PushNotificationEvent;
+    BeaconDetectionEvent = EVENTS.BeaconDetectionEvent;
     TokenChangedEvent = "TokenChangedEvent";
 
     // CONSTANTS
@@ -92,6 +93,47 @@ export class CFAPI implements CFContext {
     // Sensors
     Accelerometer = CONSTANTS.Accelerometer;
     Gyroscope = CONSTANTS.Gyroscope;
+    AccelerometerSensor = CONSTANTS.AccelerometerSensor;
+    GyroscopeSensor = CONSTANTS.GyroscopeSensor;
+    AttitudeSensor = CONSTANTS.AttitudeSensor;
+    HeadingSensor = CONSTANTS.HeadingSensor;
+    LocationSensor = CONSTANTS.LocationSensor;
+    BeaconProximityUnknown = CONSTANTS.BeaconProximityUnknown;
+    BeaconProximityImmediate = CONSTANTS.BeaconProximityImmediate;
+    BeaconProximityNear = CONSTANTS.BeaconProximityNear;
+    BeaconProximityFar = CONSTANTS.BeaconProximityFar;
+
+    // CF.loadAsset's cache
+    CACHE_READONLY = CONSTANTS.CACHE_READONLY;
+    CACHE = CONSTANTS.CACHE;
+    NO_CACHE = CONSTANTS.NO_CACHE;
+    RECACHE = CONSTANTS.RECACHE;
+    DECACHE = CONSTANTS.DECACHE;
+
+    // Device properties and their values
+    ScreenBrightnessProperty = CONSTANTS.ScreenBrightnessProperty;
+    SoundOutputVolumeProperty = CONSTANTS.SoundOutputVolumeProperty;
+    BatteryLevelProperty = CONSTANTS.BatteryLevelProperty;
+    BatteryChargeStatusProperty = CONSTANTS.BatteryChargeStatusProperty;
+    StatusBarAppearanceProperty = CONSTANTS.StatusBarAppearanceProperty;
+    NavigationBarAppearanceProperty = CONSTANTS.NavigationBarAppearanceProperty;
+    CHARGE_UNKNOWN = CONSTANTS.CHARGE_UNKNOWN;
+    CHARGE_UNPLUGGED = CONSTANTS.CHARGE_UNPLUGGED;
+    CHARGE_CHARGING = CONSTANTS.CHARGE_CHARGING;
+    CHARGE_FULL = CONSTANTS.CHARGE_FULL;
+    STATUS_BAR_HIDDEN = CONSTANTS.STATUS_BAR_HIDDEN;
+    STATUS_BAR_VISIBLE = CONSTANTS.STATUS_BAR_VISIBLE;
+    STATUS_BAR_WHITE_TEXT = CONSTANTS.STATUS_BAR_WHITE_TEXT;
+    STATUS_BAR_BLACK_TEXT = CONSTANTS.STATUS_BAR_BLACK_TEXT;
+    NAVIGATION_BAR_HIDDEN = CONSTANTS.NAVIGATION_BAR_HIDDEN;
+    NAVIGATION_BAR_VISIBLE = CONSTANTS.NAVIGATION_BAR_VISIBLE;
+
+    // Hardware keys (CF.interceptHardwareKey)
+    KEYPRESS_INTERCEPT = CONSTANTS.KEYPRESS_INTERCEPT;
+    KEYPRESS_OBSERVE = CONSTANTS.KEYPRESS_OBSERVE;
+    HARDWARE_KEY_BACK = CONSTANTS.HARDWARE_KEY_BACK;
+    HARDWARE_KEY_VOLUME_UP = CONSTANTS.HARDWARE_KEY_VOLUME_UP;
+    HARDWARE_KEY_VOLUME_DOWN = CONSTANTS.HARDWARE_KEY_VOLUME_DOWN;
 
     // GLOBAL VARIABLES
     device = {
@@ -105,7 +147,7 @@ export class CFAPI implements CFContext {
         screenBrightness: 1.0,
         soundOutputVolume: 1.0,
         batteryLevel: 1.0,
-        batteryChargeStatus: 1, // CF.ChargeStatusUnknown
+        batteryChargeStatus: CONSTANTS.CHARGE_UNKNOWN,
         hasSensors: {
             [CONSTANTS.Gyroscope]: false,
             [CONSTANTS.Accelerometer]: false

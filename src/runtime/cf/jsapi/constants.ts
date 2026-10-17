@@ -23,6 +23,8 @@ export const EVENTS = {
     DevicePropertyChangedEvent: "DEVICE_PROPERTY_CHANGED_EVENT",
     ApplicationCallbackEvent: "APPLICATION_CALLBACK_EVENT",
     PushNotificationEvent: "PUSH_NOTIFICATION_EVENT",
+    // iBeacons in range (Sensors API): callback(beacons) - each { uuid, major, minor, proximity, distance, accuracy, rssi }
+    BeaconDetectionEvent: "BEACON_DETECTION_EVENT",
 };
 
 export const CONSTANTS = {
@@ -71,7 +73,60 @@ export const CONSTANTS = {
     OUTPUT_BINARY: 2,
     OUTPUT_BINARY_LE: 3,
 
-    // Sensors
+    // Sensors (CF.device.hasSensors' keys; the older names of the two the Sensors API documents below)
     Accelerometer: "ACCELEROMETER",
     Gyroscope: "GYROSCOPE",
+
+    // CF.loadAsset's cache (Utilities API): read from the cache if there, else loaded - and not kept
+    // (CACHE_READONLY, the default) or kept (CACHE); always loaded, not kept (NO_CACHE); loaded anew and
+    // kept (RECACHE); only taken out of the cache - no callback (DECACHE)
+    CACHE_READONLY: "CACHE_READONLY",
+    CACHE: "CACHE",
+    NO_CACHE: "NO_CACHE",
+    RECACHE: "RECACHE",
+    DECACHE: "DECACHE",
+
+    // Device properties (CF.setDeviceProperty, DevicePropertyChangedEvent's (property, value))
+    ScreenBrightnessProperty: "SCREEN_BRIGHTNESS_PROPERTY",
+    SoundOutputVolumeProperty: "SOUND_OUTPUT_VOLUME_PROPERTY",
+    BatteryLevelProperty: "BATTERY_LEVEL_PROPERTY",
+    BatteryChargeStatusProperty: "BATTERY_CHARGE_STATUS_PROPERTY",
+    StatusBarAppearanceProperty: "STATUS_BAR_APPEARANCE_PROPERTY",
+    NavigationBarAppearanceProperty: "NAVIGATION_BAR_APPEARANCE_PROPERTY",
+
+    // CF.device.batteryChargeStatus
+    CHARGE_UNKNOWN: "CHARGE_UNKNOWN",
+    CHARGE_UNPLUGGED: "CHARGE_UNPLUGGED",
+    CHARGE_CHARGING: "CHARGE_CHARGING",
+    CHARGE_FULL: "CHARGE_FULL",
+
+    // StatusBarAppearanceProperty's values (the text colours: iOS; Android can't change it)
+    STATUS_BAR_HIDDEN: "STATUS_BAR_HIDDEN",
+    STATUS_BAR_VISIBLE: "STATUS_BAR_VISIBLE",
+    STATUS_BAR_WHITE_TEXT: "STATUS_BAR_WHITE_TEXT",
+    STATUS_BAR_BLACK_TEXT: "STATUS_BAR_BLACK_TEXT",
+
+    // NavigationBarAppearanceProperty's values (Android)
+    NAVIGATION_BAR_HIDDEN: "NAVIGATION_BAR_HIDDEN",
+    NAVIGATION_BAR_VISIBLE: "NAVIGATION_BAR_VISIBLE",
+
+    // CF.interceptHardwareKey(keyCode, pressTime, mode, callback) (Android): its modes and key codes
+    KEYPRESS_INTERCEPT: "KEYPRESS_INTERCEPT",
+    KEYPRESS_OBSERVE: "KEYPRESS_OBSERVE",
+    HARDWARE_KEY_BACK: "HARDWARE_KEY_BACK",
+    HARDWARE_KEY_VOLUME_UP: "HARDWARE_KEY_VOLUME_UP",
+    HARDWARE_KEY_VOLUME_DOWN: "HARDWARE_KEY_VOLUME_DOWN",
+
+    // CF.startMonitoring's sensors (Sensors API)
+    AccelerometerSensor: "ACCELEROMETER",
+    GyroscopeSensor: "GYROSCOPE",
+    AttitudeSensor: "ATTITUDE",
+    HeadingSensor: "HEADING",
+    LocationSensor: "LOCATION",
+
+    // a detected beacon's proximity (approximate: the docs say to go by distance / accuracy where there)
+    BeaconProximityUnknown: "BEACON_PROXIMITY_UNKNOWN",
+    BeaconProximityImmediate: "BEACON_PROXIMITY_IMMEDIATE",
+    BeaconProximityNear: "BEACON_PROXIMITY_NEAR",
+    BeaconProximityFar: "BEACON_PROXIMITY_FAR",
 };

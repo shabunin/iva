@@ -1,4 +1,5 @@
 import { CFContext, CFCallback } from './types';
+import { CONSTANTS } from './constants';
 
 export function log(
     ctx: CFContext,
@@ -235,10 +236,27 @@ export function loadGUI(
     else console.log(`CF.loadGUI(${url}, ${JSON.stringify(settings)}): nothing here to load it`);
 }
 
+/** CF.loadAsset's cache: what CF.CACHE / CF.RECACHE loaded, by URL (CF.DECACHE takes it out) */
+const assetCache = new Map<string, Uint8Array>();
+
+/** an asset's bytes as a script asked for them: text (CF.UTF8), or a binary string, one char per byte (CF.BINARY) */
+function assetData(bytes: Uint8Array, dataEncoding: string): string {
+    if (dataEncoding !== 'BINARY') return new TextDecoder().decode(bytes);
+    let data = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+        data += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000) as unknown as number[]);
+    }
+    return data;
+}
+
 /**
  * A project file (an image the GUI uses, a page next to it): fetched from the
  * host, handed to `callback(data)` as text (CF.UTF8) or as a binary string,
- * one char per byte (CF.BINARY). Not found: `callback(null)`.
+ * one char per byte (CF.BINARY). Not found: `callback(null)`. `cache` as the
+ * docs have it: CF.CACHE_READONLY (the default) and CF.CACHE read from the
+ * cache if it's there, else load - CACHE keeping what came; CF.NO_CACHE
+ * loads afresh, keeping nothing; CF.RECACHE loads afresh and keeps it;
+ * CF.DECACHE only drops it from the cache, and calls nothing back.
  */
 export function loadAsset(
     ctx: CFContext,
@@ -249,20 +267,23 @@ export function loadAsset(
 ) {
     const renderer = (ctx as any).renderer;
     const url: string = renderer?.resolveUrl ? renderer.resolveUrl(assetName) : assetName;
-    fetch(url, cache === 'NOCACHE' ? { cache: 'no-store' } : undefined)
+    const mode = cache ?? CONSTANTS.CACHE_READONLY;
+    if (mode === CONSTANTS.DECACHE) {
+        assetCache.delete(url);
+        return;
+    }
+    const fresh = mode === CONSTANTS.NO_CACHE || mode === CONSTANTS.RECACHE;
+    const held = fresh ? undefined : assetCache.get(url);
+    if (held) {
+        callback?.(assetData(held, dataEncoding));
+        return;
+    }
+    fetch(url, fresh ? { cache: 'no-store' } : undefined)
         .then((res) => (res.ok ? res.arrayBuffer() : Promise.reject(new Error(`HTTP ${res.status}`))))
         .then((buf) => {
             const bytes = new Uint8Array(buf);
-            let data: string;
-            if (dataEncoding === 'BINARY') {
-                data = '';
-                for (let i = 0; i < bytes.length; i += 0x8000) {
-                    data += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000) as unknown as number[]);
-                }
-            } else {
-                data = new TextDecoder().decode(bytes);
-            }
-            callback?.(data);
+            if (mode === CONSTANTS.CACHE || mode === CONSTANTS.RECACHE) assetCache.set(url, bytes);
+            callback?.(assetData(bytes, dataEncoding));
         })
         .catch((e) => {
             console.warn(`CF.loadAsset(${assetName}): ${e?.message ?? e}`);
