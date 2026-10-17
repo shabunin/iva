@@ -331,7 +331,7 @@ export default (
 );`);
   const r = await compile(path.join(dir, 'app.jsx'));
   assert.deepEqual(r.warnings, []);
-  const systems = [...r.xml.matchAll(/<system name="(matter\d)" ip="([^"]*)" port="(\d+)" origin="(\d+)" protocol="udp" alwayson="1" offlinequeue="1" accept="1"[^>]*textEncoding="([^"]*)"[^>]*>\s*<fb name="frame" regex="([^"]*)"/g)].map((m) => m.slice(1));
+  const systems = [...r.xml.matchAll(/<system name="(matter\d)" ip="([^"]*)" port="(\d+)" origin="(\d+)" protocol="udp" alwayson="1" offlinequeue="0" accept="0" acceptBroadcasts="0"[^>]*textEncoding="([^"]*)"[^>]*>\s*<fb name="frame" regex="([^"]*)"/g)].map((m) => m.slice(1));
   assert.deepEqual(systems, [
     ['matter0', '127.0.0.2', '5540', '6000', 'iso-8859-1', '(?s)(.+)'],
     ['matter1', '127.0.0.2', '5540', '6001', 'iso-8859-1', '(?s)(.+)'],

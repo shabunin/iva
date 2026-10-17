@@ -2,7 +2,7 @@
  * iva/drivers/matter - Matter devices from the panel, with matter.js over a
  * pool of UDP systems. Works in official iViewer as well as in iva's own
  * runtime: a <System protocol="udp"> a peer (Matter sessions are per peer,
- * and a node answers to the address and port a request came from),
+ * and a node answers from the address and port a request went to),
  * retargeted with CF.setSystemProperties before any session exists;
  * CF.send with a byte a char; a catch-all <Feedback> for what comes;
  * CF.startLookup for DNS-SD; persisted tokens for what the controller
@@ -120,9 +120,11 @@ export function Matter({ slots = 10, port = 5550, devices = {}, commission, foun
   return (
     <>
       {/* the pool: a peer each, retargeted by the driver; till then nobody (the device itself, a port nobody answers on).
-          offlineQueue: what's sent while a retargeted system binds its socket again waits for it */}
+          A plain UDP client: no accept (a Matter node answers from the address and port a slot targets), no broadcasts,
+          no offline queue (official iViewer handed a retargeted system's queued sends back as its own frames,
+          2026-10-18; a send lost while the socket binds again is retransmitted by the protocol) */}
       {names.map((name, i) => (
-        <System name={name} protocol="udp" host="127.0.0.2" port={5540} localPort={port + i} accept offlineQueue textEncoding={textEncoding}>
+        <System name={name} protocol="udp" host="127.0.0.2" port={5540} localPort={port + i} accept={false} acceptBroadcasts={false} offlineQueue={false} textEncoding={textEncoding}>
           <Feedback name="frame" regex="(?s)(.+)" />
         </System>
       ))}
