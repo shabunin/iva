@@ -76,8 +76,10 @@ Build errors point at the file and line, with "did you mean" for typos.
 
 `iva create` gives a folder with `app.jsx` (the entry), `assets/` (images,
 found by bare name as iViewer finds them), `scripts/` (iViewer JavaScript),
-`IVA.md` (the element reference), `AGENTS.md` / `CLAUDE.md` (for AI
-assistants), and `iva.d.ts` + `jsconfig.json`: open the folder in VS Code
+`IVA.md`, `IVA-UI.md` and `IVA-WEB.md` (this repo's docs, copied in: the
+elements, iva/ui, web apps - so an assistant working in the project has
+them), `AGENTS.md` / `CLAUDE.md` (for AI assistants), and `iva.d.ts` +
+`jsconfig.json`: open the folder in VS Code
 and elements, props and their values autocomplete, with docs on hover and
 mistakes underlined as you type (`fontSise` → "Did you mean 'fontSize'?").
 Your own components' untyped props are optional; give them JSDoc types to

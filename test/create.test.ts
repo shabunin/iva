@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { create, templates } from '../src/create.ts';
+import { create, templates, writeDocs } from '../src/create.ts';
 import { check } from '../src/check.ts';
 import { tmpDir } from './tmp.ts';
 
@@ -12,7 +12,7 @@ const tmp = () => path.join(tmpDir('iva-create-'), 'panel');
 for (const template of templates()) {
   test(`template ${template}: created, checks clean, builds`, async () => {
     const r = await create(tmp(), { template });
-    for (const f of ['app.jsx', 'iva.d.ts', 'jsconfig.json', 'IVA.md', 'AGENTS.md', 'CLAUDE.md', 'README.md', '.gitignore']) {
+    for (const f of ['app.jsx', 'iva.d.ts', 'jsconfig.json', 'IVA.md', 'IVA-UI.md', 'IVA-WEB.md', 'AGENTS.md', 'CLAUDE.md', 'README.md', '.gitignore']) {
       assert.ok(fs.existsSync(path.join(r.dir, f)), f);
     }
     assert.deepEqual(r.warnings, []);
@@ -43,4 +43,22 @@ test('from a .gui: decompiled, with the same extras', async () => {
   assert.ok(fs.existsSync(path.join(r.dir, 'iva.d.ts')));
   const c = await check(path.join(r.dir, 'app.jsx'));
   assert.deepEqual(c.problems, []);
+});
+
+test("the references in a project: iva's docs copied, their links to each other pointing at the copies; iva types writes them again", async () => {
+  const r = await create(tmp(), { template: 'blank' });
+  const ui = fs.readFileSync(path.join(r.dir, 'IVA-UI.md'), 'utf8');
+  assert.match(ui, /^<!-- iva \S+: a copy of iva's docs\/ui\.md, written by `iva types` - don't edit\. -->\n/);
+  assert.ok(ui.includes('](IVA-WEB.md)') && !ui.includes('](web.md)'), 'ui.md links to web.md as the copy');
+  const main = fs.readFileSync(path.join(r.dir, 'IVA.md'), 'utf8');
+  assert.ok(main.includes('](IVA-UI.md)') && main.includes('](IVA-WEB.md)') && !/\]\((ui|web)\.md\)/.test(main));
+  assert.ok(!main.includes('docs/web.md'), 'the link text too');
+  assert.match(main, /# iva base components/);
+  // the notes point an assistant at them
+  const agents = fs.readFileSync(path.join(r.dir, 'AGENTS.md'), 'utf8');
+  assert.ok(agents.includes('IVA-UI.md') && agents.includes('IVA-WEB.md') && !agents.includes("iva's docs/"));
+  // written again (a newer iva): the same files
+  fs.writeFileSync(path.join(r.dir, 'IVA-UI.md'), 'stale');
+  assert.deepEqual(writeDocs(r.dir), ['IVA.md', 'IVA-UI.md', 'IVA-WEB.md']);
+  assert.notEqual(fs.readFileSync(path.join(r.dir, 'IVA-UI.md'), 'utf8'), 'stale');
 });

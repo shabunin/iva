@@ -8,7 +8,7 @@ import { startDev } from '../server/dev.js';
 import { buildFilesAll, compile, IvaError, slug, writeBuild, writeBuilds, type CompileResult } from '../compiler/index.js';
 import { writeZip } from '../server/zip.js';
 import { decompile } from '../decompiler/index.js';
-import { create, templates, VERSION } from '../create.js';
+import { create, templates, VERSION, writeDocs } from '../create.js';
 import { check } from '../check.js';
 import { writeTypes } from '../types.js';
 import { DEVICES, sizeLabel } from '../compiler/components.js';
@@ -22,7 +22,7 @@ Usage:
   iva create <dir>     a new project: --template blank|demo (default blank),
                        --device "iPad" | "iPhone X" | ..., or --from file.gui
   iva check [entry]    what the editor underlines + a test build
-  iva types [dir]      (re)write iva.d.ts and jsconfig.json for editors
+  iva types [dir]      (re)write iva.d.ts and jsconfig.json for editors, and IVA.md, IVA-UI.md, IVA-WEB.md (the references)
   iva build [entry]    compile a JSX project (default: app.jsx) into dist/:
                        the .gui, its images and scripts, joins.json; with
                        <Project sizes>, a GUI per size in dist/<W>w<H>h/
@@ -143,7 +143,7 @@ async function main(argv: string[]) {
   }
   if (cmd === 'types') {
     const dir = path.resolve(rest[0] ?? '.');
-    process.stdout.write(`${writeTypes(dir, VERSION).join(', ')}\n`);
+    process.stdout.write(`${[...writeTypes(dir, VERSION), ...writeDocs(dir)].join(', ')}\n`);
     return;
   }
   if (cmd === 'build') {

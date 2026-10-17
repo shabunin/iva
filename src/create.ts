@@ -1,8 +1,12 @@
 /**
  * iva create: a new project folder from a template (blank, demo), or from an
  * existing .gui (decompiled). Every project gets its types (iva.d.ts,
- * jsconfig.json), the element reference (IVA.md) and notes for people and AI
- * assistants (README.md, AGENTS.md, CLAUDE.md).
+ * jsconfig.json), the references (IVA.md: the elements; IVA-UI.md: iva/ui;
+ * IVA-WEB.md: web apps - iva's docs, copied) and notes for people and AI
+ * assistants (README.md, AGENTS.md, CLAUDE.md). A project has iva's docs in
+ * it because it has nothing else of iva: `iva/ui` resolves inside the
+ * compiler, not in node_modules, and an assistant working in the folder
+ * reads only the folder.
  */
 
 import fs from 'node:fs';
@@ -28,6 +32,27 @@ export interface CreateOptions {
 
 export function templates(): string[] {
   return fs.readdirSync(TEMPLATES).filter((t) => !t.startsWith('_'));
+}
+
+/** iva's docs as a project has them: docs/<file> -> <name> in the project */
+export const DOCS: [string, string][] = [['components.md', 'IVA.md'], ['ui.md', 'IVA-UI.md'], ['web.md', 'IVA-WEB.md']];
+
+/**
+ * The references written into a project (iva create, iva types): iva's docs,
+ * their links to each other pointing at the copies. The files written.
+ */
+export function writeDocs(dir: string): string[] {
+  const written: string[] = [];
+  for (const [doc, name] of DOCS) {
+    let text = fs.readFileSync(path.join(ROOT, 'docs', doc), 'utf8');
+    for (const [from, to] of DOCS) {
+      // a link's target (web.md, components.md#screen-sizes) and its text (docs/web.md)
+      text = text.replace(new RegExp(`\\]\\(${from.replace('.', '\\.')}(#[^)]*)?\\)`, 'g'), `](${to}$1)`).replace(new RegExp(`docs/${from.replace('.', '\\.')}`, 'g'), to);
+    }
+    fs.writeFileSync(path.join(dir, name), `<!-- iva ${VERSION}: a copy of iva's docs/${doc}, written by \`iva types\` - don't edit. -->\n${text}`);
+    written.push(name);
+  }
+  return written;
 }
 
 function copyTemplate(src: string, dest: string, vars: Record<string, string>, written: string[], base = dest) {
@@ -70,8 +95,7 @@ export async function create(dir: string, opts: CreateOptions = {}) {
   }
   copyTemplate(path.join(TEMPLATES, '_common'), target, vars, written);
   for (const d of ['assets', 'scripts']) fs.mkdirSync(path.join(target, d), { recursive: true });
-  fs.copyFileSync(path.join(ROOT, 'docs', 'components.md'), path.join(target, 'IVA.md'));
-  written.push('IVA.md', ...writeTypes(target, VERSION));
+  written.push(...writeDocs(target), ...writeTypes(target, VERSION));
 
   // it has to build as it is
   const built = await compile(path.join(target, 'app.jsx'));
