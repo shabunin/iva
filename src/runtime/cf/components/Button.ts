@@ -302,6 +302,18 @@ export function renderButton(
         }
     };
 
+    /**
+     * ObjectPressedEvent / ObjectReleasedEvent as CF gives them to a watcher:
+     * (join, value, tokens) - the value "1" / "0", a string as scripts see
+     * joins; whatever the button's actions are (an <actions> group or not).
+     */
+    const tellEvent = (event: string) => {
+        if (!renderer.cfApi || !node.j || node.j === "0") return;
+        const nj = getNormJoin("d", node.j);
+        if (!nj) return;
+        renderer.cfApi.dispatchEvent(event, nj, joinStore.get(node.j, "d") ? "1" : "0", renderer.cfApi.tokensStore?.[nj] ?? {});
+    };
+
     /** The press: the button down, its press actions. */
     const press = () => {
         if (node.sim === "1") {
@@ -323,6 +335,8 @@ export function renderButton(
         } else if (node.sim !== "0") {
             isBtnDown = true;
         }
+
+        tellEvent(renderer.cfApi?.ObjectPressedEvent);
 
         if (actionGroups.length > 0) {
             const currentGroup = actionGroups[currentActionGroupIndex];
@@ -400,11 +414,6 @@ export function renderButton(
 
                 if (node.pressCmd && renderer.cfApi?.runCommand) {
                     renderer.cfApi.runCommand("", node.pressCmd);
-                }
-
-                if (renderer.cfApi && node.j && node.j !== "0") {
-                    const nj = getNormJoin("d", node.j);
-                    if (nj) renderer.cfApi.dispatchEvent(renderer.cfApi.ObjectPressedEvent, nj, !!joinStore.get(node.j, "d"));
                 }
             };
 
@@ -500,6 +509,8 @@ export function renderButton(
 
         if (inDraggedList()) return;
 
+        tellEvent(renderer.cfApi?.ObjectReleasedEvent);
+
         if (actionGroups.length > 0) {
             const currentGroup = actionGroups[currentActionGroupIndex];
             const releaseActions = currentGroup.children.filter(c => c.type === "release");
@@ -519,14 +530,6 @@ export function renderButton(
             // Basic actions (legacy)
             if (node.releaseCmd && renderer.cfApi?.runCommand) {
                 renderer.cfApi.runCommand("", node.releaseCmd);
-            }
-
-            if (renderer.cfApi && node.j && node.j !== "0") {
-                const nj = getNormJoin("d", node.j);
-                if (nj) {
-                    const val = !!joinStore.get(node.j, "d");
-                    renderer.cfApi.dispatchEvent(renderer.cfApi.ObjectReleasedEvent, nj, val);
-                }
             }
         }
 

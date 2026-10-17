@@ -31,6 +31,9 @@ const createElement = document.createElement.bind(document);
 const g = globalThis as any;
 g.document ??= document;
 g.window ??= globalThis;
+// what the components ask of window while a finger is down (a press watching it move, a slider its release): nothing here
+g.addEventListener ??= () => {};
+g.removeEventListener ??= () => {};
 g.DOMParser ??= DOMParser;
 g.devicePixelRatio ??= 1;
 // what Pixi asks of the canvas's 2D context (letter spacing support: none here)

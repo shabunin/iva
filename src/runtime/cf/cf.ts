@@ -420,8 +420,12 @@ export class CFAPI implements CFContext {
                 if (Array.isArray(w.joins) && !w.joins.includes(joinArg)) return;
                 if (typeof w.joins === 'string' && w.joins !== joinArg) return;
             }
-            // a system's connection: the systems watched (by name), as for joins
+            // a system's connection: the systems watched (by name), as for joins; an object's
+            // press, drag and release: the joins watched
             if ((eventName === this.InputFieldEditedEvent ||
+                 eventName === this.ObjectPressedEvent ||
+                 eventName === this.ObjectDraggedEvent ||
+                 eventName === this.ObjectReleasedEvent ||
                  eventName === this.ConnectionStatusChangeEvent ||
                  eventName === this.ListWillStartScrollingEvent ||
                  eventName === this.ListDidScrollEvent || 
