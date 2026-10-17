@@ -499,3 +499,24 @@ test("a command's target / value and a feedback's onmatch: a serial join gets th
   assert.equal(joinStore.get('6', 's'), '');
   assert.equal(joinStore.get('6', 'a'), 0);
 });
+
+test("feedback tokens: a <group settoken> keeps its value as a token named by the group on its target join (e0: a global one); an <onmatch token> sets that token, not the join", () => {
+  const { cf, sys } = gui({});
+  (sys as any).feedbackRules = [{ type: 'fb', attributes: { name: 'zone', regex: 'Z(\\d)=(\\w+) (\\d+)' }, children: [
+    { type: 'group', attributes: { index: '1', name: 'zone', datatype: 's', target: 's1', settoken: '1' }, children: [] },
+    { type: 'group', attributes: { index: '3', name: '[level]', datatype: 'a', target: 'e0', settoken: '1', transform: 'value * 2' }, children: [] },
+    { type: 'group', attributes: { index: '2', name: 'state', datatype: 's', target: 's2' }, children: [] },
+    { type: 'onmatch', attributes: { target: 'e0', token: '[mute]', value: '$2$' }, children: [] },
+    { type: 'onmatch', attributes: { target: 's3', token: 'where', value: 'zone $zone$' }, children: [] },
+    { type: 'onmatch', attributes: { target: 's3', value: '$state$' }, children: [] },
+  ] }];
+  (sys as any)._matchFeedbacks('Z2=ON 21');
+  assert.equal(joinStore.get('1', 's'), '2', 'the group sets its join');
+  assert.equal(cf.tokensStore.s1.zone, '2', 'and keeps the value as a token on it');
+  assert.equal(cf.tokensStore.e0['[level]'], '42', 'transformed, as the join would get it; e0: global');
+  assert.equal(cf.tokensStore.s2, undefined, 'no settoken: no token');
+  assert.equal(cf.tokensStore.e0['[mute]'], 'ON');
+  assert.equal(cf.tokensStore.s3.where, 'zone 2');
+  assert.equal(joinStore.get('3', 's'), 'ON', 'an onmatch without a token sets the join');
+  assert.equal(joinStore.has('e0', 'd'), false, 'e0 is no join');
+});

@@ -140,6 +140,7 @@ export async function parseGenericNode(element: Element): Promise<CFNode> {
         j: attributes["j"],
         s: attributes["s"],
         a: attributes["a"],
+        d: attributes["d"],
         t: attributes["t"],
         v: attributes["v"],
         flip: attributes["flip"],

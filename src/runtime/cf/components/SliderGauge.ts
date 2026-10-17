@@ -236,10 +236,16 @@ export function renderSliderOrGauge(
         emitUpdate(rawVal);
     };
 
+    /** the slider's press join (d): high while a finger is on it */
+    const pressed = (down: boolean) => {
+        if (node.d && node.d !== "0") joinStore.set(node.d, "d", down);
+    };
+
     const handleUp = () => {
         if (!isDraggingGauge) return;
         isDraggingGauge = false;
-        
+        pressed(false);
+
         sliderContainer.off('globalpointermove', handlePointerMove);
         window.removeEventListener('pointerup', handleUp);
         
@@ -259,7 +265,8 @@ export function renderSliderOrGauge(
         // the drag moves the slider, not a list it's in
         e.stopPropagation?.();
         isDraggingGauge = true;
-        
+        pressed(true);
+
         if (node.pressCmd && renderer.cfApi?.runCommand) {
             renderer.cfApi.runCommand("", node.pressCmd, getFormattedValue(currentRawValue));
         }

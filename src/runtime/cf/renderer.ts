@@ -603,6 +603,8 @@ export class CFRenderer {
     // a button's text (<inactive s="1">): in a list, the item's s1 too, not the page's
     node.inactive_s = resolveJoin(node.inactive_s);
     node.active_s = resolveJoin(node.active_s);
+    // a slider's press join (d): in a list, the item's too
+    node.d = resolveJoin(node.d);
 
     const container = new Container();
     (container as any).cfNode = node;

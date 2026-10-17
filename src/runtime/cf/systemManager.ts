@@ -872,8 +872,14 @@ export class ControlSystem {
                     }
                 }
                 
-                // a number for a d / a target, the text as written for a serial one
-                this.cfApi.setJoin(resolvedTarget, joinValue(this.cfApi, resolvedTarget, resolvedVal), true);
+                const token = item.attributes['token'];
+                if (token) {
+                    // <onmatch target="e0" token="[mute]" value="$1$" />: the token set on the target join (e0: a global one), not the join
+                    this.cfApi.setToken(resolvedTarget, token, resolvedVal);
+                } else {
+                    // a number for a d / a target, the text as written for a serial one
+                    this.cfApi.setJoin(resolvedTarget, joinValue(this.cfApi, resolvedTarget, resolvedVal), true);
+                }
             }
 
             if (cmdName) {
@@ -936,18 +942,16 @@ export class ControlSystem {
             else return;
         }
 
-        // settoken: store captured value in a named token for later use in subsequent onmatch
-        const setToken = item.attributes['settoken'] === '1';
+        // GUI Designer writes targets already prefixed ("d1", "s10", "l1:0:s2"; "e0" the global tokens);
+        // only bare numbers ("10") take the datatype prefix.
+        const finalJoin = target ? (/^[adsle]/i.test(target) ? target : (datatype || 's') + target) : '';
+        if (target && datatype) this.cfApi.setJoin(finalJoin, processedValue, true);
 
-        if (target && datatype) {
-            // GUI Designer writes targets already prefixed ("d1", "s10",
-            // "l1:0:s2"); only bare numbers ("10") take the datatype prefix.
-            const finalJoin = /^[adsl]/i.test(target) ? target : datatype + target;
-            this.cfApi.setJoin(finalJoin, processedValue, true);
+        // settoken="1": the value kept as a token named by the group's name, on the target join (e0: a global token)
+        const tokenName = item.attributes['name'];
+        if (item.attributes['settoken'] === '1' && finalJoin && tokenName) {
+            this.cfApi.setToken(finalJoin, tokenName, String(processedValue));
         }
-
-        // Suppress unused-variable warning — setToken used for future token interpolation
-        void setToken;
 
         return processedValue;
     }
