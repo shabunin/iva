@@ -22,6 +22,8 @@ export interface Slot {
   localPort: number;
   host?: string;
   port?: number;
+  /** targeted at its peer in the GUI itself (a device known by address): never retargeted, never given away */
+  fixed?: boolean;
   /** when it last sent or received (a counter) */
   used: number;
   /** the last datagram sent (a panel that hands it back as a frame is caught by it) */
@@ -29,6 +31,9 @@ export interface Slot {
 }
 
 export type FrameListener = (slot: Slot, bytes: Uint8Array) => void;
+
+/** the address a slot waits at till it's given a peer (the device itself, a port nobody answers on) */
+export const PLACEHOLDER = '127.0.0.2';
 
 export class SlotPool {
   readonly slots: Slot[];
@@ -42,6 +47,13 @@ export class SlotPool {
   constructor(private cf: CF, names: string[], localPorts: number[], private log: (m: string) => void = () => {}) {
     this.slots = names.map((name, i) => ({ index: i, name, localPort: localPorts[i], used: 0 }));
     for (const slot of this.slots) {
+      // a system the GUI targets at a peer already (not the placeholder nobody): that peer's slot, as it is
+      const sys = cf.systems?.[slot.name];
+      if (sys && sys.address && sys.address !== PLACEHOLDER && sys.port) {
+        slot.host = sys.address;
+        slot.port = Number(sys.port);
+        slot.fixed = true;
+      }
       cf.watch(cf.FeedbackMatchedEvent, slot.name, 'frame', (_fb: unknown, data: unknown) => this.frame(slot, String(data)));
       // (one system a watch: iViewer takes no array here)
       cf.watch(cf.ConnectionStatusChangeEvent, slot.name, (_system: string, connected: boolean) => {
@@ -58,8 +70,10 @@ export class SlotPool {
   slotFor(host: string, port: number): Slot {
     let slot = this.slots.find((s) => s.host === host && s.port === port);
     if (!slot) {
-      slot = this.slots.find((s) => s.host === undefined) ?? this.slots.reduce((a, b) => (a.used <= b.used ? a : b));
-      if (slot.host !== undefined) this.log(`slot ${slot.name}: ${slot.host}:${slot.port} -> ${host}:${port} (all ${this.slots.length} slots in use)`);
+      const free = this.slots.filter((s) => !s.fixed);
+      if (!free.length) throw new Error(`no slot for ${host}:${port}: every slot is a device's own (more <Matter slots>)`);
+      slot = free.find((s) => s.host === undefined) ?? free.reduce((a, b) => (a.used <= b.used ? a : b));
+      if (slot.host !== undefined) this.log(`slot ${slot.name}: ${slot.host}:${slot.port} -> ${host}:${port} (all ${free.length} free slots in use)`);
       slot.host = host;
       slot.port = port;
       this.retargeted.set(slot.index, Date.now());

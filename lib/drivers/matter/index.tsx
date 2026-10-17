@@ -91,6 +91,15 @@ function deviceJs(dv: MatterDevice, joins: JoinRef[]): string {
 export function Matter({ slots = 10, port = 5550, devices = {}, commission, found, label = 'iva', ipv6 = false, log, store = {}, textEncoding = 'iso-8859-1' }: MatterProps): VNode {
   if (!Number.isInteger(slots) || slots < 1 || slots > 64) throw new Error(`<Matter slots>: 1 to 64 (got ${slots})`);
   const names = Array.from({ length: slots }, (_, i) => `matter${i}`);
+  // devices known by address: the first slots targeted at them in the GUI itself (official iViewer can't retarget a
+  // UDP system at runtime, 2026-10-18: such a system hands its sends back as its own frames); the rest wait for a peer
+  const fixed: { host: string; port: number }[] = [];
+  for (const dv of Object.values(devices)) {
+    if (!dv.address) continue;
+    const t = { host: dv.address, port: dv.port ?? 5540 };
+    if (!fixed.some((f) => f.host === t.host && f.port === t.port)) fixed.push(t);
+  }
+  if (fixed.length >= slots) throw new Error(`<Matter slots={${slots}}>: ${fixed.length} devices by address leave no slot for the rest (more slots)`);
   const prefix = store.prefix ?? 'matter_store_';
   const chunks = store.chunks ?? 8;
   const size = store.size ?? 32768;
@@ -124,7 +133,7 @@ export function Matter({ slots = 10, port = 5550, devices = {}, commission, foun
           no offline queue (official iViewer handed a retargeted system's queued sends back as its own frames,
           2026-10-18; a send lost while the socket binds again is retransmitted by the protocol) */}
       {names.map((name, i) => (
-        <System name={name} protocol="udp" host="127.0.0.2" port={5540} localPort={port + i} accept={false} acceptBroadcasts={false} offlineQueue={false} textEncoding={textEncoding}>
+        <System name={name} protocol="udp" host={fixed[i]?.host ?? '127.0.0.2'} port={fixed[i]?.port ?? 5540} localPort={port + i} accept={false} acceptBroadcasts={false} offlineQueue={false} textEncoding={textEncoding}>
           <Feedback name="frame" regex="(?s)(.+)" />
         </System>
       ))}

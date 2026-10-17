@@ -169,6 +169,24 @@ test('a retargeted slot sends at once, bound again or not (iViewer says nothing 
   assert.equal(p.sent.length, 3);
 });
 
+test('a slot the GUI targets at a device already: that peer\'s, sent on as it is (no retarget: iViewer can\'t), never given to another peer', () => {
+  const p = panel();
+  p.CF.systems.matter0 = { address: '192.168.2.40', port: 5540, enabled: true };
+  const log: string[] = [];
+  const pool = new SlotPool(p.CF, ['matter0', 'matter1'], [5550, 5551], (m) => log.push(m));
+  assert.equal(pool.slotOf('192.168.2.40', 5540)?.name, 'matter0');
+  pool.send('192.168.2.40', 5540, Uint8Array.from([1]));
+  assert.deepEqual(p.props, [], 'nothing retargeted');
+  assert.deepEqual(p.sent, [{ system: 'matter0', bytes: [1] }]);
+  // other peers take the free slot, and share it; the fixed one stays its device's
+  pool.send('192.168.2.41', 5540, Uint8Array.from([2]));
+  pool.send('192.168.2.42', 5540, Uint8Array.from([3]));
+  assert.equal(p.sent[1].system, 'matter1');
+  assert.equal(p.sent[2].system, 'matter1');
+  assert.equal(pool.slotOf('192.168.2.40', 5540)?.name, 'matter0');
+  assert.throws(() => new SlotPool({ ...p.CF, systems: { matter0: { address: '192.168.2.40', port: 5540, enabled: true } } }, ['matter0'], [5550]).send('192.168.2.41', 5540, Uint8Array.from([4])), /every slot is a device's own/);
+});
+
 test('a slot handed its own datagram back as a frame (iViewer, a retargeted UDP system): dropped, said once', () => {
   const p = panel();
   const log: string[] = [];
@@ -332,8 +350,9 @@ export default (
   const r = await compile(path.join(dir, 'app.jsx'));
   assert.deepEqual(r.warnings, []);
   const systems = [...r.xml.matchAll(/<system name="(matter\d)" ip="([^"]*)" port="(\d+)" origin="(\d+)" protocol="udp" alwayson="1" offlinequeue="0" accept="0" acceptBroadcasts="0"[^>]*textEncoding="([^"]*)"[^>]*>\s*<fb name="frame" regex="([^"]*)"/g)].map((m) => m.slice(1));
+  // the lamp is known by address: matter0 is targeted at it in the GUI (no retarget needed - iViewer can't)
   assert.deepEqual(systems, [
-    ['matter0', '127.0.0.2', '5540', '6000', 'iso-8859-1', '(?s)(.+)'],
+    ['matter0', '192.168.2.40', '5540', '6000', 'iso-8859-1', '(?s)(.+)'],
     ['matter1', '127.0.0.2', '5540', '6001', 'iso-8859-1', '(?s)(.+)'],
     ['matter2', '127.0.0.2', '5540', '6002', 'iso-8859-1', '(?s)(.+)'],
   ]);
