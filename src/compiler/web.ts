@@ -60,7 +60,20 @@ export function resolveEntry(entry: string, fromDir: string): string {
  * three come with iva). Cached until a file it read changes.
  */
 export function bundleWebApp(file: string): Bundle {
-  const hit = cache.get(file);
+  return bundleModule(file, 'web');
+}
+
+/**
+ * A <Script entry>: one script for the panel's JavaScript engine (iViewer's
+ * hidden system WebView, the iva panel's), its packages from the project's
+ * node_modules, else iva's. Cached until a file it read changes.
+ */
+export function bundlePanelScript(file: string): Bundle {
+  return bundleModule(file, 'panel');
+}
+
+function bundleModule(file: string, kind: 'web' | 'panel'): Bundle {
+  const hit = cache.get(`${kind}:${file}`);
   if (hit && hit.stamps.every(([f, t]) => stamp(f) === t)) return hit.bundle;
   let result;
   try {
@@ -76,8 +89,8 @@ export function bundleWebApp(file: string): Bundle {
       charset: 'utf8',
       metafile: true,
       // write: false - the names only tell the script from the CSS its imports make
-      outfile: path.join(WEB_LIB, 'app.js'),
-      alias: { 'iva/web': path.join(WEB_LIB, 'client.ts') },
+      outfile: path.join(WEB_LIB, kind === 'web' ? 'app.js' : 'panel.js'),
+      alias: kind === 'web' ? { 'iva/web': path.join(WEB_LIB, 'client.ts') } : {},
       nodePaths: [path.join(IVA_ROOT, 'node_modules')],
       define: { 'process.env.NODE_ENV': '"production"' },
       logLevel: 'silent',
@@ -86,8 +99,9 @@ export function bundleWebApp(file: string): Bundle {
     const m = e.errors?.[0];
     throw new Error(m ? `${m.location ? `${m.location.file}:${m.location.line}: ` : ''}${m.text}` : String(e?.message ?? e));
   }
-  const js = result.outputFiles.find((f) => f.path.endsWith('.js'))?.text ?? '';
-  const css = result.outputFiles.find((f) => f.path.endsWith('.css'))?.text;
+  const files = result.outputFiles ?? [];
+  const js = files.find((f) => f.path.endsWith('.js'))?.text ?? '';
+  const css = files.find((f) => f.path.endsWith('.css'))?.text;
   // CSS the modules import: a <style> the script adds first
   const styled = css ? `(function(){var s=document.createElement('style');s.textContent=${JSON.stringify(css)};document.head.appendChild(s)})();\n${js}` : js;
   const code = styled.replace(/<\/(script)/gi, '<\\/$1');
@@ -96,6 +110,6 @@ export function bundleWebApp(file: string): Bundle {
     .map((f) => path.resolve(f))
     .filter((f) => !f.startsWith(path.join(IVA_ROOT, 'node_modules')) || f === file);
   const bundle = { code: Buffer.from(code, 'utf8'), inputs };
-  cache.set(file, { bundle, stamps: [...new Set([file, ...inputs])].map((f) => [f, stamp(f)]) });
+  cache.set(`${kind}:${file}`, { bundle, stamps: [...new Set([file, ...inputs])].map((f) => [f, stamp(f)]) });
   return bundle;
 }

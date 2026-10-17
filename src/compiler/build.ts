@@ -60,7 +60,7 @@ function drawImage(d: DrawRef, sc: number): Buffer {
 }
 import { el, parseXml, serialize, type XNode } from './xml.js';
 import { drawnFile, fileName } from './names.js';
-import { bundleWebApp, HTTP_RUNTIME, resolveEntry } from './web.js';
+import { bundlePanelScript, bundleWebApp, HTTP_RUNTIME, resolveEntry } from './web.js';
 
 /** The build's folders (<Project folders>, the default): assets/ is iViewer's asset folder (<imagefolder>). */
 export const IMAGES_DIR = 'assets';
@@ -765,7 +765,7 @@ export class Builder {
     }
   }
 
-  /** Items of a page / subpage: <Group>s opened (their x / y added), <Script> / <OnStart> lifted to the project. */
+  /** Items of a page / subpage: <Group>s opened (their x / y added), <Script> / <System> / <Token> / <OnStart> lifted to the project. */
   /**
    * <Text bg> / a border: iViewer draws no background for text (GUI Designer
    * shows none either), so a drawn box goes behind the text instead.
@@ -784,6 +784,7 @@ export class Builder {
     for (const n of nodes.flatMap((x) => this.textBox(x))) {
       if (n.type === 'Script') this.script(n);
       else if (n.type === 'System') this.system(n);
+      else if (n.type === 'Token') this.token(n);
       else if (n.type === 'HttpServer') this.httpServer(n);
       else if (n.type === 'OnStart') this.onStart(n);
       else if (n.type === 'Group') out.push(...this.items(this.elements(n), dx + (n.props.x ?? 0), dy + (n.props.y ?? 0), false));
@@ -1205,15 +1206,34 @@ export class Builder {
   private token(node: VNode) {
     const p = node.props;
     const name = p.name.startsWith('[') ? p.name : `[${p.name}]`;
-    this.tokens.push(this.withXml(this.E('token', { name, value: p.value ?? '', persist: p.persist ? 1 : undefined }), node));
+    const token = this.withXml(this.E('token', { name, value: p.value ?? '', persist: p.persist ? 1 : undefined }), node);
+    // the same token from several places (a component that brings its own): once
+    const same = this.tokens.find((x) => x.attrs.find(([k]) => k === 'name')?.[1] === name);
+    if (same) {
+      if (serialize(same) === serialize(token)) return;
+      throw this.err(node, `two different tokens named ${name}`);
+    }
+    this.tokens.push(token);
   }
 
   private script(node: VNode) {
     const p = node.props;
     const code = p.code ?? this.text(node);
-    if ((p.src === undefined) === (code === undefined)) throw this.err(node, 'give src="file.js" or the code, one of them');
+    if ([p.src, code, p.entry].filter((x) => x !== undefined).length !== 1) throw this.err(node, 'give src="file.js", entry="module.ts" or the code, one of them');
     let out: ScriptOut;
-    if (p.src !== undefined) {
+    if (p.entry !== undefined) {
+      // a module and its packages, bundled into one script (cached: the same bundle again is the same code)
+      if (!p.name) throw this.err(node, 'a bundled entry needs a name (name="driver.js")');
+      let file: string;
+      try {
+        file = resolveEntry(String(p.entry), this.dirOf(node));
+        const bundle = bundlePanelScript(file);
+        for (const f of bundle.inputs) this.inputs.add(f);
+        out = { name: p.name, code: bundle.code.toString('utf8') };
+      } catch (e: any) {
+        throw this.err(node, `entry ${p.entry}: ${e.message}`);
+      }
+    } else if (p.src !== undefined) {
       const from = this.dirOf(node);
       const file = path.resolve(from, p.src);
       if (!fs.existsSync(file)) throw this.err(node, `script not found: ${p.src}`);

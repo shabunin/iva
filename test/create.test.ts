@@ -59,8 +59,8 @@ test("the references in a project: iva's docs copied, their links to each other 
   assert.ok(agents.includes('IVA-UI.md') && agents.includes('IVA-WEB.md') && agents.includes('IVA-DRIVERS.md') && !agents.includes("iva's docs/"));
   // the drivers' doc: its links to the examples point at iva's repo (a project has no examples/)
   const drivers = fs.readFileSync(path.join(r.dir, 'IVA-DRIVERS.md'), 'utf8');
-  assert.match(drivers, /# iva drivers/);
-  assert.ok(drivers.includes('iva/drivers/upnp'));
+  assert.match(drivers, /^# Drivers/m);
+  assert.ok(drivers.includes('iva/drivers/matter') && drivers.includes('iva/drivers/upnp'));
   // written again (a newer iva): the same files
   fs.writeFileSync(path.join(r.dir, 'IVA-UI.md'), 'stale');
   assert.deepEqual(writeDocs(r.dir), ['IVA.md', 'IVA-UI.md', 'IVA-WEB.md', 'IVA-DRIVERS.md']);

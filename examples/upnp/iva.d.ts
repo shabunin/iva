@@ -829,6 +829,12 @@ declare module 'iva' {
       name?: string;
       /** inline code instead of src */
       code?: string;
+      /**
+       * a module (JavaScript / TypeScript, relative to the .jsx) bundled with what
+       * it imports - npm packages from the project's node_modules, else iva's -
+       * into one script for the panel (a driver bringing a library: iva/drivers/matter)
+       */
+      entry?: string;
   }
   export interface SoundProps extends XmlProp {
       name: string;
@@ -1924,6 +1930,76 @@ declare module 'iva/ui' {
   export declare const SideMenu: Ui['SideMenu'];
   export declare const ConfirmDialog: Ui['ConfirmDialog'];
   export default ui;
+}
+
+declare module 'iva/drivers/matter' {
+  /**
+   * iva/drivers/matter - Matter devices from the panel, with matter.js over a
+   * pool of UDP systems. Works in official iViewer as well as in iva's own
+   * runtime: a <System protocol="udp"> a peer (Matter sessions are per peer,
+   * and a node answers to the address and port a request came from),
+   * retargeted with CF.setSystemProperties before any session exists;
+   * CF.send with a byte a char; a catch-all <Feedback> for what comes;
+   * CF.startLookup for DNS-SD; persisted tokens for what the controller
+   * keeps (its fabric, the nodes). The component brings it all: the systems,
+   * the tokens, the script (matter.js and the adapter, bundled by iva -
+   * iva-matter.js, once) and the <OnStart> that starts it.
+   *
+   *   import { Matter } from 'iva/drivers/matter';
+   *   <Matter slots={10} devices={{ lamp: { node: '1', cluster: 'OnOff', join: d('lamp') } }}
+   *           commission={{ code: s('setupCode'), go: d('commission'), status: s('matterStatus') }} found={s('matterFound')} />
+   *
+   * Docs: docs/drivers.md.
+   */
+  import { type Join, type VNode } from 'iva';
+  export type MatterCluster = 'OnOff' | 'LevelControl' | 'ColorControl';
+  export interface MatterDevice {
+      /** where the node is, when Bonjour can't find it (its operational address; port default 5540) */
+      address?: string;
+      port?: number;
+      /** the node id the controller gave it when commissioning (the status join shows it) */
+      node: number | string;
+      /** the endpoint the cluster is on (default 1) */
+      endpoint?: number;
+      cluster: MatterCluster;
+      /** OnOff: a digital join (on / off, both ways); LevelControl: an analog one (0..65535 for level 0..254) */
+      join?: Join;
+      /** ColorControl: analog joins, 0..65535 for 0..254 */
+      hue?: Join;
+      saturation?: Join;
+  }
+  export interface MatterProps {
+      /** UDP systems in the pool: a peer each (default 10) */
+      slots?: number;
+      /** the first slot's local port; the next ones follow (default 5550) */
+      port?: number;
+      /** the devices, by name */
+      devices?: Record<string, MatterDevice>;
+      /** commissioning: the setup code (serial), Go (digital, momentary), what the controller says (serial) */
+      commission?: {
+          code: Join;
+          go: Join;
+          status?: Join;
+      };
+      /** serial join: the devices Bonjour finds, as JSON rows { name, kind, where, info, slot } for a DataTable */
+      found?: Join;
+      /** the controller's name in the devices' fabrics (default 'iva') */
+      label?: string;
+      /** IPv6 addresses too (default false: a UDP system to an IPv6 address is the probe's to tell) */
+      ipv6?: boolean;
+      /** matter.js's log level in CF.log: debug, info (default), notice, warn, error */
+      log?: string;
+      /** the persisted tokens the controller's storage goes to: <prefix>0..<chunks-1>, `size` chars each (default matter_store_, 8, 32768) */
+      store?: {
+          prefix?: string;
+          chunks?: number;
+          size?: number;
+      };
+      /** the systems' text encoding: a byte a char (default iso-8859-1, GUI Designer's; '' for none) */
+      textEncoding?: string;
+  }
+  /** The Matter driver: its systems, tokens, script and start, from where it's placed (a page, a component). */
+  export declare function Matter({ slots, port, devices, commission, found, label, ipv6, log, store, textEncoding }: MatterProps): VNode;
 }
 
 declare module 'iva/drivers/upnp' {

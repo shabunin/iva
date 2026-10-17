@@ -10,4 +10,4 @@ iva build    # dist/{{slug}}.gui (+ assets/: images, scripts/) for iViewer / GUI
 iva serve    # to iViewer on a device: GUI File URL http://<this machine>:8019
 ```
 
-Elements and props: `IVA.md`. The iva/ui components: `IVA-UI.md`. Web apps: `IVA-WEB.md`. Network drivers (UPnP): `IVA-DRIVERS.md`. Notes for AI assistants: `AGENTS.md`.
+Elements and props: `IVA.md`. The iva/ui components: `IVA-UI.md`. Web apps: `IVA-WEB.md`. Drivers (Matter, UPnP): `IVA-DRIVERS.md`. Notes for AI assistants: `AGENTS.md`.
