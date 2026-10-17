@@ -332,10 +332,11 @@ test('two <Mqtt> on one system add up; a script subscribes with a handler and pu
   // a subscription added while connected goes out at once
   M.subscribe('mqtt', 'e', () => {});
   assert.deepEqual(packets()[0].topics, [{ filter: 'e', qos: 0 }]);
+  // off, the address, on: each its own call (iViewer keeps the old address when it comes with enabled: false)
   M.reconnect('mqtt', '10.0.0.2', 1884);
-  assert.deepEqual(p.props, [['mqtt', { enabled: false, address: '10.0.0.2', port: 1884 }]]);
+  assert.deepEqual(p.props, [['mqtt', { enabled: false }], ['mqtt', { address: '10.0.0.2', port: 1884 }]]);
   p.tick();
-  assert.deepEqual(p.props[1], ['mqtt', { enabled: true }]);
+  assert.deepEqual(p.props[2], ['mqtt', { enabled: true }]);
 });
 
 test('a refused CONNACK: the status says the code, nothing is subscribed; the next connect tries again', () => {

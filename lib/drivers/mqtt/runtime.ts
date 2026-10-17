@@ -415,15 +415,21 @@ var IvaMqtt = (function () {
     },
     /** a message from a script: IvaMqtt.publish('mqtt', 'home/say', 'hello', { qos: 1, retain: true }) */
     publish: function (system, topic, payload, o) { publish(broker(system), topic, payload, o); },
-    /** another broker (or the same one afresh): the system's address changed and started over */
+    /**
+     * another broker (or the same one afresh): the system's address changed
+     * and started over - off, the address, on again, each its own call, the
+     * way iViewer takes a retarget (with the address in the same call as
+     * enabled: false it keeps the old one)
+     */
     reconnect: function (system, host, port) {
       var b = broker(system);
       stopPing(b);
       b.connected = false;
-      var changes = { enabled: false };
+      CF.setSystemProperties(system, { enabled: false });
+      var changes = {};
       if (host) changes.address = host;
       if (port) changes.port = Number(port);
-      CF.setSystemProperties(system, changes);
+      if (host || port) CF.setSystemProperties(system, changes);
       status(b, 'Connecting');
       setTimeout(function () { CF.setSystemProperties(system, { enabled: true }); }, 300);
     },

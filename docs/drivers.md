@@ -204,7 +204,7 @@ connection and the system tries again in 3 s.
 ```js
 IvaMqtt.publish('mqtt', 'home/say', 'hello', { qos: 1, retain: true });
 IvaMqtt.subscribe('mqtt', 'sensors/#', function (topic, payload) { CF.log(topic + ': ' + payload); });
-IvaMqtt.reconnect('mqtt', host, port);   // another broker (the example's Host / Port fields)
+IvaMqtt.reconnect('mqtt', host, port);   // another broker (the example's Host / Port fields): off, the address, on
 IvaMqtt.encode.publish('t', IvaMqtt.utf8('hi'));   // the codec: encode, decode, parse, matches, utf8, text
 ```
 
