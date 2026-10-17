@@ -60,9 +60,12 @@ export class SlotPool {
       slot.host = host;
       slot.port = port;
       this.retargeted.set(slot.index, Date.now());
-      this.cf.setSystemProperties(slot.name, { enabled: false });
-      this.cf.setSystemProperties(slot.name, { address: host, port, localPort: slot.localPort });
-      this.cf.setSystemProperties(slot.name, { enabled: true });
+      const target = slot;
+      this.tell(target, 'retarget', () => {
+        this.cf.setSystemProperties(target.name, { enabled: false });
+        this.cf.setSystemProperties(target.name, { address: host, port, localPort: target.localPort });
+        this.cf.setSystemProperties(target.name, { enabled: true });
+      });
     }
     slot.used = ++this.clock;
     return slot;
@@ -75,7 +78,17 @@ export class SlotPool {
 
   send(host: string, port: number, bytes: Uint8Array): void {
     const slot = this.slotFor(host, port);
-    this.cf.send(slot.name, toBinary(bytes));
+    this.tell(slot, `send ${bytes.length} B`, () => this.cf.send(slot.name, toBinary(bytes)));
+  }
+
+  /** a CF call on a slot: what it throws (a panel's API refusing something) said in the log, then thrown on */
+  private tell(slot: Slot, what: string, call: () => void): void {
+    try {
+      call();
+    } catch (e) {
+      this.log(`slot ${slot.name}: ${what} failed: ${(e as Error)?.message ?? e}`);
+      throw e;
+    }
   }
 
   /** frames as they come, with the slot (its peer) they came on; returns what stops listening */
