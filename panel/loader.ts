@@ -17,6 +17,8 @@ export interface Manifest {
   imageMap: Record<string, string>;
   scriptMap: Record<string, string>;
   missingScripts: string[];
+  /** why each missing script is missing (its fetch's error), for the log */
+  problems: string[];
   /** a file of the GUI by its name (a web view's url="page.html") */
   fileUrl: (name: string) => string | undefined;
 }
@@ -44,12 +46,18 @@ export interface Download {
   server?: string;
 }
 
+/** what fetches: the app's HTTP client (Rust); a test's stand-in through useFetch */
+let fetching: typeof hostFetch = hostFetch;
+export const useFetch = (f: typeof hostFetch) => {
+  fetching = f;
+};
+
 /** GET url - with `known` (a saved copy's ETag, Last-Modified): null when the server says it's the same */
 async function download(url: string, known?: { etag?: string; lastModified?: string }): Promise<Download | null> {
   const headers: Record<string, string> = {};
   if (known?.etag) headers['If-None-Match'] = known.etag;
   if (known?.lastModified) headers['If-Modified-Since'] = known.lastModified;
-  const res = await hostFetch(url, { method: 'GET', headers, connectTimeout: 15000 });
+  const res = await fetching(url, { method: 'GET', headers, connectTimeout: 15000 });
   if (res.status === 304) return null;
   if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
   const header = (name: string) => res.headers.get(name) ?? undefined;
@@ -173,17 +181,26 @@ async function remoteManifest(at: string, guiXml: string): Promise<Manifest> {
   }
   const scriptMap: Record<string, string> = {};
   const missingScripts: string[] = [];
-  await Promise.all(scriptNames(guiXml).map(async (name) => {
-    try {
-      scriptMap[name] = new TextDecoder().decode(await get(new URL(name.replace(/\\/g, '/'), files).href));
-    } catch {
-      missingScripts.push(name);
+  const problems: string[] = [];
+  // a few at a time (a dozen at once and a flaky link - ZeroTier - drops one now and then), a failed one asked for once more
+  await each(scriptNames(guiXml), 4, async (name) => {
+    const href = new URL(name.replace(/\\/g, '/'), files).href;
+    let error: unknown;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        scriptMap[name] = new TextDecoder().decode(await get(href));
+        return;
+      } catch (e) {
+        error = e;
+      }
     }
-  }));
+    missingScripts.push(name);
+    problems.push(`${name}: ${error instanceof Error ? error.message : String(error)} (twice)`);
+  });
   const path = new URL(at).pathname;
   const title = titleOf(guiXml, decodeURIComponent(path.split('/').pop() || new URL(at).host));
   // a project file (CF.loadAsset, a web view's page): in the image folder, where iViewer keeps them
-  return { url: at, title, guiXml, imageMap, scriptMap, missingScripts, fileUrl: (name) => new URL(name.replace(/\\/g, '/'), files).href };
+  return { url: at, title, guiXml, imageMap, scriptMap, missingScripts, problems, fileUrl: (name) => new URL(name.replace(/\\/g, '/'), files).href };
 }
 
 /**
@@ -233,7 +250,7 @@ function zipManifest(files: Map<string, Uint8Array<ArrayBuffer>>, id: string): M
   }
   const title = titleOf(guiXml, entry.split('/').pop()!.replace(/\.gui$/i, ''));
   return {
-    url: id, title, guiXml, imageMap, scriptMap, missingScripts,
+    url: id, title, guiXml, imageMap, scriptMap, missingScripts, problems: missingScripts.map((n) => `${n}: not in the archive`),
     // a project file (CF.loadAsset, a web view's page): in the image folder, else beside the .gui
     fileUrl: (name) => {
       const n = name.replace(/\\/g, '/');

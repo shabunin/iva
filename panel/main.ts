@@ -138,7 +138,8 @@ async function show(m: Manifest) {
   // a GUI with one orientation: shown in it, whichever way the device is
   orientation = (current.renderer.targetOrientation as Orientation | undefined) ?? orientation;
   fit();
-  say(m.missingScripts.length ? `missing scripts: ${m.missingScripts.join(', ')}` : '');
+  for (const p of m.problems) noteError(p);
+  say(m.missingScripts.length ? `missing scripts: ${m.missingScripts.join(', ')} (three fingers held: why)` : '');
 }
 
 /**
