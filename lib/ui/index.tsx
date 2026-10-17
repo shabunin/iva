@@ -1195,27 +1195,55 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     );
   }
 
-  /** one of several: each option a button on its own digital join, the index in `join` */
-  function oneOf(join: Join, count: number, value: number, labels?: string[], labelJoin?: JoinRef) {
-    const id = JSON.stringify(keyOf(join));
-    const option = (i: number): JoinRef => d(`ui_${keyOf(join)}_${i}`);
-    const extra = labels && labelJoin ? `, ${JSON.stringify(labels)}, ${jsJoin('s', labelJoin)}` : '';
+  /** where a group's pill goes: under each option (xs, and ys where they're one under another), its size and corners */
+  interface Pill {
+    xs: number[];
+    ys?: number[];
+    y?: number;
+    w: number;
+    h: number;
+    radius: number;
+    color?: string;
+  }
+
+  /**
+   * one of several: each option a button on its own digital join, the index
+   * in `join`. With a `pill`: one accent image under the options (transparent
+   * buttons over it), slid under the one chosen - a tap's or a value's.
+   */
+  function oneOf(join: Join, count: number, value: number, labels?: string[], labelJoin?: JoinRef, pill?: Pill) {
+    const key = keyOf(join);
+    const id = JSON.stringify(key);
+    const option = (i: number): JoinRef => d(`ui_${key}_${i}`);
+    const pillJoin: JoinRef = s(`ui_${key}_pill`);
+    const args = [
+      id, jsJoin('a', join), `[${Array.from({ length: count }, (_, i) => jsJoin('d', option(i))).join(', ')}]`, String(value),
+      labels && labelJoin ? JSON.stringify(labels) : 'undefined', labelJoin ? jsJoin('s', labelJoin) : 'undefined',
+      pill ? `{ join: ${jsJoin('s', pillJoin)}, xs: ${JSON.stringify(pill.xs)}${pill.ys ? `, ys: ${JSON.stringify(pill.ys)}` : ''}, time: 0.18 }` : 'undefined',
+    ];
+    while (args[args.length - 1] === 'undefined') args.pop();
     const start = (
-      <OnStart js={`IvaUI.group(${id}, ${jsJoin('a', join)}, [${Array.from({ length: count }, (_, i) => jsJoin('d', option(i))).join(', ')}], ${value}${extra});`}
-               joins={[typeof join === 'object' ? join : a(join), ...(labelJoin ? [labelJoin] : [])]} />
+      <OnStart js={`IvaUI.group(${args.join(', ')});`} joins={[typeof join === 'object' ? join : a(join), ...(labelJoin ? [labelJoin] : []), ...(pill ? [pillJoin] : [])]} />
     );
-    return { option, pick: (i: number) => `IvaUI.pick(${id}, ${i})`, start };
+    const at = Math.max(0, Math.min(count - 1, value));
+    const image = pill ? (
+      <Image x={pill.xs[at]} y={pill.ys ? pill.ys[at] : pill.y ?? 0} w={pill.w} h={pill.h} join={pillJoin} clickthrough
+             src={draw.box({ w: pill.w, h: pill.h, radius: pill.radius, fill: pill.color ?? t.accent })} />
+    ) : null;
+    return { option, pick: (i: number) => `IvaUI.pick(${id}, ${i})`, start, pill: image };
   }
 
   function Segmented({ options, join, value = 0, x = 0, y = 0, w = 332, h = 48 }: SegmentedProps): VNode {
-    const g = oneOf(join, options.length, value);
     const seg = (w - 8) / options.length;
+    const xs = options.map((_, i) => 4 + Math.round(i * seg));
+    const g = oneOf(join, options.length, value, undefined, undefined, { xs, y: 4, w: Math.round(seg), h: h - 8, radius: t.radius - 3 });
     return (
       <Group x={x} y={y}>
         <Box w={w} h={h} bg={t.raised} radius={t.radius} />
+        {g.pill}
         {options.map((o, i) => (
-          <Button x={4 + Math.round(i * seg)} y={4} w={Math.round((i + 1) * seg) - Math.round(i * seg)} h={h - 8} text={o} join={g.option(i)} feedback="none"
-                  js={g.pick(i)} radius={t.radius - 3} bg={t.raised} color={t.muted} active={{ bg: t.accent, color: t.text }} font={font} fontSize={18} />
+          <Button x={xs[i]} y={4} w={Math.round((i + 1) * seg) - Math.round(i * seg)} h={h - 8} text={o} join={g.option(i)} feedback="none"
+                  js={g.pick(i)} color={t.muted} active={{ color: t.text }} font={font} fontSize={18} />
         ))}
         {runtime}
         {g.start}
@@ -1224,14 +1252,18 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
   }
 
   function SceneBar({ scenes, join, value = 0, x = 0, y = 0, w = 742, h = 120, gap = 12 }: SceneBarProps): VNode {
-    const g = oneOf(join, scenes.length, value);
     const each = (w - gap * (scenes.length - 1)) / scenes.length;
+    const tw = Math.round(each);
+    const xs = scenes.map((_, i) => Math.round(i * (each + gap)));
+    const g = oneOf(join, scenes.length, value, undefined, undefined, { xs, w: tw, h, radius: t.radius });
     return (
       <Group x={x} y={y}>
+        {/* a tile each (raised), the pill under the one chosen, the buttons transparent over them */}
+        {scenes.map((_, i) => <Box x={xs[i]} w={tw} h={h} bg={t.raised} radius={t.radius} />)}
+        {g.pill}
         {scenes.map((sc, i) => (
-          <Button x={Math.round(i * (each + gap))} w={Math.round(each)} h={h} text={sc.title} join={g.option(i)} feedback="none"
-                  js={g.pick(i)} cmd={sc.cmd} icon={fa(sc.icon, { size: Math.round(h * 0.28) })} iconAlign="top"
-                  radius={t.radius} bg={t.raised} active={{ bg: t.accent }} font={font} fontSize={19} />
+          <Button x={xs[i]} w={tw} h={h} text={sc.title} join={g.option(i)} feedback="none"
+                  js={g.pick(i)} cmd={sc.cmd} icon={fa(sc.icon, { size: Math.round(h * 0.28) })} iconAlign="top" font={font} fontSize={19} />
         ))}
         {runtime}
         {g.start}

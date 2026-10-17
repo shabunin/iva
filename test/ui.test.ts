@@ -408,3 +408,35 @@ export default (
   assert.match(r.scripts.find((x) => x.name === 'iva-start.js')!.code!, /owned: \[\[\], \[\]\]/);
   assert.deepEqual(r.warnings, []);
 });
+
+test('Segmented and SceneBar: transparent options over one accent pill on a join, placed under the one chosen; the group set up with where the pill goes', async () => {
+  const dir = tmpDir('iva-oneof-');
+  fs.writeFileSync(path.join(dir, 'app.jsx'), `import { Segmented, SceneBar } from 'iva/ui';
+export default (
+  <Project name="T" width={1280} height={800}>
+    <Page name="P">
+      <Segmented x={10} y={10} w={332} h={48} options={['Heat', 'Cool', 'Auto']} join="mode" value={1} />
+      <SceneBar x={10} y={100} w={742} h={120} scenes={[{ icon: 'sun', title: 'Morning' }, { icon: 'moon', title: 'Evening', cmd: 'Night' }]} join="scene" />
+    </Page>
+  </Project>
+);
+`);
+  const r = await compile(path.join(dir, 'app.jsx'));
+  const page = /<page name="P"[\s\S]*?<\/page>/.exec(r.xml)![0];
+  // the segmented: its pill (one image on its join) under the second option; the options on their joins, a tap picks
+  const seg = (332 - 8) / 3;
+  assert.match(page, new RegExp(`<img x="${10 + 4 + Math.round(seg)}" y="14" w="${Math.round(seg)}" h="40" j="${r.joins.serial.ui_mode_pill}" clickthrough="1"`), 'the pill under the second option (the group offset added)');
+  for (const [i, text] of ['Heat', 'Cool', 'Auto'].entries()) {
+    assert.match(page, new RegExp(`<btn j="${r.joins.digital[`ui_mode_${i}`]}" [^>]*js="IvaUI\\.pick\\(&quot;mode&quot;, ${i}\\)"[^>]*>\\s*<inactive s="0">${text}<`));
+  }
+  const themeOf = (join: number) => page.match(new RegExp(`<btn j="${join}" [^>]*t="(\\w+)"`))![1];
+  const css = (name: string) => r.xml.match(new RegExp(`<theme type="button" name=".${name}\\[state='0'\\]"><!\\[CDATA\\[([^\\]]*)`))![1];
+  assert.doesNotMatch(css(themeOf(r.joins.digital.ui_mode_0)), /background/);
+  // the scene bar: a raised tile each, the pill (tile-sized) under the first, transparent buttons with their icons
+  assert.match(page, new RegExp(`<img x="10" y="100" w="365" h="120" j="${r.joins.serial.ui_scene_pill}" clickthrough="1"`));
+  assert.equal((page.match(/boxes\/365x120-r\d+-\w+\.png/g) ?? []).length, 2, 'a raised tile each');
+  const start = r.scripts.find((x) => x.name === 'iva-start.js')!.code!;
+  assert.match(start, new RegExp(`IvaUI\\.group\\("mode", Joins\\.a\\["mode"\\], \\[Joins\\.d\\["ui_mode_0"\\], Joins\\.d\\["ui_mode_1"\\], Joins\\.d\\["ui_mode_2"\\]\\], 1, undefined, undefined, \\{ join: Joins\\.s\\["ui_mode_pill"\\], xs: \\[4,${4 + Math.round(seg)},${4 + Math.round(2 * seg)}\\], time: 0\\.18 \\}\\);`));
+  assert.match(start, /IvaUI\.group\("scene", [^;]*xs: \[0,377\], time: 0\.18 \}\);/);
+  assert.deepEqual(r.warnings, []);
+});

@@ -592,3 +592,32 @@ test("Screens' tabs on the device: the first screen shown; a tap on another ligh
   assert.deepEqual(d.flips, [], 'no page flipped');
   assert.equal(d.props.at(-1)!.props.x, 847);
 });
+
+test("a one-of group's pill: under the first value at once, sliding to a pick or to a value from elsewhere, not twice to the same", () => {
+  const d = device();
+  d.IvaUI.group('mode', 'a1', ['d1', 'd2', 'd3'], 1, undefined, undefined, { join: 's9', xs: [4, 112, 220], time: 0.18 });
+  d.run();
+  assert.deepEqual([d.joins.a1, d.joins.d1, d.joins.d2, d.joins.d3], [1, 0, 1, 0]);
+  assert.deepEqual(d.props.at(-1), { props: { join: 's9', x: 112 }, duration: 0 }, 'put under the initial choice at once');
+  assert.ok(d.props.every((p) => p.duration === 0), 'nothing slides while the group starts');
+  d.run(600);
+  const n = d.props.length;
+  d.IvaUI.pick('mode', 2);
+  d.run();
+  assert.deepEqual([d.joins.a1, d.joins.d2, d.joins.d3], [2, 0, 1]);
+  assert.deepEqual(d.props.slice(n), [{ props: { join: 's9', x: 220 }, duration: 0.18 }], 'slid to the one picked');
+  // the value from a feedback: the pill follows; the same value again: no move
+  d.user('a1', 0);
+  d.run();
+  assert.deepEqual(d.props.at(-1), { props: { join: 's9', x: 4 }, duration: 0.18 });
+  const m = d.props.length;
+  d.user('a1', 0);
+  d.run();
+  assert.equal(d.props.length, m);
+  // rows one under another (ys): a y too
+  d.IvaUI.group('pick', 'a2', ['d4', 'd5'], 0, undefined, undefined, { join: 's8', xs: [0, 0], ys: [0, 48], time: 0.18 });
+  d.run(600);
+  d.IvaUI.pick('pick', 1);
+  d.run();
+  assert.deepEqual(d.props.at(-1), { props: { join: 's8', x: 0, y: 48 }, duration: 0.18 });
+});

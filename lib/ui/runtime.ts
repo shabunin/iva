@@ -171,12 +171,26 @@ var IvaUI = (function () {
       CF.setJoin(s.join, toJoin(s.v, o.min, o.max));
       CF.setJoin(s.text, fmt(s.v, o.decimals, o.unit));
     },
-    /** one of several (segmented, scenes): the index in an analog join, each option's digital join on when chosen */
-    group: function (id, value, joins, initial, labels, labelJoin) {
-      groups[id] = { value: value, joins: joins };
+    /**
+     * one of several (segmented, scenes): the index in an analog join, each
+     * option's digital join on when chosen. With a pill ({ join, xs, ys, time }:
+     * the accent image under the options), it slides under the one chosen -
+     * put there at once while the group starts (its first value, the initial
+     * pick), sliding for every change after.
+     */
+    group: function (id, value, joins, initial, labels, labelJoin, pill) {
+      var g = { value: value, joins: joins, pill: pill, born: Date.now() };
+      groups[id] = g;
       CF.watch(CF.JoinChangeEvent, value, function (j, v) {
-        for (var i = 0; i < joins.length; i++) CF.setJoin(joins[i], i == v ? 1 : 0);
-        if (labels && labelJoin) CF.setJoin(labelJoin, labels[Number(v)] === undefined ? '' : labels[Number(v)]);
+        var i = Number(v);
+        for (var k = 0; k < joins.length; k++) CF.setJoin(joins[k], k === i ? 1 : 0);
+        if (labels && labelJoin) CF.setJoin(labelJoin, labels[i] === undefined ? '' : labels[i]);
+        if (pill && pill.xs[i] !== undefined && g.at !== i) {
+          var to = { join: pill.join, x: pill.xs[i] };
+          if (pill.ys) to.y = pill.ys[i];
+          CF.setProperties(to, 0, Date.now() - g.born < 500 ? 0 : pill.time, CF.AnimationCurveEaseInOut);
+          g.at = i;
+        }
       }, true);
       if (initial !== undefined) IvaUI.pick(id, initial);
     },
