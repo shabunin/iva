@@ -22,7 +22,9 @@ test('the iva/ui gallery builds: one runtime script, the shared subpages once', 
   // placed on every page
   assert.equal((r.xml.match(/<subpage name="ui_menu" x=/g) ?? []).length, (r.xml.match(/<page name=/g) ?? []).length);
   // the live list: a row held 700 ms goes (a hold action on a button over the row), no swipe to delete
-  assert.match(r.xml, /<subpage name="gallery_live_row" w="\d+" h="56"[\s\S]*?<press delay="0" hold="700" repeat="0" js="GalleryList\.hold\(list, listIndex\)" \/>[\s\S]*?<\/subpage>/);
+  const liveRow = /<subpage name="gallery_live_row" w="\d+" h="56"[\s\S]*?<\/subpage>/.exec(r.xml)![0];
+  assert.match(liveRow, /<btn j="0" [^>]*>\s*<actions>\s*<action>\s*<press delay="0" hold="0" repeat="0" js="GalleryList\.tap\(\)" \/>\s*<press delay="0" hold="700" repeat="0" js="GalleryList\.arm\(list, listIndex\)" \/>/, 'the row: a tap, a hold');
+  assert.match(liveRow, /<btn j="4" [^>]*>\s*<actions>\s*<action>\s*<press delay="0" hold="0" repeat="0" js="GalleryList\.del\(list, listIndex, value\)" \/>\s*<press delay="0" hold="700" repeat="0" js="GalleryList\.arm\(list, listIndex\)" \/>/, 'Delete: on the item\'s join 4');
   assert.match(r.xml, new RegExp(`<list [^>]*j="${r.joins.list.liveRooms}"[^>]*swipedelete="0"`));
   assert.deepEqual(r.warnings, []);
   // the phone: what a list can't hold on screens of their own - nothing in a list it can't show

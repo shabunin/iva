@@ -53,9 +53,9 @@ const scrollBox = (c, title) => {
 /**
  * A list a script changes (scripts/lists.js): an item comes in at the top - opening in the middle, the
  * others sliding down - and goes off to the left (insertTransition / deleteTransition); a swipe left on
- * one held a moment goes (a transparent button over the row: its hold action removes the item, by the
- * `list` and `listIndex` a list item's script gets). Title items use the list's title subpage; an item's
- * toggle stays with it.
+ * one held a moment shows its Delete button (the item's join 4 goes high: the button's active look), a tap
+ * on that removes the item, a tap anywhere else hides it again - by the `list` and `listIndex` a list
+ * item's script gets. Title items use the list's title subpage; an item's toggle stays with it.
  */
 const liveCard = (c, compact) => {
   const m = compact ? 16 : 28;
@@ -68,10 +68,14 @@ const liveCard = (c, compact) => {
   const row = (
     <Subpage name="gallery_live_row" w={lw} h={56}>
       <Box x={0} y={3} w={lw} h={50} radius={t.radius} bg={t.raised} />
-      {/* held 700 ms: the item goes (the toggle on top of it keeps its own touches) */}
-      <Button x={0} y={3} w={lw} h={50} feedback="none" onHold={js('GalleryList.hold(list, listIndex)')} holdTime={700} />
+      {/* the row: a tap hides a Delete button shown, a hold of 700 ms shows this row's (the toggle on top keeps its touches) */}
+      <Button x={0} y={3} w={lw} h={50} feedback="none" onPress={js('GalleryList.tap()')} onHold={js('GalleryList.arm(list, listIndex)')} holdTime={700} />
       <Text x={16} y={6} w={lw - 140} h={24} join={1} font={t.font} fontSize={18} />
       <Text x={16} y={29} w={lw - 140} h={20} join={2} color={t.muted} font={t.font} fontSize={13} />
+      {/* Delete: on the item's join 4 - invisible till a hold raises it, then red; a tap on it (armed) removes the item */}
+      <Button x={lw - 232} y={8} w={112} h={40} join={4} feedback="none" text="Delete" color="#00000000" radius={8}
+              active={{ bg: t.danger, color: '#FFFFFF' }} font={t.font} fontSize={16} bold
+              onPress={js('GalleryList.del(list, listIndex, value)')} onHold={js('GalleryList.arm(list, listIndex)')} holdTime={700} />
       <ui.Toggle x={lw - 112} y={4} w={104} h={48} join={3} />
     </Subpage>
   );
@@ -83,7 +87,7 @@ const liveCard = (c, compact) => {
   return (
     <ui.Card title={compact ? undefined : 'Live list'} {...c}>
       <Text x={m} y={top} w={lw} h={compact ? 34 : 44} wrap valign="top" color={t.muted} font={t.font} fontSize={compact ? 13 : 15}
-            text="Items come in (opening) and go (to the left) as a script adds and removes them; hold one to delete it." />
+            text="Items come in (opening) and go (to the left) as a script adds and removes them; hold one for its Delete button." />
       <ui.IconButton x={m} y={by} w={bw} h={bh} icon="plus" text="Add" js="GalleryList.add()" />
       <ui.IconButton x={m + bw + 8} y={by} w={bw} h={bh} icon="heading" text="Title" js="GalleryList.title()" />
       <ui.IconButton x={m + 2 * (bw + 8)} y={by} w={bw} h={bh} icon="minus" text="Last" js="GalleryList.remove()" />
