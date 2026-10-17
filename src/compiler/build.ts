@@ -1259,8 +1259,9 @@ export class Builder {
       }
       case 'Video': {
         const auth = p.auth ?? {};
+        // its joins through the allocator: numbers registered (named ones skip them), names given numbers - serial for the URL, digital for play / stop
         return this.E('video', {
-          ...geom, j: p.join ?? 0, play: p.playJoin ?? 0, stop: p.stopJoin ?? 0, url: p.url, bgcolor: p.bg ?? '', format: p.format ?? 'mjpeg',
+          ...geom, j: this.join(node, 'join', 's'), play: this.join(node, 'playJoin', 'd'), stop: this.join(node, 'stopJoin', 'd'), url: p.url, bgcolor: p.bg ?? '', format: p.format ?? 'mjpeg',
           auth_user: auth.user ?? '', auth_password: auth.password ?? '', auth_realm: auth.realm ?? '', auth_host: auth.host ?? '',
           auth_method: auth.method ?? '', auth_proxy: auth.proxy ?? '', autoplay: bool(p.autoplay, true), showcontrols: bool(p.controls), cache: p.cache ? 1 : undefined,
           tags: tagsAttr(p.tags),

@@ -606,3 +606,24 @@ test("writeBuild empties its folder first, so it refuses one the project's own f
   const sized = await compile(path.join(dir, 'proj', 'app.jsx'), { size: '800x600' });
   assert.deepEqual(writeBuilds([r, sized], out).map((g) => path.relative(out, g)), ['T.gui', path.join('800w600h', 'T.gui')]);
 });
+
+test('<Video>: its joins go through the allocator - named ones get numbers (a serial URL join, digital play / stop), numbers it uses are kept clear of', async () => {
+  const r = await build(wrap(`
+    <Video w={320} h={240} url="rtsp://cam" join="camera" playJoin="play" stopJoin="stop" />
+    <Video y={300} w={320} h={240} url="rtsp://cam2" join={1000} playJoin={1000} stopJoin={d('halt')} />`));
+  const gui = await parseGUI(r.xml);
+  const videos = gui.pages.Main.landscape!.filter((n) => n.type === 'video');
+  assert.equal(videos[0].j, String(r.joins.serial.camera));
+  assert.equal(videos[0].attributes.play, String(r.joins.digital.play));
+  assert.equal(videos[0].attributes.stop, String(r.joins.digital.stop));
+  assert.equal(videos[0].attributes.stop !== videos[0].attributes.play, true);
+  // the second's 1000s are registered as used: the names skip them
+  assert.deepEqual([videos[1].j, videos[1].attributes.play], ['1000', '1000']);
+  assert.notEqual(r.joins.serial.camera, 1000);
+  assert.notEqual(r.joins.digital.play, 1000);
+  assert.equal(videos[1].attributes.stop, String(r.joins.digital.halt));
+  // none given: 0, as before
+  const none = await parseGUI((await build(wrap('<Video w={320} h={240} url="rtsp://cam" />'))).xml);
+  const v = none.pages.Main.landscape!.find((n) => n.type === 'video')!;
+  assert.deepEqual([v.j, v.attributes.play, v.attributes.stop], ['0', '0', '0']);
+});
