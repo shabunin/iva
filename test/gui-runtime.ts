@@ -36,8 +36,9 @@ g.addEventListener ??= () => {};
 g.removeEventListener ??= () => {};
 g.DOMParser ??= DOMParser;
 g.devicePixelRatio ??= 1;
-// what Pixi asks of the canvas's 2D context (letter spacing support: none here)
+// what Pixi asks of the canvas's 2D context (letter spacing support: none here); what motion asks when told what to animate
 g.CanvasRenderingContext2D ??= class {};
+for (const dom of ['NodeList', 'HTMLCollection', 'Element', 'HTMLElement', 'SVGElement']) g[dom] ??= class {};
 // frames: as timers (nothing is drawn) that don't keep the test running
 g.requestAnimationFrame ??= (fn: (t: number) => void) => setTimeout(() => fn(performance.now()), 16).unref() as unknown as number;
 g.cancelAnimationFrame ??= (id: number) => clearTimeout(id);

@@ -384,8 +384,10 @@ export class CFRenderer {
         if (change.x !== undefined) targetProps.x = change.x + c.pivot.x;
         if (change.y !== undefined) targetProps.y = change.y + c.pivot.y;
 
-        if (change.w !== undefined) targetProps.width = change.w;
-        if (change.h !== undefined) targetProps.height = change.h;
+        // w / h: the element made again at the new size (resize) - not scaled to it: its scale stays what scale / xscale / yscale say
+        const size = change.w !== undefined || change.h !== undefined
+          ? { w: change.w !== undefined ? Number(change.w) : undefined, h: change.h !== undefined ? Number(change.h) : undefined }
+          : null;
 
         const xScaleTarget = change.xscale !== undefined ? change.xscale : (change.scale !== undefined ? change.scale : undefined);
         const yScaleTarget = change.yscale !== undefined ? change.yscale : (change.scale !== undefined ? change.scale : undefined);
@@ -402,15 +404,26 @@ export class CFRenderer {
           if (Object.keys(targetProps).length > 0) {
             trackAnimation(c, animateFrom(c, targetProps, { duration, delay, ease }));
           }
-          if (scaled) trackAnimation(c.scale, animateFrom(c.scale, { x: to.x, y: to.y }, { duration, delay, ease }, c));
+          if (size) {
+            // till it's there: drawn growing (shrinking) to the new size - its scale standing in; then made at that size, its scale its own again
+            const now = this.sizeOf(c);
+            const grown = {
+              x: look.scale.x * (size.w !== undefined && now.w ? size.w / now.w : 1),
+              y: look.scale.y * (size.h !== undefined && now.h ? size.h / now.h : 1),
+            };
+            const standIn = drawnScale(grown, look.rotation);
+            trackAnimation(c.scale, animateFrom(c.scale, { x: standIn.x, y: standIn.y }, { duration, delay, ease }, c)).finished
+              .then(() => { if (!c.destroyed) this.resize(c, size.w, size.h); }, () => {});
+          } else if (scaled) {
+            trackAnimation(c.scale, animateFrom(c.scale, { x: to.x, y: to.y }, { duration, delay, ease }, c));
+          }
         } else {
           if (targetProps.angle !== undefined) c.angle = targetProps.angle;
           if (targetProps.alpha !== undefined) c.alpha = targetProps.alpha;
           if (targetProps.x !== undefined) c.x = targetProps.x;
           if (targetProps.y !== undefined) c.y = targetProps.y;
-          if (targetProps.width !== undefined) c.width = targetProps.width;
-          if (targetProps.height !== undefined) c.height = targetProps.height;
           if (scaled) c.scale.set(to.x, to.y);
+          if (size) this.resize(c, size.w, size.h);
         }
       });
     });
@@ -447,7 +460,44 @@ export class CFRenderer {
     c.destroy({ children: true });
   }
 
-  /** A URL as the GUI gives it, made loadable here: project files by name, anything with a scheme as is. */
+  /** An element's size as made: its node's w / h (a subpage placement's: its definition's where it gives none). */
+  sizeOf(c: Container): { w: number; h: number } {
+    const node = (c as any).cfNode as CFNode | undefined;
+    let w = node?.w || 0;
+    let h = node?.h || 0;
+    if (node?.type === 'subpage' && node.name && this.project.subpages[node.name]) {
+      const def = this.project.subpages[node.name];
+      w = w || def.w;
+      h = h || def.h;
+    }
+    return { w, h };
+  }
+
+  /**
+   * An element at another size (CF.setProperties w / h): made again from its
+   * node at that size, in the same place, its look (scale, rotations) kept -
+   * not scaled to fit, which would stretch its text and its children.
+   */
+  resize(c: Container, w?: number, h?: number) {
+    const made = (c as any).cfMade as { node: CFNode; listPrefix?: string; listIndex?: number } | undefined;
+    const parent = c.parent;
+    if (!made || !parent) return;
+    const node = { ...made.node };
+    if (w !== undefined) node.w = w;
+    if (h !== undefined) node.h = h;
+    const at = parent.getChildIndex(c);
+    const fresh = this.createNode(node, made.listPrefix, made.listIndex);
+    const look = (c as any).cfLook as { scale: { x: number; y: number }; rotation: { x: number; y: number } } | undefined;
+    if (look) {
+      (fresh as any).cfLook = look;
+      const to = drawnScale(look.scale, look.rotation);
+      fresh.scale.set(to.x, to.y);
+    }
+    parent.addChildAt(fresh, at);
+    parent.removeChild(c);
+    c.destroy({ children: true });
+  }
+
   /** A loaded image by the name the .gui gives it: a path in its image folder (icons/x.png), else its file name. */
   texture(ref: string): Texture | undefined {
     const key = this.assetKey(ref);
@@ -534,8 +584,14 @@ export class CFRenderer {
     // tags: the .gui's, less those scripts took, and those they gave its join (CF.addTag); a theme
     // set at runtime on one of them (or on the join) wins over the .gui's
     const own = ownJoin(node);
-    const tags = this.objectTags(own && listPrefix ? `${listPrefix}:${listIndex}:${own}` : own, node);
+    const key = own && listPrefix ? `${listPrefix}:${listIndex}:${own}` : own;
+    const tags = this.objectTags(key, node);
     for (const tag of tags) if (this.themeOf[tag]) node.t = this.themeOf[tag];
+    // a size CF.setProperties gave it (w / h): made at that size - its text laid out, its images stretched, its bounds there
+    const cf = this.cfApi ?? (typeof window !== 'undefined' ? (window as any).CF : undefined);
+    const sized = key ? cf?.propertiesStore?.[key]?._overrides : undefined;
+    if (sized?.w !== undefined) node.w = Number(sized.w) || 0;
+    if (sized?.h !== undefined) node.h = Number(sized.h) || 0;
     let registeredJoin: string | null = null;
 
     const resolveJoin = (j: string | undefined): string | undefined => {
@@ -829,11 +885,12 @@ export class CFRenderer {
         if (storeVal.opacity !== undefined) container.alpha = Math.max(0, Math.min(1, storeVal.opacity));
         if (storeVal.x !== undefined) container.x = storeVal.x + container.pivot.x;
         if (storeVal.y !== undefined) container.y = storeVal.y + container.pivot.y;
-        if (storeVal.w !== undefined) container.width = storeVal.w;
-        if (storeVal.h !== undefined) container.height = storeVal.h;
+        // (w / h: the node was made at them, above - not set on the container, which would scale its children)
 
-        let xScaleTarget = storeVal.xscale !== undefined ? storeVal.xscale : (storeVal.scale !== undefined ? storeVal.scale : undefined);
-        let yScaleTarget = storeVal.yscale !== undefined ? storeVal.yscale : (storeVal.scale !== undefined ? storeVal.scale : undefined);
+        // its scale as scripts set it (an xscale / yscale over a scale) - the store's defaults of 1 stand for none set
+        const over = storeVal._overrides ?? {};
+        const xScaleTarget = over.xscale !== undefined ? over.xscale : over.scale;
+        const yScaleTarget = over.yscale !== undefined ? over.yscale : over.scale;
         if (xScaleTarget !== undefined) container.scale.x = xScaleTarget;
         if (yScaleTarget !== undefined) container.scale.y = yScaleTarget;
       }

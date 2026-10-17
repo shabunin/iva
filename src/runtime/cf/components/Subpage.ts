@@ -11,7 +11,9 @@ export function renderSubpage(
     const subName = node.name;
     if (subName && renderer.project.subpages[subName]) {
         const def = renderer.project.subpages[subName];
-        const subCont = renderer.createSubpage(def, undefined, undefined, node.j && node.j !== '0' ? cfJoin('d', node.j) : undefined);
+        // at the placement's size where it has one (CF.setProperties w / h), else the definition's
+        const sized = node.w || node.h ? { ...def, w: node.w || def.w, h: node.h || def.h } : def;
+        const subCont = renderer.createSubpage(sized, undefined, undefined, node.j && node.j !== '0' ? cfJoin('d', node.j) : undefined);
         container.addChild(subCont);
 
         const a = node.attributes;
