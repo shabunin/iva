@@ -53,7 +53,9 @@ const scrollBox = (c, title) => {
 /**
  * A list a script changes (scripts/lists.js): an item comes in at the top - opening in the middle, the
  * others sliding down - and goes off to the left (insertTransition / deleteTransition); a swipe left on
- * one shows Delete. Title items use the list's title subpage; an item's toggle stays with it.
+ * one held a moment goes (a transparent button over the row: its hold action removes the item, by the
+ * `list` and `listIndex` a list item's script gets). Title items use the list's title subpage; an item's
+ * toggle stays with it.
  */
 const liveCard = (c, compact) => {
   const m = compact ? 16 : 28;
@@ -66,6 +68,8 @@ const liveCard = (c, compact) => {
   const row = (
     <Subpage name="gallery_live_row" w={lw} h={56}>
       <Box x={0} y={3} w={lw} h={50} radius={t.radius} bg={t.raised} />
+      {/* held 700 ms: the item goes (the toggle on top of it keeps its own touches) */}
+      <Button x={0} y={3} w={lw} h={50} feedback="none" onHold={js('GalleryList.hold(list, listIndex)')} holdTime={700} />
       <Text x={16} y={6} w={lw - 140} h={24} join={1} font={t.font} fontSize={18} />
       <Text x={16} y={29} w={lw - 140} h={20} join={2} color={t.muted} font={t.font} fontSize={13} />
       <ui.Toggle x={lw - 112} y={4} w={104} h={48} join={3} />
@@ -79,12 +83,12 @@ const liveCard = (c, compact) => {
   return (
     <ui.Card title={compact ? undefined : 'Live list'} {...c}>
       <Text x={m} y={top} w={lw} h={compact ? 34 : 44} wrap valign="top" color={t.muted} font={t.font} fontSize={compact ? 13 : 15}
-            text="Items come in (opening) and go (to the left) as a script adds and removes them; swipe one left to delete it." />
+            text="Items come in (opening) and go (to the left) as a script adds and removes them; hold one to delete it." />
       <ui.IconButton x={m} y={by} w={bw} h={bh} icon="plus" text="Add" js="GalleryList.add()" />
       <ui.IconButton x={m + bw + 8} y={by} w={bw} h={bh} icon="heading" text="Title" js="GalleryList.title()" />
       <ui.IconButton x={m + 2 * (bw + 8)} y={by} w={bw} h={bh} icon="minus" text="Last" js="GalleryList.remove()" />
       <List x={m} y={listY} w={lw} h={c.h - listY - 16} join="liveRooms" item={row} title={title}
-            swipeDelete insertTransition="middle" deleteTransition="left" />
+            insertTransition="middle" deleteTransition="left" />
       <Script src="../scripts/lists.js" />
       <OnStart js="GalleryList.fill();" />
     </ui.Card>

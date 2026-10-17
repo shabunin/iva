@@ -1,6 +1,6 @@
 // The gallery's live list (l liveRooms): rooms come and go as a script adds and removes them -
-// CF.listAdd / CF.listRemove, which the list shows in its insertTransition / deleteTransition; a swipe
-// left on one shows Delete. An item's toggle stays its own as others come and go.
+// CF.listAdd / CF.listRemove, which the list shows in its insertTransition / deleteTransition; one held
+// a moment goes (the row's hold action). An item's toggle stays its own as others come and go.
 var GalleryList = (function () {
   var rooms = ['Living room', 'Kitchen', 'Bedroom', 'Office', 'Garage', 'Garden', 'Hall', 'Attic', 'Cellar', 'Bathroom', 'Studio', 'Terrace'];
   var n = 0;
@@ -21,6 +21,10 @@ var GalleryList = (function () {
     add: function () { CF.listAdd(list(), [item()], 0); },
     /** a title item (the list's title subpage) at the top */
     title: function () { CF.listAdd(list(), [{ title: true, s1: 'Floor ' + (++floors) }], 0); },
+    /** the item held (a row's hold action: the list and the index a list item's script gets) */
+    hold: function (list, index) {
+      if (list && index !== null && index !== undefined) CF.listRemove(list, Number(index), 1);
+    },
     /** the last one */
     remove: function () {
       CF.listInfo(list(), function (l, count) {
