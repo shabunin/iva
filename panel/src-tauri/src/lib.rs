@@ -16,6 +16,7 @@ pub fn run() {
             plugins::net::tcp::tcp_shutdown,
             plugins::net::tcp::tcp_listen,
             plugins::net::tcp::tcp_server_close,
+            plugins::net::net_close_all,
             plugins::net::tcp::tcp_set_keep_alive,
             plugins::net::tcp::tcp_set_no_delay,
             plugins::net::dns::dns_lookup,

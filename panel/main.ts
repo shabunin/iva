@@ -16,6 +16,7 @@ import { openUrl as openOutside } from '@tauri-apps/plugin-opener';
 import { installHost } from '../src/runtime/stdlib';
 import { loadProject, type LoadProjectResult, type Orientation } from '../src/runtime/cf';
 import { createIvaHost } from '../src/runtime/host';
+import { closeHostSockets } from '../src/runtime/host/net/provider';
 import { installFonts } from '../src/preview/fonts';
 import { formatLocation, History, isGuiUrl, parseLocation, type GuiLocation } from '../src/runtime/location';
 import { loadManifest, newerVersion, savedManifest, toSave, type Download, type Manifest } from './loader';
@@ -168,7 +169,7 @@ document.addEventListener('focusout', () => setTimeout(turned, 300));
  * unless `once`; `fresh`: its server's copy, not the one kept; `quiet`: no
  * loading text.
  */
-function goTo(loc: GuiLocation, o: { once?: boolean; fresh?: boolean; quiet?: boolean } = {}) {
+async function goTo(loc: GuiLocation, o: { once?: boolean; fresh?: boolean; quiet?: boolean } = {}) {
   if (o.once) sessionStorage.setItem(ONCE, loc.gui);
   else {
     sessionStorage.removeItem(ONCE);
@@ -178,7 +179,23 @@ function goTo(loc: GuiLocation, o: { once?: boolean; fresh?: boolean; quiet?: bo
   else sessionStorage.removeItem(PAGE);
   if (o.fresh) sessionStorage.setItem(FRESH, '1');
   if (o.quiet) sessionStorage.setItem(QUIET, '1');
+  await letGo();
   location.reload();
+}
+
+/**
+ * The GUI's systems closed and their ports let go before the page reloads:
+ * the Rust side's sockets outlive the page, and a server still listening
+ * would hold its port from the next GUI's - its web server never answering,
+ * blank web views. A second or so at most.
+ */
+async function letGo() {
+  try {
+    const done = (window as any).CF?.stopSystems?.();
+    if (done && typeof done.then === 'function') await Promise.race([done, new Promise((r) => setTimeout(r, 1500))]);
+  } catch {
+    // going away anyway
+  }
 }
 
 /**
@@ -333,6 +350,10 @@ async function savedCopy(url: string): Promise<SavedGui | undefined> {
  * wall should.
  */
 async function start() {
+  // a page starting afresh: what the page before it left on the host (a server its reload didn't get
+  // to close) goes first - it would hold its port from this GUI's servers
+  const left = await closeHostSockets();
+  if (left) console.log(`[panel] ${left} socket(s) left on the host by the page before: closed`);
   await installFonts();
   applyBar();
   const stored = sessionStorage.getItem(ONCE) ?? localStorage.getItem(GUI);
@@ -454,6 +475,7 @@ async function checkServer() {
     await saveGui(newer);
     const page = current?.renderer.currentPageName;
     if (page) sessionStorage.setItem(PAGE, page);
+    await letGo();
     location.reload();
   } catch (e) {
     // no server now: the copy runs on

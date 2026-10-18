@@ -74,6 +74,14 @@ when the app comes back to the front. Without its server the copy runs on.
 `CF.loadGUI` with `reloadGUI` (iva serve's live reload) and Ctrl+R load the
 server's. Nothing kept and no server: it tries again every 5 s.
 
+A reload (another GUI, Ctrl+R, a newer build) first lets the GUI's systems
+go and waits for their ports (a second at most): the app's sockets live on its
+Rust side and outlive the page, and a server left listening would hold its
+port from the next GUI's web server - blank web views. A page starting afresh
+also closes whatever a page before it left there. A system started twice (a
+script's `CF.setSystemProperties` before the GUI's own start) keeps the one
+server it has.
+
 The settings list the GUIs the panel knows - shown, the default, visited,
 kept - each with its copy's state, and per GUI: whether a copy is kept at
 all, one saved now (fetched from the server before its turn to run), one
