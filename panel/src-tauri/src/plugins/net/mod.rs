@@ -37,18 +37,26 @@ pub async fn connect(addr: &str) -> std::io::Result<tokio::net::TcpStream> {
 /// before it left, and a server still listening would hold its port from the
 /// new page's systems. The senders are taken out under the lock and told
 /// after it, as each socket's task takes the same lock to go.
+#[derive(serde::Serialize)]
+pub struct Closed {
+    pub servers: usize,
+    pub connections: usize,
+    pub udp: usize,
+    pub tls: usize,
+}
+
 #[tauri::command]
-pub async fn net_close_all(state: State<'_, NetState>) -> Result<usize, String> {
+pub async fn net_close_all(state: State<'_, NetState>) -> Result<Closed, String> {
     let servers: Vec<_> = state.tcp_servers.lock().await.drain().map(|(_, tx)| tx).collect();
     let sockets: Vec<_> = state.tcp_sockets.lock().await.drain().map(|(_, tx)| tx).collect();
     let udps: Vec<_> = state.udp_sockets.lock().await.drain().map(|(_, tx)| tx).collect();
     let tls: Vec<_> = state.tls_sockets.lock().await.drain().map(|(_, tx)| tx).collect();
-    let n = servers.len() + sockets.len() + udps.len() + tls.len();
+    let closed = Closed { servers: servers.len(), connections: sockets.len(), udp: udps.len(), tls: tls.len() };
     for tx in servers { let _ = tx.send(tcp::TcpServerCommand::Close).await; }
     for tx in sockets { let _ = tx.send(tcp::TcpCommand::Destroy).await; }
     for tx in udps { let _ = tx.send(udp::UdpCommand::Close).await; }
     for tx in tls { let _ = tx.send(tls::TlsCommand::Destroy).await; }
-    Ok(n)
+    Ok(closed)
 }
 
 pub fn init_state<R: Runtime>(app: &AppHandle<R>) {

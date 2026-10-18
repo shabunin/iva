@@ -74,14 +74,6 @@ when the app comes back to the front. Without its server the copy runs on.
 `CF.loadGUI` with `reloadGUI` (iva serve's live reload) and Ctrl+R load the
 server's. Nothing kept and no server: it tries again every 5 s.
 
-A reload (another GUI, Ctrl+R, a newer build) first lets the GUI's systems
-go and waits for their ports (a second at most): the app's sockets live on its
-Rust side and outlive the page, and a server left listening would hold its
-port from the next GUI's web server - blank web views. A page starting afresh
-also closes whatever a page before it left there. A system started twice (a
-script's `CF.setSystemProperties` before the GUI's own start) keeps the one
-server it has.
-
 The settings list the GUIs the panel knows - shown, the default, visited,
 kept - each with its copy's state, and per GUI: whether a copy is kept at
 all, one saved now (fetched from the server before its turn to run), one
@@ -100,6 +92,37 @@ systems disconnect ("Disconnect on Exit/Sleep" - `CF.loadGUI("",
 scripts' timers stop; on coming back `CF.GUIResumedEvent`, the systems
 connect again, and `CF.NetworkStatusChangeEvent` if the network changed
 meanwhile. Back puts the app in the background, as Home does.
+
+## Sockets
+
+A system's socket lives on the app's Rust side; the system in the page owns
+exactly one, or none, at every moment:
+
+- **Start.** The GUI's systems start once its scripts have run and its first
+  page is drawn. A system started again while it runs (a script's
+  `CF.setSystemProperties`, IvaHttp's own self-check) keeps the socket it has.
+  A server switched off and on listens again once the host has let its old
+  port go (a second at most), not on a port it still holds itself.
+- **Connections.** An Always On client connects again 3 s after a drop, then
+  half as long again each time up to 30 s (a little jitter), and at once as
+  soon as a connection has held 5 s. Every connection asks for TCP keepalive
+  (10 s) and no delay, so a far end that went silent is found out in a minute.
+- **Sleep.** Screen off or the app in the background: every system closes
+  (iViewer's "Disconnect on Sleep"; the View setting keeps them). A system a
+  script enables meanwhile opens nothing until the wake. Awake again, the same
+  systems start, and the network is looked at.
+- **Another network.** When the device's address changes (the page's online
+  and offline events, a look every 15 s, the wake), clients connect anew at
+  once, UDP sockets bind again, servers stay; scripts hear
+  `CF.NetworkStatusChangeEvent`.
+- **Reload and restart.** A reload (another GUI, Ctrl+R, a newer build) first
+  stops the systems and waits for their ports; a page starting afresh closes
+  whatever a page before left on the host and lists it in the settings'
+  errors. An app restart loses every connection, by design: the GUI connects
+  again on start. Only persisted tokens survive.
+
+`test/socket-lifecycle.test.ts` runs these through sleep and wake, a server
+switched off and on, a link that keeps dropping, another network and a reload.
 
 ## Building
 

@@ -353,7 +353,12 @@ async function start() {
   // a page starting afresh: what the page before it left on the host (a server its reload didn't get
   // to close) goes first - it would hold its port from this GUI's servers
   const left = await closeHostSockets();
-  if (left) console.log(`[panel] ${left} socket(s) left on the host by the page before: closed`);
+  if (left.total) {
+    const what = ([['server', left.servers], ['connection', left.connections], ['UDP socket', left.udp], ['TLS connection', left.tls]] as [string, number][])
+      .filter(([, n]) => n).map(([w, n]) => `${n} ${w}${n === 1 ? '' : 's'}`).join(', ');
+    // seen in the settings' error list: a page that left these behind is a bug to look at
+    noteError(`left on the host by the page before, closed now: ${what}`);
+  }
   await installFonts();
   applyBar();
   const stored = sessionStorage.getItem(ONCE) ?? localStorage.getItem(GUI);
