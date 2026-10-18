@@ -279,6 +279,35 @@ export class CFAPI implements CFContext {
     disconnectOnSuspend = true;
     /** the systems the sleep stopped: started again on waking */
     private sleeping: ControlSystem[] = [];
+
+    /** a system to start on the wake: one started while the GUI sleeps with Disconnect on Sleep (nothing opens till then) */
+    startOnWake(sys: ControlSystem) {
+        if (!this.sleeping.includes(sys)) this.sleeping.push(sys);
+    }
+
+    /**
+     * The network looked at again - on the wake, when the page says online or
+     * offline, every 15 s awake: changed (another address, none), the systems'
+     * connections are made anew and scripts hear NetworkStatusChangeEvent, as
+     * iViewer tells them. Whether it changed.
+     */
+    private networkTimer: ReturnType<typeof setInterval> | undefined;
+    private onNetwork = () => void this.checkNetwork();
+    async checkNetwork(before = JSON.stringify(this.networkStatus())): Promise<boolean> {
+        if (this.suspended) return false;
+        await this.loadDevice();
+        const now = this.networkStatus();
+        if (JSON.stringify(now) === before) return false;
+        for (const sys of new Set(Object.values(this.controlSystems))) {
+            try {
+                sys?.networkChanged?.();
+            } catch (e) {
+                console.warn(`[CF] network change: system ${sys?.name}:`, e);
+            }
+        }
+        this.dispatchEvent(this.NetworkStatusChangeEvent, now);
+        return true;
+    }
     /** the network as it was on going to sleep */
     private networkBefore = '';
 
@@ -315,8 +344,7 @@ export class CFAPI implements CFContext {
         const sleeping = this.sleeping;
         this.sleeping = [];
         for (const sys of sleeping) {
-            // (one a script started again meanwhile runs already)
-            if (sys.enabled) continue;
+            // (one a script enabled meanwhile waited for this: start() opens nothing twice)
             sys.enabled = true;
             try {
                 sys.start();
@@ -324,11 +352,7 @@ export class CFAPI implements CFContext {
                 console.warn(`[CF] resume: system ${sys.name}:`, e);
             }
         }
-        const before = this.networkBefore;
-        void this.loadDevice().then(() => {
-            const now = this.networkStatus();
-            if (JSON.stringify(now) !== before) this.dispatchEvent(this.NetworkStatusChangeEvent, now);
-        });
+        void this.checkNetwork(this.networkBefore);
     }
 
     init(renderer: CFRenderer) {
@@ -336,6 +360,15 @@ export class CFAPI implements CFContext {
         if (typeof document !== 'undefined') {
             document.removeEventListener('visibilitychange', this.onVisibility);
             document.addEventListener('visibilitychange', this.onVisibility);
+        }
+        if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+            for (const ev of ['online', 'offline']) {
+                window.removeEventListener(ev, this.onNetwork);
+                window.addEventListener(ev, this.onNetwork);
+            }
+            clearInterval(this.networkTimer);
+            this.networkTimer = setInterval(this.onNetwork, 15000);
+            (this.networkTimer as any).unref?.();
         }
 
         // Initialize Global Tokens from XML
@@ -441,6 +474,11 @@ export class CFAPI implements CFContext {
      */
     stopSystems(): Promise<void> {
         if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.onVisibility);
+        clearInterval(this.networkTimer);
+        this.networkTimer = undefined;
+        if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+            for (const ev of ['online', 'offline']) window.removeEventListener(ev, this.onNetwork);
+        }
         // Bonjour: goodbyes for what's published, lookups ended
         this.mdns?.dispose();
         this.mdns = null;

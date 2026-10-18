@@ -183,6 +183,12 @@ export class ControlSystem {
     private tcpSocket?: ITcpSocket;
     /** the TCP client's connection is up (not still connecting) */
     private connected = false;
+    /** when the TCP client's connection came up (one that held a while starts the reconnect waits over) */
+    private connectedAt = 0;
+    /** reconnects in a row with no connection holding: the wait between them grows */
+    private retries = 0;
+    /** a start() generation: a stop() cancels a start still waiting for the host (a server for its old port) */
+    private startGen = 0;
     private udpSocket?: IUdpSocket;
     private tcpServer?: ITcpServer;
     /** after stop(): the server's port let go on the host (what a reload waits for, CF.stopSystems) */
@@ -290,6 +296,29 @@ export class ControlSystem {
         // second server would fail on the port and leave the first behind, unreferenced, to hold the port
         // from the next GUI's: the panel's web server never answering again.
         if (this.tcpServer || this.udpSocket) return;
+        // asleep with Disconnect on Sleep (a script's CF.setSystemProperties(enabled) while the panel
+        // sleeps): nothing opens till the wake - started then
+        if (this.cfApi.suspended && this.cfApi.disconnectOnSuspend) {
+            this.cfApi.startOnWake?.(this);
+            return;
+        }
+        const gen = ++this.startGen;
+        // a server stopped a moment ago (asleep and awake, switched off and on): its old port let go on
+        // the host first, then listened on - not a listen that fails on its own port and waits 3 s. A
+        // second at most; a stop() meanwhile cancels it.
+        if (this.closed && this.accept && this.type !== 'udp') {
+            const closed = this.closed;
+            this.closed = null;
+            void Promise.race([closed, new Promise<void>((r) => setTimeout(r, 1000))]).then(() => {
+                if (gen === this.startGen && this.enabled && !this.tcpServer) this._open();
+            });
+            return;
+        }
+        this._open();
+    }
+
+    /** the start itself: the loopback, a UDP socket, a server, a client - as the system is */
+    private _open() {
         // started again (re-enabled, a new address, the GUI awake again): reconnecting as configured
         this.autoReconnect = this.alwaysOn;
 
@@ -319,6 +348,8 @@ export class ControlSystem {
 
     public stop() {
         this.enabled = false;
+        this.startGen++;
+        this.retries = 0;
         this.autoReconnect = false;
         clearTimeout(this.idleTimer);
         clearTimeout(this.answerTimer);
@@ -428,6 +459,15 @@ export class ControlSystem {
         socket.on('connect', () => {
             if (this.tcpSocket !== socket) return;
             this.connected = true;
+            this.connectedAt = Date.now();
+            // a connection the far end stopped answering (Wi-Fi gone, the device rebooted) is found out
+            // in a minute, not never; small packets go out at once (control protocols)
+            try {
+                socket.setKeepAlive?.(true, 10000);
+                socket.setNoDelay?.(true);
+            } catch (e) {
+                console.warn(`[System ${this.name}] socket options:`, e);
+            }
             if (!this.connections.includes(remote)) this.connections.push(remote);
             this._setJoinPair(true);
             this.cfApi.dispatchEvent(this.cfApi.ConnectionStatusChangeEvent, this.name, true, remote);
@@ -456,6 +496,8 @@ export class ControlSystem {
             beat.stop();
             // a socket stopped and since replaced (the system started again): the new one tells
             if (this.tcpSocket && this.tcpSocket !== socket) return;
+            // a connection that held a while: the next drop starts the waits over
+            if (this.connected && Date.now() - this.connectedAt >= 5000) this.retries = 0;
             this.tcpSocket = undefined;
             this.connected = false;
             clearTimeout(this.idleTimer);
@@ -465,16 +507,40 @@ export class ControlSystem {
             this._setJoinPair(false);
             this.cfApi.dispatchEvent(this.cfApi.ConnectionStatusChangeEvent, this.name, false, remote);
 
-            // Always On: again in 3 s; Transitory / Dialog: again if something still waits
+            // Always On: again in 3 s, then longer each time while nothing holds (30 s at most);
+            // Transitory / Dialog: again if something still waits
             const waiting = this.sendQueue.length > 0 || this.dialog.length > 0;
             if (this.enabled && (this.autoReconnect || (!this.alwaysOn && waiting))) {
-                this.retryTimer = setTimeout(() => this._connectTcp(), 3000);
+                this.retryTimer = setTimeout(() => this._connectTcp(), this._retryWait());
             }
         });
 
         socket.on('error', (err: any) => {
             console.warn(`[System ${this.name}] TCP error:`, err?.message ?? err);
         });
+    }
+
+    /**
+     * The wait before connecting again: 3 s the first time (as iViewer), then half as long again
+     * each time up to 30 s, with a little jitter - many panels after one outage don't all knock at once.
+     */
+    private _retryWait(): number {
+        const n = this.retries++;
+        if (n === 0) return 3000;
+        const base = Math.min(30000, 3000 * Math.pow(1.5, n));
+        return Math.round(base * (0.8 + Math.random() * 0.4));
+    }
+
+    /**
+     * The device's address changed (another Wi-Fi, mobile data): a client's connection is dead however
+     * alive it looks - closed and made again now, a retry still waiting made now; a UDP socket bound
+     * again (its multicast group joined on the new interface); a server (every interface) stays.
+     */
+    public networkChanged() {
+        if (!this.enabled || this.isLoopback || this.type === 'http' || this.tcpServer) return;
+        this.stop();
+        this.enabled = true;
+        this.start();
     }
 
     /** bytes out on the TCP client's connection (the idle clock starts over) */

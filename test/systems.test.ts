@@ -19,8 +19,19 @@ class FakeSocket extends EventEmitter {
   to?: [number, string];
   remoteAddress = '10.0.0.9';
   remotePort = 50000;
+  /** setKeepAlive(on, ms) calls */
+  kept: [boolean, number][] = [];
+  noDelay = false;
   connect(port: number, host: string) {
     this.to = [port, host];
+    return this;
+  }
+  setKeepAlive(on: boolean, ms: number) {
+    this.kept.push([on, ms]);
+    return this;
+  }
+  setNoDelay(on: boolean) {
+    this.noDelay = on;
     return this;
   }
   write(b: Uint8Array) {
@@ -47,14 +58,15 @@ class FakeSocket extends EventEmitter {
 }
 class FakeServer extends EventEmitter {
   port?: number;
-  /** what close(cb) does with its callback: the host's word that the port is free (none by default) */
+  /** what close(cb) does with its callback - the host's word that the port is free (at once by default) */
   closes?: (cb?: () => void) => void;
   listen(port: number) {
     this.port = port;
     return this;
   }
   close(cb?: () => void) {
-    this.closes?.(cb);
+    if (this.closes) this.closes(cb);
+    else cb?.();
     return this;
   }
 }
@@ -358,7 +370,7 @@ test('TCP server: Max Connections turns the one too many away', () => {
   sys.stop();
 });
 
-test('TCP server: its port taken (another app\'s server) - listened on again every 3 s till it\'s free; not once stopped', () => {
+test('TCP server: its port taken (another app\'s server) - listened on again every 3 s till it\'s free; not once stopped', async () => {
   mock.timers.enable({ apis: ['setTimeout'] });
   try {
     servers.length = 0;
@@ -380,6 +392,7 @@ test('TCP server: its port taken (another app\'s server) - listened on again eve
     // taken, then stopped: left alone
     sys.enabled = true;
     sys.start();
+    await flush();
     servers[3].emit('error', taken());
     sys.stop();
     mock.timers.tick(10000);
@@ -389,13 +402,14 @@ test('TCP server: its port taken (another app\'s server) - listened on again eve
   }
 });
 
-test('TCP server: one let go (stopped, started again) - a connection it still hands over is turned away', () => {
+test('TCP server: one let go (stopped, started again) - a connection it still hands over is turned away', async () => {
   servers.length = 0;
   const { sys } = gui({ accept: '1', origin: '5000' });
   sys.start();
   sys.stop();
   sys.enabled = true;
   sys.start();
+  await flush();
   const late = new FakeSocket();
   servers[0].emit('connection', late);
   assert.equal(late.destroyed, true);
@@ -407,7 +421,7 @@ test('TCP server: one let go (stopped, started again) - a connection it still ha
   sys.stop();
 });
 
-test("TCP server: started twice (a script's CF.setSystemProperties(enabled) before the GUI's own start, as IvaHttp's self-check does) listens once, and that server takes the connections", () => {
+test("TCP server: started twice (a script's CF.setSystemProperties(enabled) before the GUI's own start, as IvaHttp's self-check does) listens once, and that server takes the connections", async () => {
   servers.length = 0;
   const { cf, sys, events } = gui({ accept: '1', origin: '8900' });
   // the self-check: the system switched off and on before the runtime starts the systems
@@ -424,9 +438,10 @@ test("TCP server: started twice (a script's CF.setSystemProperties(enabled) befo
   assert.equal(client.destroyed, false, 'the connection is taken');
   assert.deepEqual(events, ['Dev up']);
   sys.stop();
-  // stopped and started: a new server, the old one closed
+  // stopped and started: a new server once the host let the old port go (at once here)
   sys.enabled = true;
   sys.start();
+  await flush();
   assert.equal(servers.length, 2);
   sys.stop();
 });
@@ -460,6 +475,7 @@ test('CF.stopSystems resolves once the servers have let their ports go (their cl
     servers.length = 0;
     const g = gui({ accept: '1', origin: '8902' });
     g.sys.start();
+    servers[0].closes = () => {}; // never calls back
     let resolved = false;
     const p = g.cf.stopSystems().then(() => (resolved = true));
     await flush();
