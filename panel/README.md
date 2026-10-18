@@ -77,7 +77,14 @@ server's. Nothing kept and no server: it tries again every 5 s.
 The settings list the GUIs the panel knows - shown, the default, visited,
 kept - each with its copy's state, and per GUI: whether a copy is kept at
 all, one saved now (fetched from the server before its turn to run), one
-cleared; and a button to clear every copy.
+cleared; and a button to clear every copy. `http://host:8019` and
+`http://host:8019/` are one GUI, kept once.
+
+A link that drops a file now and then (ZeroTier does) gets a script asked
+for again, in rounds; one still missing is said on screen for a while, and a
+whole copy kept runs rather than a load short of a script (Ctrl+R asks the
+server again). A GUI without `iva-http.js` would have a web server nobody
+answers: blank web views.
 
 In the background the GUI sleeps, as in iViewer: `CF.GUISuspendedEvent`, its
 systems disconnect ("Disconnect on Exit/Sleep" - `CF.loadGUI("",
