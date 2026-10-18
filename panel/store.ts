@@ -19,7 +19,7 @@ export interface SavedGui {
 }
 
 /** what's kept, without the files: for the settings page and to let the oldest go */
-interface Kept {
+export interface Kept {
   url: string;
   savedAt: number;
   usedAt: number;
@@ -82,4 +82,9 @@ export async function usedGui(url: string) {
   if (k) await run('readwrite', (_, kept) => void kept.put({ ...k, usedAt: Date.now() }));
 }
 
+/** every GUI kept, the one used last first */
+export const keptGuis = async () => (await run<Kept[]>('readonly', (_, kept) => kept.getAll())).sort((a, b) => b.usedAt - a.usedAt);
+
 export const forgetGui = (url: string) => run('readwrite', (guis, kept) => void (guis.delete(url), kept.delete(url)));
+
+export const forgetAllGuis = () => run('readwrite', (guis, kept) => void (guis.clear(), kept.clear()));

@@ -14,12 +14,65 @@ html, body {
   overscroll-behavior: none;
 }
 
-/* the GUI: centred, as large as fits (main.ts sizes it) */
+/* the GUI: centred in what the address bar leaves, as large as fits (main.ts sizes and places it) */
 #stage { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); }
 #view { position: absolute; inset: 0; }
 /* Pixi (autoDensity) sets the canvas size inline; the stage decides it */
 #canvas { display: block; width: 100% !important; height: 100% !important; }
 
+/* the address bar: a browser's, for GUIs (an option; off, the GUI has the whole screen) */
+#bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
+  height: 44px;
+  padding: 4px 6px 4px max(6px, env(safe-area-inset-left));
+  background: #101316;
+  border-bottom: 1px solid #1f252b;
+  touch-action: auto;
+}
+#bar[hidden] { display: none; }
+#bar button {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #c4c9cf;
+  font: inherit;
+  font-weight: 600;
+}
+#bar button:active { background: #2c333a; }
+#bar button:disabled { color: #4a5159; }
+#bar button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+#bar #go { width: auto; padding: 0 12px; color: #00a884; }
+#address {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  box-sizing: border-box;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid #2c333a;
+  background: #191d21;
+  color: inherit;
+  font: inherit;
+  font-size: 15px;
+  outline: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+#address:focus { border-color: #00a884; }
+
+/* a line while no GUI shows (loading, failing); a GUI shown has the screen */
 #status {
   position: fixed;
   left: 0;
@@ -51,8 +104,9 @@ html, body {
 }
 #settings[hidden] { display: none; }
 #settings h1 { margin: 0 0 8px; font-size: 22px; font-weight: 600; }
+#settings h2 { margin: 14px 0 0; font-size: 16px; font-weight: 600; color: #c4c9cf; }
 #settings label { color: #9aa1a9; font-size: 14px; }
-#settings input {
+#settings input[type="text"] {
   font: inherit;
   font-size: 18px;
   padding: 12px 14px;
@@ -62,8 +116,10 @@ html, body {
   color: inherit;
   outline: none;
 }
-#settings input:focus { border-color: #00a884; }
-#settings .row { display: flex; gap: 10px; }
+#settings input[type="text"]:focus { border-color: #00a884; }
+#settings .check { display: flex; align-items: flex-start; gap: 10px; color: #c4c9cf; font-size: 15px; }
+#settings .check input { margin: 4px 0 0; width: 18px; height: 18px; flex: none; accent-color: #00a884; }
+#settings .row { display: flex; flex-wrap: wrap; gap: 10px; }
 #settings button {
   font: inherit;
   font-weight: 600;
@@ -74,9 +130,12 @@ html, body {
   color: #fff;
 }
 #settings button[type="button"] { background: #2c333a; }
+#settings button.small { padding: 7px 14px; font-size: 14px; }
 #settings button[hidden] { display: none; }
 #settings .hint { margin: 0; color: #8b929a; font-size: 14px; }
 #settings code { color: #c4c9cf; }
+.copy { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 10px; background: #171b1f; }
+.copy-url { font-size: 15px; color: #e8eaed; word-break: break-all; }
 #errors { margin: 8px 0 0; color: #f28b82; font-size: 12px; white-space: pre-wrap; }
 #errors:empty { display: none; }
 #about { margin-top: auto; color: #5f666d; font-size: 13px; }

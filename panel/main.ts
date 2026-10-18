@@ -1,29 +1,53 @@
 /**
  * iva panel: a GUI (.gui) on iva's own runtime, full screen - what iViewer
- * does on a panel. Systems and scripts get real sockets from the app
- * (src-tauri: the runtime's host commands); the GUI comes from a web server -
- * a .gui, a zipped GUI, iva serve's address (live reload and all).
+ * does on a panel - and a browser for GUIs: GUI links (CF.loadGUI,
+ * CF.openURL, a button's href) followed, back and forward through them, an
+ * address bar (an option) to type one, the GUIs loaded kept on the device.
+ * Systems and scripts get real sockets from the app (src-tauri: the
+ * runtime's host commands); the GUI comes from a web server - a .gui, a
+ * zipped GUI, iva serve's address (live reload and all).
  *
- * Settings (the GUI's URL): on first start, then a three-finger hold, a long
- * press in the top-left corner, or F1.
+ * Settings: on first start; then three fingers on the screen, Ctrl+S or F1
+ * on a keyboard, or a finger held in the top-left corner. Ctrl+R: the GUI
+ * again from its server.
  */
 import { getVersion } from '@tauri-apps/api/app';
+import { openUrl as openOutside } from '@tauri-apps/plugin-opener';
 import { installHost } from '../src/runtime/stdlib';
 import { loadProject, type LoadProjectResult, type Orientation } from '../src/runtime/cf';
 import { createIvaHost } from '../src/runtime/host';
 import { installFonts } from '../src/preview/fonts';
-import { guiUrl, loadManifest, newerVersion, savedManifest, toSave, type Download, type Manifest } from './loader';
-import { forgetGui, keptGui, saveGui, savedGui, usedGui, type SavedGui } from './store';
+import { formatLocation, History, isGuiUrl, parseLocation, type GuiLocation } from '../src/runtime/location';
+import { loadManifest, newerVersion, savedManifest, toSave, type Download, type Manifest } from './loader';
+import { forgetAllGuis, forgetGui, keptGuis, saveGui, savedGui, usedGui, type Kept, type SavedGui } from './store';
 
-/** localStorage: the GUI's URL; sessionStorage: the page CF.loadGUI asked for */
+// ── what the panel keeps: between starts (localStorage), across a GUI change (sessionStorage) ──
+/** the GUI shown last: what the next start runs (it follows GUI links) */
 const GUI = 'iva-panel:gui';
-/** localStorage: the GUI's URL as the settings have it - the panel's default GUI, what CF.loadGUI(null) goes back to (GUI follows CF.loadGUI) */
+/** the GUI the settings name: the panel's default, what CF.loadGUI(null) goes back to */
 const DEFAULT_GUI = 'iva-panel:default-gui';
+/** the page to start on (CF.loadGUI's startPage, an address's ?page=) */
 const PAGE = 'iva-panel:page';
-/** localStorage: iViewer's "Disconnect on Exit/Sleep" ('0': off), as CF.loadGUI last set it */
+/** iViewer's "Disconnect on Exit/Sleep" ('0': off), as CF.loadGUI or the settings last set it */
 const DISCONNECT = 'iva-panel:disconnectOnSuspend';
-/** sessionStorage: CF.loadGUI asked for the server's GUI, not the copy kept (its reloadGUI) */
+/** the server's GUI, not the copy kept (CF.loadGUI's reloadGUI, Ctrl+R) */
 const FRESH = 'iva-panel:fresh';
+/** a GUI shown once, not made the next start's (CF.loadGUI's rememberLastGUI: false) */
+const ONCE = 'iva-panel:once';
+/** no loading text this time (CF.loadGUI's showPreloadStatus: false) */
+const QUIET = 'iva-panel:quiet';
+/** the view's options */
+const OUTLINE = 'iva-panel:outline';
+const FPS = 'iva-panel:fps';
+const BAR = 'iva-panel:addressbar';
+/** the GUIs no copy is kept of (JSON: their URLs) */
+const NO_COPY = 'iva-panel:no-copy';
+
+const flag = (key: string, dflt = false) => {
+  const v = localStorage.getItem(key);
+  return v === null ? dflt : v === '1';
+};
+const setFlag = (key: string, on: boolean) => localStorage.setItem(key, on ? '1' : '0');
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const stage = $<HTMLDivElement>('stage');
@@ -31,14 +55,31 @@ const canvas = $<HTMLCanvasElement>('canvas');
 const status = $<HTMLDivElement>('status');
 const form = $<HTMLFormElement>('settings');
 const input = $<HTMLInputElement>('url');
+const bar = $<HTMLDivElement>('bar');
+const address = $<HTMLInputElement>('address');
+const copies = $<HTMLDivElement>('copies');
+const options = {
+  bar: $<HTMLInputElement>('opt-bar'),
+  outline: $<HTMLInputElement>('opt-outline'),
+  fps: $<HTMLInputElement>('opt-fps'),
+  disconnect: $<HTMLInputElement>('opt-disconnect'),
+};
 
+/** where the panel has been (back, forward), across the page reloads a GUI change takes */
+const history = new History(sessionStorage);
 let current: LoadProjectResult | null = null;
+/** the GUI shown and the page it is on: the address bar's text */
+let shown: GuiLocation | null = null;
+/** this load without the loading text */
+const quiet = sessionStorage.getItem(QUIET) === '1';
+sessionStorage.removeItem(QUIET);
 /** the orientation the window asks for: clearly taller or wider - a nearly square one keeps what there is (landscape at first) */
 const wanted = (now: Orientation): Orientation =>
   innerHeight > innerWidth * 1.15 ? 'portrait' : innerWidth > innerHeight * 1.15 ? 'landscape' : now;
 let orientation: Orientation = wanted('landscape');
-const say = (text: string) => {
-  status.textContent = text;
+/** a line under the GUI while there is none shown (loading, failing); a GUI shown has the screen to itself */
+const say = (text: string, loading = false) => {
+  status.textContent = current || (loading && quiet) ? '' : text;
 };
 
 // what went wrong, for the settings page (a panel has no console to look at)
@@ -57,6 +98,7 @@ console.error = (...args: unknown[]) => {
 };
 addEventListener('error', (e) => noteError(`${e.message} (${e.filename?.split('/').pop()}:${e.lineno})`));
 addEventListener('unhandledrejection', (e) => noteError(`unhandled: ${e.reason?.message ?? e.reason}`));
+const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 installHost(createIvaHost());
 
@@ -68,13 +110,16 @@ function guiSize(o: Orientation) {
     : { w: p?.portrait?.width || 768, h: p?.portrait?.height || 1024 };
 }
 
-/** as large as the screen takes it, its aspect kept; drawn at the screen's pixels (sharp, as iViewer scales a GUI up) */
+/** as large as the screen (under the address bar) takes it, its aspect kept; drawn at the screen's pixels (sharp, as iViewer scales a GUI up) */
 function fit() {
   if (!current) return;
+  const top = bar.hidden ? 0 : bar.offsetHeight;
+  const room = Math.max(1, innerHeight - top);
   const { w, h } = guiSize(orientation);
-  const s = Math.min(innerWidth / w, innerHeight / h);
+  const s = Math.min(innerWidth / w, room / h);
   stage.style.width = `${Math.round(w * s)}px`;
   stage.style.height = `${Math.round(h * s)}px`;
+  stage.style.top = `${top + room / 2}px`;
   current.app.renderer.resize(w, h, s * (devicePixelRatio || 1));
 }
 
@@ -102,17 +147,116 @@ addEventListener('resize', turned);
 // a field let go (the keyboard going): what the window is now
 document.addEventListener('focusout', () => setTimeout(turned, 300));
 
-/** CF.loadGUI / a cf:// link: that GUI ('' this one again, null the settings' - the default), in a fresh page - the runtime keeps its globals per page */
-function loadGui(from: string, url: string | null, settings: Record<string, unknown>) {
-  localStorage.setItem(GUI, url === null ? (localStorage.getItem(DEFAULT_GUI) ?? localStorage.getItem(GUI) ?? from) : url ? new URL(guiUrl(url), from).href : from);
-  if (typeof settings.startPage === 'string' && settings.startPage) sessionStorage.setItem(PAGE, settings.startPage);
-  if (typeof settings.disconnectOnSuspend === 'boolean') localStorage.setItem(DISCONNECT, settings.disconnectOnSuspend ? '1' : '0');
-  // "Reload GUI" (iva serve's live reload): the server's, not the copy kept
-  if (settings.reloadGUI === true || settings.reloadAssets === true) sessionStorage.setItem(FRESH, '1');
+// ── going places ──────────────────────────────────────────────────
+
+/**
+ * Go to a GUI, on a page: the panel's page reloads with it (the runtime
+ * keeps its globals per page). It becomes the GUI the next start runs,
+ * unless `once`; `fresh`: its server's copy, not the one kept; `quiet`: no
+ * loading text.
+ */
+function goTo(loc: GuiLocation, o: { once?: boolean; fresh?: boolean; quiet?: boolean } = {}) {
+  if (o.once) sessionStorage.setItem(ONCE, loc.gui);
+  else {
+    sessionStorage.removeItem(ONCE);
+    localStorage.setItem(GUI, loc.gui);
+  }
+  if (loc.page) sessionStorage.setItem(PAGE, loc.page);
+  else sessionStorage.removeItem(PAGE);
+  if (o.fresh) sessionStorage.setItem(FRESH, '1');
+  if (o.quiet) sessionStorage.setItem(QUIET, '1');
   location.reload();
 }
 
-const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+/**
+ * CF.loadGUI: a URL (relative to the GUI it's in; ?page= in it the page),
+ * '' this one again, null the settings' GUI - the panel's default - with
+ * the settings iViewer's has that mean something here: startPage,
+ * reloadGUI / reloadAssets (the server's copy), rememberLastGUI,
+ * showPreloadStatus, disconnectOnSuspend.
+ */
+function loadGui(from: string, url: string | null, settings: Record<string, unknown>) {
+  const loc: GuiLocation | null = url === null
+    ? { gui: localStorage.getItem(DEFAULT_GUI) ?? localStorage.getItem(GUI) ?? from }
+    : url ? parseLocation(url, from) : { gui: from };
+  if (!loc) {
+    noteError(`CF.loadGUI(${JSON.stringify(url)}): not a URL`);
+    return;
+  }
+  if (typeof settings.startPage === 'string' && settings.startPage) loc.page = settings.startPage;
+  if (typeof settings.disconnectOnSuspend === 'boolean') localStorage.setItem(DISCONNECT, settings.disconnectOnSuspend ? '1' : '0');
+  goTo(loc, {
+    once: settings.rememberLastGUI === false,
+    fresh: settings.reloadGUI === true || settings.reloadAssets === true,
+    quiet: settings.showPreloadStatus === false,
+  });
+}
+
+/** CF.openURL, a button's href: a GUI it names is loaded (a browser of GUIs); a web page, tel:, mailto: go to the device's apps */
+function openUrl(url: string) {
+  const from = shown?.gui;
+  if (isGuiUrl(url, from)) {
+    const loc = parseLocation(url, from);
+    if (loc) return goTo(loc);
+  }
+  openOutside(url).catch((e) => noteError(`opening ${url}: ${message(e)}`));
+}
+
+/** the GUI again, from its server (Ctrl+R, the address bar's reload) */
+const reload = () => {
+  if (shown) goTo(shown, { fresh: true });
+};
+
+// ── the address bar ───────────────────────────────────────────────
+
+function showAddress() {
+  if (document.activeElement !== address) address.value = shown ? formatLocation(shown) : (localStorage.getItem(GUI) ?? '');
+  $<HTMLButtonElement>('back').disabled = !history.canBack();
+  $<HTMLButtonElement>('forward').disabled = !history.canForward();
+}
+
+/** the address typed: a page of this GUI flips to it; this GUI again reloads it; another GUI is loaded */
+function go() {
+  const loc = parseLocation(address.value, shown?.gui);
+  if (!loc) return;
+  address.blur();
+  if (shown && current && loc.gui === shown.gui) {
+    if (loc.page && current.project.pages[loc.page]) {
+      current.renderer.cfApi?.flipToPage(loc.page);
+      return;
+    }
+    if (!loc.page) return goTo(loc, { fresh: true });
+  }
+  goTo(loc);
+}
+$('go').addEventListener('click', go);
+address.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    go();
+  } else if (e.key === 'Escape') {
+    address.blur();
+    showAddress();
+  }
+});
+address.addEventListener('focus', () => address.select());
+$('back').addEventListener('click', () => {
+  const to = history.back();
+  if (to) goTo(to);
+});
+$('forward').addEventListener('click', () => {
+  const to = history.forward();
+  if (to) goTo(to);
+});
+$('reload').addEventListener('click', reload);
+
+function applyBar() {
+  bar.hidden = !flag(BAR);
+  showAddress();
+  fit();
+}
+
+// ── running a GUI ─────────────────────────────────────────────────
 
 /** Run it. */
 async function show(m: Manifest) {
@@ -127,21 +271,34 @@ async function show(m: Manifest) {
     fileUrl: m.fileUrl,
     guiUrl: m.url,
     loadGui: (next, settings) => loadGui(m.url, next, settings),
+    openUrl,
     startPage,
     orientation,
     // not the preview's toolbar: its keys (H: the hand, Ctrl+R...) would take a hardware keyboard's
     menu: false,
+    debugMode: flag(OUTLINE),
     disconnectOnSuspend: localStorage.getItem(DISCONNECT) !== '0',
     onOrientationChange: (o) => {
       orientation = o;
       fit();
     },
   });
+  if (flag(FPS)) current.renderer.setShowFps(true);
   // a GUI with one orientation: shown in it, whichever way the device is
   orientation = (current.renderer.targetOrientation as Orientation | undefined) ?? orientation;
+  shown = { gui: m.url, page: current.renderer.currentPageName ?? startPage };
+  history.arrive(shown);
+  const cf = current.renderer.cfApi;
+  cf?.watch(cf.PageFlipEvent, (_from: string | null, to: string) => {
+    shown = { gui: m.url, page: to };
+    history.page(to);
+    showAddress();
+  });
+  showAddress();
   fit();
+  say('');
   for (const p of m.problems) noteError(p);
-  say(m.missingScripts.length ? `missing scripts: ${m.missingScripts.join(', ')} (three fingers held: why)` : '');
+  if (m.missingScripts.length) noteError(`missing scripts: ${m.missingScripts.join(', ')}`);
 }
 
 /**
@@ -152,7 +309,8 @@ async function show(m: Manifest) {
  */
 async function start() {
   await installFonts();
-  const url = localStorage.getItem(GUI);
+  applyBar();
+  const url = sessionStorage.getItem(ONCE) ?? localStorage.getItem(GUI);
   if (!url) {
     openSettings();
     return;
@@ -183,7 +341,7 @@ async function start() {
       noteError(`the copy kept of ${url}: ${message(e)}`);
     }
   }
-  say(`loading ${url}…`);
+  say(`loading ${url}…`, true);
   try {
     const { manifest, got } = await loadManifest(url);
     await show(manifest);
@@ -203,17 +361,37 @@ async function start() {
         noteError(`the copy kept of ${url}: ${message(e2)}`);
       }
     }
-    say(`${why} - trying again in 5 s (three fingers held: settings)`);
+    say(`${why} - trying again in 5 s (three fingers, Ctrl+S: settings)`);
     failed = true;
     retryLater();
   }
 }
 
+// ── the copies kept on the device ─────────────────────────────────
+
 /** the copy of the GUI shown kept on the device: what the next start runs, what the server's is checked against */
 let kept: SavedGui | null = null;
 
+const noCopy = (): Set<string> => {
+  try {
+    const v = JSON.parse(localStorage.getItem(NO_COPY) ?? '[]') as unknown;
+    return new Set(Array.isArray(v) ? (v as string[]) : []);
+  } catch {
+    return new Set();
+  }
+};
+/** whether a copy of the GUI is kept on the device (the settings say; yes unless said otherwise) */
+const keepsCopy = (url: string) => !noCopy().has(url);
+function setKeepsCopy(url: string, on: boolean) {
+  const s = noCopy();
+  if (on) s.delete(url);
+  else s.add(url);
+  localStorage.setItem(NO_COPY, JSON.stringify([...s]));
+}
+
 /** What came from the server, kept on the device (behind the GUI running): the next start runs it. */
 async function keep(got: Download, m: Manifest) {
+  if (!keepsCopy(got.url)) return;
   try {
     const s = await toSave(got, m);
     await saveGui(s);
@@ -276,50 +454,125 @@ function retryLater() {
 function openSettings() {
   clearTimeout(retry);
   input.value = localStorage.getItem(GUI) ?? '';
+  options.bar.checked = flag(BAR);
+  options.outline.checked = flag(OUTLINE);
+  options.fps.checked = flag(FPS);
+  options.disconnect.checked = localStorage.getItem(DISCONNECT) !== '0';
   $('errors').textContent = errors.slice().reverse().join('\n');
   $('cancel').hidden = !current && !failed;
-  void showKept();
+  void showCopies();
   form.hidden = false;
   input.focus();
 }
-
-/** whether the GUI is kept on the device, since when */
-async function showKept() {
-  const url = localStorage.getItem(GUI);
-  const k = url ? await keptGui(url).catch(() => undefined) : undefined;
-  $('saved').textContent = k
-    ? `Kept on this device (${new Date(k.savedAt).toLocaleString()}, ${k.bytes < 1048576 ? `${Math.ceil(k.bytes / 1024)} KB` : `${(k.bytes / 1048576).toFixed(1)} MB`}): it starts without its server.`
-    : url ? 'Not kept on this device yet: it is once it has loaded from its server.' : '';
-  $('forget').hidden = !k;
-}
-$('forget').addEventListener('click', () => {
-  const url = localStorage.getItem(GUI);
-  if (url) void forgetGui(url).then(showKept, (e) => noteError(message(e)));
-});
-form.addEventListener('submit', (e) => {
-  e.preventDefault();
-  const v = input.value.trim();
-  if (!v) return;
-  localStorage.setItem(GUI, guiUrl(v));
-  localStorage.setItem(DEFAULT_GUI, guiUrl(v));
-  location.reload();
-});
-$('cancel').addEventListener('click', () => {
+function closeSettings() {
   form.hidden = true;
   retryLater();
+}
+const toggleSettings = () => (form.hidden ? openSettings() : closeSettings());
+
+const size = (bytes: number) => (bytes < 1048576 ? `${Math.ceil(bytes / 1024)} KB` : `${(bytes / 1048576).toFixed(1)} MB`);
+
+/** the GUIs this panel knows - shown, the default, visited, kept - each with its copy's state and what to do with it */
+async function showCopies() {
+  const list = await keptGuis().catch((e) => {
+    noteError(message(e));
+    return [] as Kept[];
+  });
+  const urls = [...new Set([shown?.gui, localStorage.getItem(GUI), localStorage.getItem(DEFAULT_GUI), ...history.entries().map((e) => e.gui), ...list.map((k) => k.url)]
+    .filter((u): u is string => !!u))];
+  copies.replaceChildren(...urls.map((url) => copyRow(url, list.find((k) => k.url === url))));
+}
+
+function copyRow(url: string, k: Kept | undefined): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'copy';
+  const name = document.createElement('div');
+  name.className = 'copy-url';
+  name.textContent = url;
+  const info = document.createElement('div');
+  info.className = 'hint';
+  const tags = [url === shown?.gui ? 'shown now' : '', url === localStorage.getItem(DEFAULT_GUI) ? 'the default' : ''].filter(Boolean);
+  const state = k ? `Kept: ${size(k.bytes)}, ${new Date(k.savedAt).toLocaleString()}` : keepsCopy(url) ? 'No copy yet: kept once it loads from its server' : 'No copy kept';
+  info.textContent = tags.length ? `${state} (${tags.join(', ')})` : state;
+  const keepIt = document.createElement('label');
+  keepIt.className = 'check';
+  const box = document.createElement('input');
+  box.type = 'checkbox';
+  box.checked = keepsCopy(url);
+  box.addEventListener('change', () => {
+    setKeepsCopy(url, box.checked);
+    if (box.checked) void showCopies();
+    else void forgetGui(url).catch((e) => noteError(message(e))).then(showCopies);
+  });
+  keepIt.append(box, document.createTextNode(' Keep a copy on this device'));
+  const button = (text: string, act: () => void) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'small';
+    b.textContent = text;
+    b.addEventListener('click', act);
+    return b;
+  };
+  const actions = document.createElement('div');
+  actions.className = 'row';
+  actions.append(
+    button('Open', () => goTo({ gui: url })),
+    button('Save now', () => void saveNow(url)),
+    button('Clear', () => void forgetGui(url).catch((e) => noteError(message(e))).then(showCopies)),
+  );
+  row.append(name, info, keepIt, actions);
+  return row;
+}
+
+/** the GUI from its server, kept now - before its turn to run */
+async function saveNow(url: string) {
+  setKeepsCopy(url, true);
+  try {
+    const { manifest, got } = await loadManifest(url);
+    await keep(got, manifest);
+  } catch (e) {
+    noteError(`saving ${url}: ${message(e)}`);
+  }
+  void showCopies();
+}
+$('clear-all').addEventListener('click', () => void forgetAllGuis().catch((e) => noteError(message(e))).then(showCopies));
+
+form.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const loc = parseLocation(input.value);
+  if (!loc) return;
+  localStorage.setItem(DEFAULT_GUI, loc.gui);
+  goTo(loc);
+});
+$('cancel').addEventListener('click', closeSettings);
+options.bar.addEventListener('change', () => {
+  setFlag(BAR, options.bar.checked);
+  applyBar();
+});
+options.outline.addEventListener('change', () => {
+  setFlag(OUTLINE, options.outline.checked);
+  current?.renderer.setDebugMode(options.outline.checked);
+});
+options.fps.addEventListener('change', () => {
+  setFlag(FPS, options.fps.checked);
+  current?.renderer.setShowFps(options.fps.checked);
+});
+options.disconnect.addEventListener('change', () => {
+  localStorage.setItem(DISCONNECT, options.disconnect.checked ? '1' : '0');
+  if (current?.renderer.cfApi) current.renderer.cfApi.disconnectOnSuspend = options.disconnect.checked;
 });
 getVersion().then((v) => {
   $('about').textContent = `iva panel ${v}`;
 }, () => {});
 
-// three fingers held 1.5 s, or one in the top-left corner held 3 s: settings (the GUI still gets the touches)
+// three fingers on the screen (held a moment), or one in the top-left corner held 3 s: settings (the GUI still gets the touches)
 const down = new Map<number, { x: number; y: number }>();
 let hold = 0;
 function rearm() {
   clearTimeout(hold);
   const pts = [...down.values()];
   const corner = pts.length === 1 && pts[0].x < 48 && pts[0].y < 48;
-  if (form.hidden && (pts.length >= 3 || corner)) hold = window.setTimeout(openSettings, corner ? 3000 : 1500);
+  if (form.hidden && (pts.length >= 3 || corner)) hold = window.setTimeout(openSettings, corner ? 3000 : 400);
 }
 addEventListener('pointerdown', (e) => {
   down.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -331,8 +584,22 @@ for (const type of ['pointerup', 'pointercancel'] as const) {
     rearm();
   }, true);
 }
+// a keyboard (the Titan's, a desktop's): Ctrl+S / F1 the settings, Ctrl+R the GUI again from its server, Ctrl+L the address bar, Escape closes
 addEventListener('keydown', (e) => {
-  if (e.key === 'F1' && form.hidden) openSettings();
+  const ctrl = e.ctrlKey || e.metaKey;
+  const key = e.key.toLowerCase();
+  if (e.key === 'F1' || (ctrl && (e.code === 'KeyS' || key === 's'))) {
+    e.preventDefault();
+    toggleSettings();
+  } else if (ctrl && (e.code === 'KeyR' || key === 'r')) {
+    e.preventDefault();
+    reload();
+  } else if (ctrl && (e.code === 'KeyL' || key === 'l') && !bar.hidden) {
+    e.preventDefault();
+    address.focus();
+  } else if (e.key === 'Escape' && !form.hidden) {
+    closeSettings();
+  }
 });
 
 // the systems' sockets closed with the page (a reload, CF.loadGUI)

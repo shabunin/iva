@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The panel page: GUIs and their requests from anywhere (the HTTP client), WebSockets",
+  "description": "The panel page: GUIs and their requests from anywhere (the HTTP client), WebSockets, links opened outside (the opener: http, https, mailto, tel)",
   "windows": [
     "main"
   ],
@@ -14,6 +14,7 @@
         { "url": "https://*:*" }
       ]
     },
-    "websocket:default"
+    "websocket:default",
+    "opener:default"
   ]
 }

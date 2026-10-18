@@ -23,6 +23,8 @@ tauri = { version = "2", features = ["devtools"] }
 tauri-plugin-log = "2"
 tauri-plugin-http = { version = "2", features = ["dangerous-settings", "unsafe-headers", "rustls-tls-webpki-roots"] }
 tauri-plugin-websocket = "2"
+# CF.openURL's web pages and tel: / mailto: links: the device's browser, the app for the scheme
+tauri-plugin-opener = "2"
 tokio = { version = "1", features = ["full"] }
 uuid = { version = "1", features = ["v4"] }
 socket2 = { version = "0.5", features = ["all"] }

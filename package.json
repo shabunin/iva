@@ -44,6 +44,7 @@
     "@tauri-apps/api": "^2.12.4",
     "@tauri-apps/cli": "^2.12.3",
     "@tauri-apps/plugin-http": "^2.8.3",
+    "@tauri-apps/plugin-opener": "^2.7.2",
     "@tauri-apps/plugin-websocket": "^2.5.0",
     "@types/node": "^22.14.0",
     "@types/qrcode": "^1.5.6",

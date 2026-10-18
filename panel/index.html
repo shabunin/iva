@@ -7,20 +7,36 @@
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
+    <div id="bar" hidden>
+      <button type="button" id="back" title="Back (the GUI before)" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6" /></svg></button>
+      <button type="button" id="forward" title="Forward" aria-label="Forward"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6" /></svg></button>
+      <button type="button" id="reload" title="Reload from the server (Ctrl+R)" aria-label="Reload"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7" /><path d="M20 4v5h-5" /></svg></button>
+      <input id="address" type="text" inputmode="url" placeholder="http://192.168.1.10:8019/panel.gui?page=Home" autocomplete="off" autocapitalize="off" spellcheck="false" />
+      <button type="button" id="go" title="Go">Go</button>
+    </div>
     <div id="stage"><div id="view"><canvas id="canvas"></canvas></div></div>
     <div id="status"></div>
     <form id="settings" hidden>
       <h1>iva panel</h1>
       <label for="url">GUI</label>
-      <input id="url" type="text" inputmode="url" placeholder="http://192.168.1.10:8019" autocomplete="off" autocapitalize="off" spellcheck="false" />
-      <p class="hint">A .gui or a zipped GUI on a web server (http://, cf://), or <code>iva serve</code>'s address.</p>
-      <p class="hint" id="saved"></p>
+      <input id="url" type="text" inputmode="url" placeholder="http://192.168.1.10:8019/panel.gui?page=Home" autocomplete="off" autocapitalize="off" spellcheck="false" />
+      <p class="hint">A .gui or a zipped GUI on a web server (http://, cf://), or <code>iva serve</code>'s address; <code>?page=Name</code> the page to start on. This is the panel's default GUI: what it starts with, where <code>CF.loadGUI(null)</code> goes.</p>
       <div class="row">
         <button type="submit">Load</button>
         <button type="button" id="cancel">Back</button>
-        <button type="button" id="forget" hidden>Forget the copy</button>
       </div>
-      <p class="hint">Settings again: hold three fingers on the screen, or a finger in the top-left corner, or press F1.</p>
+      <h2>View</h2>
+      <label class="check"><input type="checkbox" id="opt-bar" /> Address bar: GUI links followed, back and forward, an address typed (Ctrl+L)</label>
+      <label class="check"><input type="checkbox" id="opt-outline" /> Outline: every element's bounds and joins</label>
+      <label class="check"><input type="checkbox" id="opt-fps" /> Frame rate in the corner</label>
+      <label class="check"><input type="checkbox" id="opt-disconnect" /> Disconnect the systems while the panel sleeps (iViewer's Disconnect on Exit/Sleep)</label>
+      <h2>Copies on this device</h2>
+      <p class="hint">A GUI loaded from its server is kept here and starts without the server next time (the server is asked for a newer one behind it). Per GUI: whether a copy is kept, one saved now, one cleared.</p>
+      <div id="copies"></div>
+      <div class="row">
+        <button type="button" id="clear-all">Clear every copy</button>
+      </div>
+      <p class="hint">Settings again: three fingers on the screen, Ctrl+S or F1 on a keyboard, or a finger held in the top-left corner. Ctrl+R: the GUI again from its server.</p>
       <pre id="errors"></pre>
       <p id="about"></p>
     </form>
