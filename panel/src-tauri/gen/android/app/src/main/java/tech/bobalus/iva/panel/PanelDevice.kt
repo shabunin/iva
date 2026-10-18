@@ -303,6 +303,17 @@ class PanelDevice(private val activity: ComponentActivity) {
         when {
           !kept -> pass(event)
           mine.any { it.intercept && it.pressTime <= held } -> true
+          // too short to be kept: the system's own effect after all - a volume key's done by Android
+          // outside the activity's dispatch (a key passed on again would change nothing), so here
+          code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN || code == KeyEvent.KEYCODE_VOLUME_MUTE -> {
+            val direction = when (code) {
+              KeyEvent.KEYCODE_VOLUME_UP -> AudioManager.ADJUST_RAISE
+              KeyEvent.KEYCODE_VOLUME_DOWN -> AudioManager.ADJUST_LOWER
+              else -> AudioManager.ADJUST_TOGGLE_MUTE
+            }
+            audio.adjustSuggestedStreamVolume(direction, AudioManager.USE_DEFAULT_STREAM_TYPE, AudioManager.FLAG_SHOW_UI)
+            true
+          }
           else -> {
             pass(KeyEvent.changeAction(event, KeyEvent.ACTION_DOWN))
             pass(event)
