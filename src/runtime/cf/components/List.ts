@@ -513,8 +513,20 @@ export function renderList(
             if ((updatedListId === listId || updatedListId === "l" + listId) && !scrollBox.destroyed) apply(change);
         };
 
-        const listScrolledCb = (scrollListId: string, index: any, positionVal: any, animated: boolean) => {
+        /** on the stage and shown, it and everything it is in (a hidden subpage's list is not) */
+        const onScreen = (): boolean => {
+            for (let p: Container | null = scrollBox; p; p = p.parent) {
+                if (!p.visible) return false;
+                if (p === renderer.app.stage) return true;
+            }
+            return false;
+        };
+
+        // CF.listScroll(list, index, position, animated [, visibleOnly]): every list on the join scrolls,
+        // unless visibleOnly is true - then only one on screen (the docs: several lists on one join)
+        const listScrolledCb = (scrollListId: string, index: any, positionVal: any, animated: boolean, visibleOnly?: boolean) => {
             if (!(scrollListId === listId || scrollListId === "l" + listId) || scrollBox.destroyed) return;
+            if (visibleOnly === true && !onScreen()) return;
             const all = rows();
             const view = isVertical ? H : W;
             let targetScroll = 0;

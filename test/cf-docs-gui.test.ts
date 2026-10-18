@@ -343,6 +343,41 @@ test("listAdd: an item's `properties` (4.0.6) - per join of its subpage, what se
   assert.equal((await props(CF, 'l1:1:s1')).theme, 't2');
 });
 
+// ── CF.listScroll ────────────────────────────────────────────────
+
+test('listScroll(list, index, position, animated, visibleOnly): every list on the join scrolls; with visibleOnly true only one on screen (not one in a hidden subpage)', async () => {
+  const { CF, renderer } = await runGui(`
+  <page name="Main" j="10" transition="" subtype="" time="0" ease="" start="1">
+    <portrait />
+    <landscape>
+      <list j="1" x="10" y="10" w="180" h="50" t="" headerSub="" titleSub="" contentSub="Row" footerSub="" orientation="v" l="0" swipedelete="0" />
+      <subpage name="Hidden" x="200" y="10" j="30" transition1="" subtype1="" time1="0" ease1="" transition2="" subtype2="" time2="0" ease2="" clickthrough="0" topmost="0" v="0" l="0" />
+    </landscape>
+  </page>
+  <subpage name="Hidden" w="180" h="50">
+    <list j="1" x="0" y="0" w="180" h="50" t="" headerSub="" titleSub="" contentSub="Row" footerSub="" orientation="v" l="0" swipedelete="0" />
+  </subpage>
+  <subpage name="Row" w="180" h="25">
+    <txt j="1" x="0" y="0" w="180" h="25" t="t" wrap="False" l="0" />
+  </subpage>`);
+  CF.listAdd('l1', [{ s1: 'a' }, { s1: 'b' }, { s1: 'c' }, { s1: 'd' }]);
+  // the two lists on l1 (their ScrollBoxes): the page's, the hidden subpage's
+  const boxes = renderer.nodesMap['l1'].map((c: any) => c.children.find((k: any) => k.scrollY !== undefined));
+  assert.equal(boxes.length, 2);
+  const positions = () => boxes.map((b: any) => b.scrollY);
+  assert.deepEqual(positions(), [0, 0]);
+  CF.listScroll('l1', 2, CF.TopPosition, false, true);
+  assert.deepEqual(positions(), [-50, 0], 'the list on screen only');
+  CF.listScroll('l1', 0, CF.TopPosition, false, true);
+  CF.listScroll('l1', 2, CF.TopPosition, false);
+  assert.deepEqual(positions(), [-50, -50], 'both without the flag');
+  // the subpage shown: its list is on screen too
+  CF.listScroll('l1', 0, CF.TopPosition, false);
+  CF.setJoin('d30', 1);
+  CF.listScroll('l1', 2, CF.TopPosition, false, true);
+  assert.deepEqual(positions(), [-50, -50]);
+});
+
 // ── CF.setToken ──────────────────────────────────────────────────
 
 test("setToken: the docs' examples - values become strings; global; a list item's join", async () => {
