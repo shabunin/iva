@@ -81,6 +81,19 @@ let orientation: Orientation = wanted('landscape');
 const say = (text: string, loading = false) => {
   status.textContent = current || (loading && quiet) ? '' : text;
 };
+/** a line worth seeing even with a GUI up (scripts missing, the copy running for the server), for a while */
+let noticeTimer = 0;
+const notice = (text: string, ms = 12000) => {
+  status.textContent = text;
+  clearTimeout(noticeTimer);
+  noticeTimer = window.setTimeout(() => {
+    if (status.textContent === text) status.textContent = '';
+  }, ms);
+};
+/** one spelling of a GUI's URL (http://host:8019 and http://host:8019/ are one GUI): the location's */
+const canonical = (url: string) => parseLocation(url)?.gui ?? url;
+/** the spellings a copy may be kept under: this one, and the other with or without the trailing slash (older panels kept the bare host) */
+const spellings = (url: string) => [...new Set([url, canonical(url), url.replace(/\/$/, ''), `${url}/`])];
 
 // what went wrong, for the settings page (a panel has no console to look at)
 const errors: string[] = [];
@@ -298,7 +311,19 @@ async function show(m: Manifest) {
   fit();
   say('');
   for (const p of m.problems) noteError(p);
-  if (m.missingScripts.length) noteError(`missing scripts: ${m.missingScripts.join(', ')}`);
+  if (m.missingScripts.length) {
+    noteError(`missing scripts: ${m.missingScripts.join(', ')}`);
+    notice(`${m.missingScripts.length} script(s) missing: ${m.missingScripts.map((s) => s.split('/').pop()).join(', ')} - Ctrl+R loads again (details: three fingers, Ctrl+S)`);
+  }
+}
+
+/** the copy kept of a GUI, under whichever spelling of its URL it was kept */
+async function savedCopy(url: string): Promise<SavedGui | undefined> {
+  for (const u of spellings(url)) {
+    const s = await savedGui(u);
+    if (s) return s;
+  }
+  return undefined;
 }
 
 /**
@@ -310,14 +335,16 @@ async function show(m: Manifest) {
 async function start() {
   await installFonts();
   applyBar();
-  const url = sessionStorage.getItem(ONCE) ?? localStorage.getItem(GUI);
-  if (!url) {
+  const stored = sessionStorage.getItem(ONCE) ?? localStorage.getItem(GUI);
+  if (!stored) {
     openSettings();
     return;
   }
+  const url = canonical(stored);
+  if (url !== stored && !sessionStorage.getItem(ONCE)) localStorage.setItem(GUI, url);
   const fresh = sessionStorage.getItem(FRESH) === '1';
   sessionStorage.removeItem(FRESH);
-  const saved = await savedGui(url).catch((e) => void noteError(`the copy kept: ${message(e)}`));
+  const saved = await savedCopy(url).catch((e) => void noteError(`the copy kept: ${message(e)}`));
   if (saved && !fresh) {
     try {
       const m = await savedManifest(saved);
@@ -344,6 +371,20 @@ async function start() {
   say(`loading ${url}…`, true);
   try {
     const { manifest, got } = await loadManifest(url);
+    // the link lost scripts the server has: a whole copy kept runs instead (a GUI short of its start script runs nothing)
+    if (manifest.missingScripts.length && saved) {
+      try {
+        const m = await savedManifest(saved);
+        if (!m.missingScripts.length) {
+          await show(m);
+          kept = saved;
+          notice(`the server's copy came short of ${manifest.missingScripts.length} script(s) - the copy kept on ${new Date(saved.savedAt).toLocaleString()} runs (Ctrl+R: again from the server)`);
+          return;
+        }
+      } catch (e) {
+        noteError(`the copy kept of ${url}: ${message(e)}`);
+      }
+    }
     await show(manifest);
     void keep(got, manifest);
   } catch (e) {
@@ -354,8 +395,7 @@ async function start() {
       try {
         await show(await savedManifest(saved));
         kept = saved;
-        say(`${why} - the copy kept on ${new Date(saved.savedAt).toLocaleString()}`);
-        setTimeout(() => say(''), 8000);
+        notice(`${why} - the copy kept on ${new Date(saved.savedAt).toLocaleString()} runs`);
         return;
       } catch (e2) {
         noteError(`the copy kept of ${url}: ${message(e2)}`);
@@ -479,9 +519,12 @@ async function showCopies() {
     return [] as Kept[];
   });
   const urls = [...new Set([shown?.gui, localStorage.getItem(GUI), localStorage.getItem(DEFAULT_GUI), ...history.entries().map((e) => e.gui), ...list.map((k) => k.url)]
-    .filter((u): u is string => !!u))];
-  copies.replaceChildren(...urls.map((url) => copyRow(url, list.find((k) => k.url === url))));
+    .filter((u): u is string => !!u).map(canonical))];
+  copies.replaceChildren(...urls.map((url) => copyRow(url, list.find((k) => spellings(url).includes(k.url)))));
 }
+
+/** a copy forgotten under every spelling of its URL */
+const forgetCopy = (url: string) => Promise.all(spellings(url).map((u) => forgetGui(u)));
 
 function copyRow(url: string, k: Kept | undefined): HTMLElement {
   const row = document.createElement('div');
@@ -502,7 +545,7 @@ function copyRow(url: string, k: Kept | undefined): HTMLElement {
   box.addEventListener('change', () => {
     setKeepsCopy(url, box.checked);
     if (box.checked) void showCopies();
-    else void forgetGui(url).catch((e) => noteError(message(e))).then(showCopies);
+    else void forgetCopy(url).catch((e) => noteError(message(e))).then(showCopies);
   });
   keepIt.append(box, document.createTextNode(' Keep a copy on this device'));
   const button = (text: string, act: () => void) => {
@@ -518,7 +561,7 @@ function copyRow(url: string, k: Kept | undefined): HTMLElement {
   actions.append(
     button('Open', () => goTo({ gui: url })),
     button('Save now', () => void saveNow(url)),
-    button('Clear', () => void forgetGui(url).catch((e) => noteError(message(e))).then(showCopies)),
+    button('Clear', () => void forgetCopy(url).catch((e) => noteError(message(e))).then(showCopies)),
   );
   row.append(name, info, keepIt, actions);
   return row;

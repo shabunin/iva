@@ -199,21 +199,30 @@ async function remoteManifest(at: string, guiXml: string): Promise<Manifest> {
   const scriptMap: Record<string, string> = {};
   const missingScripts: string[] = [];
   const problems: string[] = [];
-  // a few at a time (a dozen at once and a flaky link - ZeroTier - drops one now and then), a failed one asked for once more
-  await each(scriptNames(guiXml), 4, async (name) => {
-    const href = new URL(name.replace(/\\/g, '/'), files).href;
-    let error: unknown;
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        scriptMap[name] = new TextDecoder().decode(await get(href));
-        return;
-      } catch (e) {
-        error = e;
-      }
+  // a few at a time (a dozen at once and a flaky link - ZeroTier - drops one now and then), a failed one asked
+  // for once more; the ones still missing after that again, in rounds a little apart, two at a time - a GUI
+  // without its start script or its web server's runs nothing
+  const failed = new Map<string, unknown>();
+  const fetchScript = async (name: string) => {
+    try {
+      scriptMap[name] = new TextDecoder().decode(await get(new URL(name.replace(/\\/g, '/'), files).href));
+      failed.delete(name);
+    } catch (e) {
+      failed.set(name, e);
     }
-    missingScripts.push(name);
-    problems.push(`${name}: ${error instanceof Error ? error.message : String(error)} (twice)`);
+  };
+  await each(scriptNames(guiXml), 4, async (name) => {
+    await fetchScript(name);
+    if (failed.has(name)) await fetchScript(name);
   });
+  for (let round = 1; round <= 3 && failed.size; round++) {
+    await new Promise((r) => setTimeout(r, 300 * round));
+    await each([...failed.keys()], 2, fetchScript);
+  }
+  for (const [name, error] of failed) {
+    missingScripts.push(name);
+    problems.push(`${name}: ${error instanceof Error ? error.message : String(error)} (after 5 tries)`);
+  }
   const path = new URL(at).pathname;
   const title = titleOf(guiXml, decodeURIComponent(path.split('/').pop() || new URL(at).host));
   // a project file (CF.loadAsset, a web view's page): in the image folder, where iViewer keeps them

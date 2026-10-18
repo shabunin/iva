@@ -37,8 +37,8 @@ test('a GUI runs from its copy on the device: an archive, or a .gui and the file
   }
 });
 
-test("a GUI from its server: its scripts fetched a few at a time, a failed one asked for once more; one that fails twice is missing, with why", async () => {
-  const names = ['a.js', 'b.js', 'c.js', 'd.js', 'e.js', 'flaky.js', 'gone.js'];
+test("a GUI from its server: its scripts fetched a few at a time, a failed one asked for again, then in rounds; one that never comes is missing, with why", async () => {
+  const names = ['a.js', 'b.js', 'c.js', 'd.js', 'e.js', 'flaky.js', 'slow.js', 'gone.js'];
   const gui = `<gui><properties><project>Live</project><imagefolder>assets</imagefolder></properties><scripts>${names.map((n) => `<script name="scripts/${n}" />`).join('')}</scripts></gui>`;
   let inFlight = 0;
   let most = 0;
@@ -55,15 +55,19 @@ test("a GUI from its server: its scripts fetched a few at a time, a failed one a
     if (url === 'http://10.0.0.2:8019/') return answer(gui, 'iva');
     const name = url.split('/').pop()!;
     tries[name] = (tries[name] ?? 0) + 1;
-    if (name === 'gone.js' || (name === 'flaky.js' && tries[name] === 1)) throw new Error('connection reset');
+    // flaky: the second try; slow: the fourth (a round after the first pass); gone: never
+    if (name === 'gone.js' || (name === 'flaky.js' && tries[name] === 1) || (name === 'slow.js' && tries[name] < 4)) throw new Error('connection reset');
     return answer(`// ${name}`);
   }) as any);
   const { manifest: m } = await loadManifest('http://10.0.0.2:8019/');
   assert.equal(m.scriptMap['scripts/flaky.js'], '// flaky.js');
   assert.equal(tries['flaky.js'], 2);
-  assert.equal(Object.keys(m.scriptMap).length, 6);
+  assert.equal(m.scriptMap['scripts/slow.js'], '// slow.js');
+  assert.equal(tries['slow.js'], 4);
+  assert.equal(tries['gone.js'], 5);
+  assert.equal(Object.keys(m.scriptMap).length, 7);
   assert.deepEqual(m.missingScripts, ['scripts/gone.js']);
-  assert.deepEqual(m.problems, ['scripts/gone.js: connection reset (twice)']);
+  assert.deepEqual(m.problems, ['scripts/gone.js: connection reset (after 5 tries)']);
   assert.ok(most <= 4, `${most} fetches at once`);
   // the scripts' URLs: in the image folder, as iViewer asks for them
   assert.equal(tries['a.js'], 1);
@@ -90,8 +94,8 @@ test("the copy kept is whole: iva serve's archive asked for twice, else the file
     }) as any);
     return asked;
   };
-  // the archive fails both times; gone.js failed twice at the load and comes the third time: kept, whole
-  let asked = scenario({ 'gui.zip': 2, 'gone.js': 2 });
+  // the archive fails both times; gone.js failed every one of the load's five tries and comes the sixth time, for the copy: kept, whole
+  let asked = scenario({ 'gui.zip': 2, 'gone.js': 5 });
   let { manifest, got } = await loadManifest('http://10.0.0.2:8019/');
   assert.deepEqual(manifest.missingScripts, ['scripts/gone.js']);
   const saved = await toSave(got, manifest);
