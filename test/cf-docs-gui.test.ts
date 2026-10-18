@@ -378,6 +378,25 @@ test('listScroll(list, index, position, animated, visibleOnly): every list on th
   assert.deepEqual(positions(), [-50, -50]);
 });
 
+// ── CF.loadGUI ───────────────────────────────────────────────────
+
+test("loadGUI(url, settings): the host loads it - '' this GUI again, null the app's default GUI (told apart from ''), with the settings; a profile: URL refused", async () => {
+  const { CF, renderer } = await gui();
+  const asked: unknown[][] = [];
+  renderer.loadGui = (url, settings) => asked.push([url, settings]);
+  CF.loadGUI('http://server/other.gui', { startPage: 'Home', reloadGUI: true });
+  CF.loadGUI('', {});
+  CF.loadGUI(null, { disconnectOnSuspend: false });
+  CF.loadGUI(null);
+  CF.loadGUI('profile:Kitchen', {});
+  assert.deepEqual(asked, [
+    ['http://server/other.gui', { startPage: 'Home', reloadGUI: true }],
+    ['', {}],
+    [null, { disconnectOnSuspend: false }],
+    [null, {}],
+  ]);
+});
+
 // ── CF.setToken ──────────────────────────────────────────────────
 
 test("setToken: the docs' examples - values become strings; global; a list item's join", async () => {

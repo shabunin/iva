@@ -857,7 +857,7 @@ export class CFAPI implements CFContext {
         utilitiesApi.openURL(this, url);
     };
     
-    loadGUI = (url: string, settings: any) => {
+    loadGUI = (url: string | null, settings?: any) => {
         utilitiesApi.loadGUI(this, url, settings);
     };
     

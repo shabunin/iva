@@ -218,13 +218,14 @@ export function openURL(
 }
 
 /**
- * Another GUI - a URL, cf://host/file.gui, a name next to this one - or
- * this one again ('' / null), with CF.loadGUI's settings (startPage...).
- * The host does it (the preview: a new page with that GUI).
+ * Another GUI - a URL, cf://host/file.gui, a name next to this one -, this
+ * one again (''), or the app's default GUI (null: the preview's picker, the
+ * panel's configured URL), with CF.loadGUI's settings (startPage...). The
+ * host does it (the preview: a new page with that GUI), told null as null.
  */
 export function loadGUI(
     ctx: CFContext,
-    url: string,
+    url: string | null,
     settings: any
 ) {
     const renderer = (ctx as any).renderer;
@@ -232,7 +233,8 @@ export function loadGUI(
         console.warn(`CF.loadGUI(${url}): iViewer 5 profiles are the device's own - not something the preview has`);
         return;
     }
-    if (renderer?.loadGui) renderer.loadGui(String(url ?? ''), settings && typeof settings === 'object' ? settings : {});
+    const to = url === null || url === undefined ? null : String(url);
+    if (renderer?.loadGui) renderer.loadGui(to, settings && typeof settings === 'object' ? settings : {});
     else console.log(`CF.loadGUI(${url}, ${JSON.stringify(settings)}): nothing here to load it`);
 }
 

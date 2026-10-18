@@ -98,12 +98,15 @@ function setOrientation(o: Orientation) {
 
 /**
  * CF.loadGUI / a cf:// link: the GUI it names (the server says where that
- * is: a .gui of the project by that name, else the URL), '' this one again;
- * in a new page - the runtime keeps globals (CF, scripts, sockets) per page.
+ * is: a .gui of the project by that name, else the URL), '' this one again,
+ * null the app's default - here the picker's first GUI (no ?gui); in a new
+ * page - the runtime keeps globals (CF, scripts, sockets) per page.
  */
-async function loadGui(url: string, settings: Record<string, unknown>) {
-  let gui = shown;
-  if (url) {
+async function loadGui(url: string | null, settings: Record<string, unknown>) {
+  let gui: string | null = shown;
+  if (url === null) {
+    gui = null;
+  } else if (url) {
     setStatus(`loading ${url}…`);
     const res = await fetch(`/__iva/resolve?from=${encodeURIComponent(shown)}&url=${encodeURIComponent(url)}`);
     if (!res.ok) {
@@ -115,7 +118,8 @@ async function loadGui(url: string, settings: Record<string, unknown>) {
     if (r.note) sessionStorage.setItem('iva-note', r.note);
   }
   const next = new URL(location.href);
-  next.searchParams.set('gui', gui);
+  if (gui === null) next.searchParams.delete('gui');
+  else next.searchParams.set('gui', gui);
   if (typeof settings.startPage === 'string' && settings.startPage) next.searchParams.set('page', settings.startPage);
   else next.searchParams.delete('page');
   location.href = next.toString();

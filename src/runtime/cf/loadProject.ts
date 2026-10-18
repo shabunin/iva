@@ -55,10 +55,11 @@ export interface LoadProjectOptions {
   webUrl?: (url: string) => string | undefined;
   /**
    * Load another GUI (CF.loadGUI, CF.openURL("cf://..."), a button's
-   * href="cf://..."): `url` as the GUI gave it ('' reloads this one),
-   * `settings` CF.loadGUI's (startPage, reloadGUI, ...).
+   * href="cf://..."): `url` as the GUI gave it ('' reloads this one, null
+   * is the app's default GUI - CF.loadGUI(null)), `settings` CF.loadGUI's
+   * (startPage, reloadGUI, ...).
    */
-  loadGui?: (url: string, settings: Record<string, unknown>) => void;
+  loadGui?: (url: string | null, settings: Record<string, unknown>) => void;
   /** The page to show first (CF.loadGUI's startPage), when the GUI has it. */
   startPage?: string;
   /** Where the GUI came from (CF.guiURL). */

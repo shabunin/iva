@@ -17,6 +17,8 @@ import { forgetGui, keptGui, saveGui, savedGui, usedGui, type SavedGui } from '.
 
 /** localStorage: the GUI's URL; sessionStorage: the page CF.loadGUI asked for */
 const GUI = 'iva-panel:gui';
+/** localStorage: the GUI's URL as the settings have it - the panel's default GUI, what CF.loadGUI(null) goes back to (GUI follows CF.loadGUI) */
+const DEFAULT_GUI = 'iva-panel:default-gui';
 const PAGE = 'iva-panel:page';
 /** localStorage: iViewer's "Disconnect on Exit/Sleep" ('0': off), as CF.loadGUI last set it */
 const DISCONNECT = 'iva-panel:disconnectOnSuspend';
@@ -100,9 +102,9 @@ addEventListener('resize', turned);
 // a field let go (the keyboard going): what the window is now
 document.addEventListener('focusout', () => setTimeout(turned, 300));
 
-/** CF.loadGUI / a cf:// link: that GUI ('' this one again), in a fresh page - the runtime keeps its globals per page */
-function loadGui(from: string, url: string, settings: Record<string, unknown>) {
-  localStorage.setItem(GUI, url ? new URL(guiUrl(url), from).href : from);
+/** CF.loadGUI / a cf:// link: that GUI ('' this one again, null the settings' - the default), in a fresh page - the runtime keeps its globals per page */
+function loadGui(from: string, url: string | null, settings: Record<string, unknown>) {
+  localStorage.setItem(GUI, url === null ? (localStorage.getItem(DEFAULT_GUI) ?? localStorage.getItem(GUI) ?? from) : url ? new URL(guiUrl(url), from).href : from);
   if (typeof settings.startPage === 'string' && settings.startPage) sessionStorage.setItem(PAGE, settings.startPage);
   if (typeof settings.disconnectOnSuspend === 'boolean') localStorage.setItem(DISCONNECT, settings.disconnectOnSuspend ? '1' : '0');
   // "Reload GUI" (iva serve's live reload): the server's, not the copy kept
@@ -299,6 +301,7 @@ form.addEventListener('submit', (e) => {
   const v = input.value.trim();
   if (!v) return;
   localStorage.setItem(GUI, guiUrl(v));
+  localStorage.setItem(DEFAULT_GUI, guiUrl(v));
   location.reload();
 });
 $('cancel').addEventListener('click', () => {
