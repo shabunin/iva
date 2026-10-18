@@ -1,5 +1,6 @@
 import { CFContext, CFCallback } from './types';
 import { joinStore } from '../joinStore';
+import { setProperties } from './gui';
 
 export function listScroll(
     ctx: CFContext,
@@ -7,9 +8,9 @@ export function listScroll(
     index: any,
     position: any,
     animated: boolean,
-    overrideScale?: boolean
+    visibleOnly?: boolean
 ) {
-    ctx.dispatchEvent("LIST_SCROLLED", listJoin, index, position, animated, overrideScale);
+    ctx.dispatchEvent("LIST_SCROLLED", listJoin, index, position, animated, visibleOnly);
 }
 
 /** What changed in a list, for the list on screen to show it (animated, as iViewer's insert / delete transitions). */
@@ -25,6 +26,28 @@ export interface ListChange {
 /** the prefix of a list's item joins: l1:<index>:s2 */
 const itemPrefix = (list: string) => `l${list.replace(/^l/, '')}:`;
 
+/** an item's own join names (s1, d2, a3): what its `properties` may be keyed by */
+const isItemJoin = (j: unknown): j is string => typeof j === 'string' && /^[ads]\d+$/.test(j);
+
+/**
+ * An item's `properties` (iViewer 4.0.6): its elements' properties as
+ * CF.setProperties takes them - keyed by the item's join ({ s1: { x: 10,
+ * opacity: 0.5 }, d2: { theme: 'big' } }), or setProperties' own change
+ * objects ({ join: 's1', x: 10 }, alone or in an array). Set on the item's
+ * joins (l1:3:s1), at once, no animation; the elements get them whether on
+ * screen now or made later (the renderer reads them when it makes a node).
+ */
+export function setItemProperties(ctx: CFContext, list: string, idx: number, properties: unknown) {
+    if (!properties || typeof properties !== 'object') return;
+    const given: unknown[] = Array.isArray(properties) ? properties
+        : 'join' in properties ? [properties]
+        : Object.entries(properties).map(([join, p]) => (p && typeof p === 'object' ? { ...(p as object), join } : null));
+    const changes = given
+        .filter((c): c is Record<string, unknown> & { join: string } => !!c && typeof c === 'object' && isItemJoin((c as { join?: unknown }).join))
+        .map((c) => ({ ...c, join: `${itemPrefix(list)}${idx}:${c.join}` }));
+    if (changes.length) setProperties(ctx, changes, 0, 0, ctx.AnimationCurveLinear);
+}
+
 /**
  * An item's joins as its object gives them (a value, or { value, tokens }),
  * quietly - as iViewer, no JoinChangeEvent for a list's items. `missing`:
@@ -35,6 +58,11 @@ export function setItemJoins(ctx: CFContext, list: string, idx: number, info: an
     const prefix = itemPrefix(list);
     for (const key of Object.keys(info ?? {})) {
         if (key === 'subpage' || key === 'title' || key === 'index') continue;
+        // its elements' properties (kept by the CF object once set: not again when the list is shown again)
+        if (key === 'properties') {
+            if (!missing) setItemProperties(ctx, list, idx, info[key]);
+            continue;
+        }
         const type = key.charAt(0);
         if (type !== 's' && type !== 'd' && type !== 'a') continue;
         const id = `${prefix}${idx}:${key.substring(1)}`;
@@ -49,7 +77,7 @@ export function setItemJoins(ctx: CFContext, list: string, idx: number, info: an
     }
 }
 
-/** the items' joins and tokens from `at` on moved by `by` (an item in: down; gone: up, theirs dropped) */
+/** the items' joins, tokens and properties from `at` on moved by `by` (an item in: down; gone: up, theirs dropped) */
 function moveItems(ctx: CFContext, list: string, at: number, by: number) {
     const prefix = itemPrefix(list);
     const to = (key: string): string | null => {
@@ -62,14 +90,21 @@ function moveItems(ctx: CFContext, list: string, at: number, by: number) {
         return parts.join(':');
     };
     joinStore.rekey(to);
-    if (!ctx.tokensStore) return;
-    const tokens: Record<string, any> = {};
-    for (const [key, value] of Object.entries(ctx.tokensStore)) {
-        const k = to(key);
-        if (k !== null) tokens[k] = value;
-    }
-    for (const key of Object.keys(ctx.tokensStore)) delete ctx.tokensStore[key];
-    Object.assign(ctx.tokensStore, tokens);
+    /** a store's entries under their new keys (an entry's `join`, when it carries one, too) */
+    const rekey = (store: Record<string, any> | undefined) => {
+        if (!store) return;
+        const moved: Record<string, any> = {};
+        for (const [key, value] of Object.entries(store)) {
+            const k = to(key);
+            if (k === null) continue;
+            moved[k] = value && typeof value === 'object' && value.join === key ? Object.assign(value, { join: k }) : value;
+        }
+        for (const key of Object.keys(store)) delete store[key];
+        Object.assign(store, moved);
+    };
+    rekey(ctx.tokensStore);
+    rekey(ctx.propertiesStore);
+    rekey((ctx.renderer as { themeOf?: Record<string, string> } | null)?.themeOf);
 }
 
 export function listAdd(
@@ -182,7 +217,8 @@ export function listContents(
         if (item.subpage) mappedItem.subpage = item.subpage;
         
         Object.keys(item).forEach(key => {
-            if (key !== "subpage") {
+            // (`properties` are the item's elements', not a join)
+            if (key !== "subpage" && key !== "properties") {
                 const val = item[key];
                 if (val && typeof val === "object" && ("value" in val || "tokens" in val)) {
                     mappedItem[key] = {

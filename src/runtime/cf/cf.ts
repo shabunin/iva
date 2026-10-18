@@ -633,7 +633,7 @@ export class CFAPI implements CFContext {
         guiApi.setJoin(this, join, value, sendJoinChangeEvent);
     };
 
-    setJoins = (joinsArray: { join: string; value?: string | number | boolean | null; tokens?: Record<string, string | number | boolean> | null }[], sendJoinChangeEvents: boolean = true) => {
+    setJoins = (joinsArray: { join: string; value?: string | number | boolean | null; tokens?: Record<string, string | number | boolean> | null; properties?: Record<string, unknown> | null }[], sendJoinChangeEvents: boolean = true) => {
         guiApi.setJoins(this, joinsArray, sendJoinChangeEvents);
     };
 
@@ -668,8 +668,8 @@ export class CFAPI implements CFContext {
     };
 
     // DELEGATE LISTS FUNCTIONS
-    listScroll = (listJoin: string, index: any, position: any, animated: boolean, overrideScale?: boolean) => {
-        listsApi.listScroll(this, listJoin, index, position, animated, overrideScale);
+    listScroll = (listJoin: string, index: any, position: any, animated: boolean, visibleOnly?: boolean) => {
+        listsApi.listScroll(this, listJoin, index, position, animated, visibleOnly);
     };
 
     listAdd = (list: string, array: any[], position?: number | string) => {

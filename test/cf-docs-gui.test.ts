@@ -233,6 +233,44 @@ test('setJoins: a value of null is no value (the join is left as it is), tokens 
   assert.equal(await value(CF, 's3'), 'v');
 });
 
+test("setJoins: an item's `properties` (4.0.6) set its join's objects' properties, as setProperties does", async () => {
+  const { CF, renderer } = await gui();
+  CF.setJoins([{ join: 's1', value: 'moved', properties: { x: 50, opacity: 0.5 } }, { join: 'd1', properties: { scale: 2 } }]);
+  assert.equal(await value(CF, 's1'), 'moved');
+  const p = await props(CF, 's1');
+  assert.deepEqual([p.x, p.opacity], [50, 0.5]);
+  assert.equal((await props(CF, 'd1')).scale, 2);
+  const el = renderer.nodesMap['s1'][0];
+  assert.deepEqual([el.x - el.pivot.x, el.alpha], [50, 0.5], 'the element on screen moved and faded');
+});
+
+// ── CF.listAdd / CF.listUpdate with properties ───────────────────
+
+test("listAdd: an item's `properties` (4.0.6) - per join of its subpage, what setProperties takes - set its elements; not a join of the item (listContents); listUpdate too; kept with the item as others come and go", async () => {
+  const { CF, renderer } = await runGui(GUI, { tokens: TOKENS, themes: `<theme type="text" name=".t2"><![CDATA[color: #FF0000; font-size: 14px; font-family: 'Arial';]]></theme>` });
+  CF.listAdd('l1', [{ s1: 'a', properties: { s1: { x: 20, opacity: 0.5 } } }, { s1: 'b' }]);
+  const first = await props(CF, 'l1:0:s1');
+  assert.deepEqual([first.x, first.opacity, first.theme], [20, 0.5, 't']);
+  assert.deepEqual([(await props(CF, 'l1:1:s1')).x, (await props(CF, 'l1:1:s1')).opacity], [0, 1]);
+  const el = renderer.nodesMap['l1:0:s1'][0];
+  assert.deepEqual([el.x - el.pivot.x, el.alpha], [20, 0.5], 'the row on screen moved and faded');
+  const [items] = await answer<[any[]]>((cb) => CF.listContents('l1', 0, 0, cb));
+  assert.deepEqual(items, [{ s1: { value: 'a', tokens: {} } }, { s1: { value: 'b', tokens: {} } }]);
+  // setProperties' own change objects do too; a theme per join
+  CF.listUpdate('l1', [{ index: 1, properties: [{ join: 's1', theme: 't2', zrotation: 90 }] }]);
+  const second = await props(CF, 'l1:1:s1');
+  assert.deepEqual([second.theme, second.zrotation], ['t2', 90]);
+  assert.equal((renderer.nodesMap['l1:1:s1'].filter((c: any) => !c.destroyed).at(-1) as any).cfNode.t, 't2', 'the row made again in that theme');
+  // an item added at the top: the properties stay with their items
+  CF.listAdd('l1', [{ s1: 'top' }], CF.TopPosition);
+  assert.equal((await props(CF, 'l1:0:s1')).x, 0);
+  assert.equal((await props(CF, 'l1:1:s1')).x, 20);
+  assert.equal((await props(CF, 'l1:2:s1')).theme, 't2');
+  CF.listRemove('l1', 0, 1);
+  assert.equal((await props(CF, 'l1:0:s1')).x, 20);
+  assert.equal((await props(CF, 'l1:1:s1')).theme, 't2');
+});
+
 // ── CF.setToken ──────────────────────────────────────────────────
 
 test("setToken: the docs' examples - values become strings; global; a list item's join", async () => {

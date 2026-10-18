@@ -99,6 +99,8 @@ export function setJoins(
         join: string;
         value?: string | number | boolean | null;
         tokens?: Record<string, string | number | boolean> | null;
+        /** the join's objects' properties (iViewer 4.0.6), as one of CF.setProperties' changes: { x, opacity, theme ... } */
+        properties?: Record<string, unknown> | null;
     }[],
     sendJoinChangeEvents: boolean = true
 ) {
@@ -111,6 +113,10 @@ export function setJoins(
             for (const [tokenName, tokenValue] of Object.entries(item.tokens)) {
                 setToken(ctx, item.join, tokenName, String(tokenValue));
             }
+        }
+        // its objects' properties, at once (no animation), as CF.setProperties sets them
+        if (item.properties && typeof item.properties === 'object' && !Array.isArray(item.properties)) {
+            setProperties(ctx, { ...item.properties, join: item.join }, 0, 0, ctx.AnimationCurveLinear);
         }
     });
 }
