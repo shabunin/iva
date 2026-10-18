@@ -66,6 +66,19 @@ test('a socket given up while it connects (the GUI gone to sleep) leaves no conn
   }
 });
 
+test('a server closed (the GUI stopped before a reload) calls back once its port is free: another server takes the port at once', async () => {
+  const srv = new TauriTcpServer();
+  await new Promise<void>((resolve) => srv.listen(0, '127.0.0.1', resolve));
+  const port = srv.address()!.port;
+  assert.ok(port > 0);
+  await new Promise<void>((resolve, reject) => srv.close((e) => (e ? reject(e) : resolve())));
+  const again = net.createServer();
+  again.listen(port, '127.0.0.1');
+  await once(again, 'listening');
+  again.close();
+  await once(again, 'close');
+});
+
 test('a server given up while it opens (the GUI asleep and awake again in a moment) lets its port go once open, never listening', async () => {
   {
     const probe = net.createServer();

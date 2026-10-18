@@ -47,11 +47,14 @@ class FakeSocket extends EventEmitter {
 }
 class FakeServer extends EventEmitter {
   port?: number;
+  /** what close(cb) does with its callback: the host's word that the port is free (none by default) */
+  closes?: (cb?: () => void) => void;
   listen(port: number) {
     this.port = port;
     return this;
   }
-  close() {
+  close(cb?: () => void) {
+    this.closes?.(cb);
     return this;
   }
 }
@@ -402,6 +405,74 @@ test('TCP server: one let go (stopped, started again) - a connection it still ha
   assert.equal(now.destroyed, false);
   assert.deepEqual(sys.connections, ['10.0.0.9:50000']);
   sys.stop();
+});
+
+test("TCP server: started twice (a script's CF.setSystemProperties(enabled) before the GUI's own start, as IvaHttp's self-check does) listens once, and that server takes the connections", () => {
+  servers.length = 0;
+  const { cf, sys, events } = gui({ accept: '1', origin: '8900' });
+  // the self-check: the system switched off and on before the runtime starts the systems
+  cf.setSystemProperties('Dev', { enabled: false });
+  cf.setSystemProperties('Dev', { enabled: true });
+  assert.equal(servers.length, 1);
+  // the GUI's own start: the server it has, not a second one (which would fail on the port and leave
+  // the first behind, unreferenced, holding it - every connection to it turned away)
+  sys.start();
+  sys.start();
+  assert.equal(servers.length, 1);
+  const client = new FakeSocket();
+  servers[0].emit('connection', client);
+  assert.equal(client.destroyed, false, 'the connection is taken');
+  assert.deepEqual(events, ['Dev up']);
+  sys.stop();
+  // stopped and started: a new server, the old one closed
+  sys.enabled = true;
+  sys.start();
+  assert.equal(servers.length, 2);
+  sys.stop();
+});
+
+test('UDP: started twice binds once', () => {
+  udps.length = 0;
+  const { sys } = gui({ protocol: 'udp', port: '19998', origin: '0' });
+  sys.start();
+  sys.start();
+  assert.equal(udps.length, 1);
+  sys.stop();
+});
+
+test('CF.stopSystems resolves once the servers have let their ports go (their close called back) - a second at most when the host says nothing', async () => {
+  servers.length = 0;
+  const { cf, sys } = gui({ accept: '1', origin: '8901' });
+  sys.start();
+  let closed = false;
+  servers[0].closes = (cb) => {
+    closed = true;
+    setTimeout(() => cb?.(), 5);
+  };
+  const t0 = Date.now();
+  await cf.stopSystems();
+  assert.ok(closed);
+  assert.ok(Date.now() - t0 < 900, 'did not wait for the cap');
+  assert.deepEqual(cf.controlSystems, {});
+  // nothing comes back from the host: the cap
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    servers.length = 0;
+    const g = gui({ accept: '1', origin: '8902' });
+    g.sys.start();
+    let resolved = false;
+    const p = g.cf.stopSystems().then(() => (resolved = true));
+    await flush();
+    assert.equal(resolved, false);
+    mock.timers.tick(1000);
+    await p;
+    assert.ok(resolved);
+  } finally {
+    mock.timers.reset();
+  }
+  // no server to wait for: at once
+  const h = gui({ alwayson: '0' });
+  await h.cf.stopSystems();
 });
 
 test('ConnectionStatusChangeEvent: a watcher of a system (or systems) hears only theirs', () => {

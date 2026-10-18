@@ -435,14 +435,17 @@ export class CFAPI implements CFContext {
     /**
      * Close all TCP/UDP/server sockets owned by this CF instance.
      * Must run before project reload or page reload — Rust sockets outlive JS
-     * if we only tear down the webview (window.location.reload).
+     * if we only tear down the webview (window.location.reload). Resolves once
+     * the servers have let their ports go on the host (a second at most): what
+     * a reload waits for, so the next GUI's servers find their ports free.
      */
-    stopSystems() {
+    stopSystems(): Promise<void> {
         if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.onVisibility);
         // Bonjour: goodbyes for what's published, lookups ended
         this.mdns?.dispose();
         this.mdns = null;
         const seen = new Set<any>();
+        const closing: Promise<void>[] = [];
         for (const name in this.controlSystems) {
             const sys = this.controlSystems[name];
             if (!sys || seen.has(sys)) continue;
@@ -450,12 +453,15 @@ export class CFAPI implements CFContext {
             try {
                 // stop() sets enabled=false and closes sockets
                 sys.stop();
+                if (sys.closed) closing.push(sys.closed);
             } catch (e) {
                 console.warn(`[CF] stopSystems(${name}):`, e);
             }
         }
         this.controlSystems = {};
         this.systems = {};
+        if (!closing.length) return Promise.resolve();
+        return Promise.race([Promise.all(closing).then(() => undefined), new Promise<void>((r) => setTimeout(r, 1000))]);
     }
 
     public dispatchEvent(eventName: string, ...args: any[]) {

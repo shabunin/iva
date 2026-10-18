@@ -185,6 +185,8 @@ export class ControlSystem {
     private connected = false;
     private udpSocket?: IUdpSocket;
     private tcpServer?: ITcpServer;
+    /** after stop(): the server's port let go on the host (what a reload waits for, CF.stopSystems) */
+    public closed: Promise<void> | null = null;
     /**
      * The clients connected to the TCP server, each with what it sent that no
      * feedback matched yet. What the system sends goes to every one of them
@@ -283,6 +285,11 @@ export class ControlSystem {
 
     public start() {
         if (!this.enabled) return;
+        // running already (started twice: a script's CF.setSystemProperties(enabled) before the GUI's own
+        // start - IvaHttp's self-check does - or awake while up): the server or socket it has stays. A
+        // second server would fail on the port and leave the first behind, unreferenced, to hold the port
+        // from the next GUI's: the panel's web server never answering again.
+        if (this.tcpServer || this.udpSocket) return;
         // started again (re-enabled, a new address, the GUI awake again): reconnecting as configured
         this.autoReconnect = this.alwaysOn;
 
@@ -356,14 +363,19 @@ export class ControlSystem {
             this.cfApi.dispatchEvent(this.cfApi.ConnectionStatusChangeEvent, this.name, false, null);
         }
         if (this.tcpServer) {
-            for (const c of this.tcpClients) c.beat.stop();
-            try {
-                this.tcpServer.closeAllConnections?.();
-                this.tcpServer.close();
-            } catch (e) {
-                console.warn(`[System ${this.name}] tcp server close:`, e);
-            }
+            const server = this.tcpServer;
             this.tcpServer = undefined;
+            for (const c of this.tcpClients) c.beat.stop();
+            // its port let go on the host: a reload waits for that (CF.stopSystems), a second at most
+            this.closed = new Promise<void>((resolve) => {
+                try {
+                    server.closeAllConnections?.();
+                    server.close(() => resolve());
+                } catch (e) {
+                    console.warn(`[System ${this.name}] tcp server close:`, e);
+                    resolve();
+                }
+            });
         }
         this.tcpClients = [];
         this.connections = [];
@@ -509,6 +521,8 @@ export class ControlSystem {
     // ──────────────────────────────────────────────────────────────
 
     private _startTcpServer() {
+        // one server a system: a second would fail on the port and leave this one behind, unreferenced
+        if (this.tcpServer) return;
         const server = net.createServer();
         this.tcpServer = server;
         const bindPort = this.localPort > 0 ? this.localPort : this.port;
@@ -586,6 +600,8 @@ export class ControlSystem {
      * it), -1 any. Taken (another system on it): any.
      */
     private _startUdp(port = this.localPort > 0 ? this.localPort : this.localPort < 0 ? 0 : this.port) {
+        // one socket a system (started twice: the one it has)
+        if (this.udpSocket) return;
         // an IPv6 address (::1, fe80::..., ff02::fb): a v6 socket, bound on every v6 interface
         const v6 = this.address.includes(':');
         // reuseAddr helps SSDP / reload when previous socket is slow to release
