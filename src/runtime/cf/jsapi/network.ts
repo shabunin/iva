@@ -68,6 +68,14 @@ function requestBody(headers: Record<string, string> | null | undefined, body: u
     return { headers: out, body: String(body) };
 }
 
+/** CF.request's timeout when none is given: iViewer's 30 s */
+export const REQUEST_TIMEOUT = 30;
+
+/**
+ * CF.request: `callback(status, headers, body)` once - with status 0 (as for
+ * a failed connection) when nothing came back within `timeout` seconds
+ * (the docs' form 5; 30 by default), the request given up then.
+ */
 export function request(
     ctx: CFContext,
     url: string,
@@ -75,9 +83,25 @@ export function request(
     headers: any,
     body: any,
     callback: CFCallback,
-    tlsOptions?: CFRequestTlsOptions | null
+    tlsOptions?: CFRequestTlsOptions | null,
+    timeout?: number
 ) {
     const sent = requestBody(headers, body);
+    const seconds = Number(timeout) > 0 ? Number(timeout) : REQUEST_TIMEOUT;
+    // the callback once: the answer, the failure or the timeout, whichever comes first
+    let answered = false;
+    const aborter = new AbortController();
+    const timer = setTimeout(() => {
+        aborter.abort();
+        answer(0, responseHeaders([]), `Request timed out after ${seconds} s`);
+    }, seconds * 1000);
+    (timer as { unref?: () => void }).unref?.();
+    const answer = (status: number, resHeaders: Record<string, string>, text: string) => {
+        if (answered) return;
+        answered = true;
+        clearTimeout(timer);
+        if (callback) callback(status, resHeaders, text);
+    };
     const doRequest = async () => {
         if (getHost()?.http) {
             try {
@@ -88,6 +112,8 @@ export function request(
                     url,
                     method: method || 'GET',
                     headers: sent.headers,
+                    // the connection within the timeout too (the host's own; what comes after it is ours above)
+                    connectTimeout: seconds * 1000,
                 };
 
                 if (tlsOptions) {
@@ -113,14 +139,14 @@ export function request(
                             offset += c.length;
                         }
                         const text = new TextDecoder().decode(fullBody);
-                        if (callback) callback((res as any).statusCode || 200, responseHeaders(Object.entries(res.headers ?? {})), text);
+                        answer((res as any).statusCode || 200, responseHeaders(Object.entries(res.headers ?? {})), text);
                     });
                 });
 
                 req.on('error', (err: unknown) => {
                     const detail = (err && ((err as any).message || String(err))) || 'unknown';
-                    console.error("Tauri request failed:", detail, err);
-                    if (callback) callback(0, responseHeaders([]), detail || "Request failed");
+                    if (!answered) console.error("Tauri request failed:", detail, err);
+                    answer(0, responseHeaders([]), detail || "Request failed");
                 });
 
                 if (sent.body !== null) req.write(sent.body);
@@ -132,17 +158,19 @@ export function request(
         }
 
         // Browser/Mock fallback
-        const opts: RequestInit = { method: method || 'GET', headers: sent.headers };
+        const opts: RequestInit = { method: method || 'GET', headers: sent.headers, signal: aborter.signal };
         if (sent.body !== null) opts.body = sent.body as BodyInit;
 
         fetch(url, opts).then(async res => {
             const text = await res.text();
             const pairs: [string, string][] = [];
             res.headers.forEach((v, k) => pairs.push([k, v]));
-            if (callback) callback(res.status, responseHeaders(pairs), text);
+            answer(res.status, responseHeaders(pairs), text);
         }).catch(err => {
+            // (given up on the timeout: told already)
+            if (answered) return;
             console.error(`CF.request failed:`, err);
-            if (callback) callback(0, responseHeaders([]), "Request failed");
+            answer(0, responseHeaders([]), "Request failed");
         });
     };
 

@@ -9,13 +9,15 @@ import http from 'node:http';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import { CFAPI } from '../src/runtime/cf/cf.ts';
-import { responseHeaders } from '../src/runtime/cf/jsapi/network.ts';
+import { REQUEST_TIMEOUT, responseHeaders } from '../src/runtime/cf/jsapi/network.ts';
 import { runGui } from './gui-runtime.ts';
 
 (globalThis as any).window ??= { devicePixelRatio: 1 };
 
 /** what the server got, each request */
 const got: { method: string; url: string; headers: http.IncomingHttpHeaders; body: string }[] = [];
+/** /slow: answered only when the tests are over */
+const slow: http.ServerResponse[] = [];
 let server: http.Server;
 let base = '';
 before(async () => {
@@ -25,6 +27,10 @@ before(async () => {
     req.on('data', (c) => (body += c));
     req.on('end', () => {
       got.push({ method: req.method!, url: req.url!, headers: req.headers, body });
+      if (req.url === '/slow') {
+        slow.push(res);
+        return;
+      }
       res.writeHead(req.url === '/missing' ? 404 : 200, { Server: 'iva-test/1.0', 'Content-Type': 'text/plain; charset=utf-8', 'X-Echo-Method': req.method! });
       res.end(req.method === 'HEAD' ? undefined : `${req.method} ${req.url} ${body}`);
     });
@@ -33,7 +39,11 @@ before(async () => {
   await once(server, 'listening');
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
-after(() => server.close());
+after(() => {
+  for (const res of slow) res.end();
+  server.closeAllConnections();
+  server.close();
+});
 
 const call = (...args: unknown[]) => new Promise<[number, Record<string, string>, string]>((resolve) => {
   const cf = new CFAPI();
@@ -90,6 +100,30 @@ test('CF.request(url, "PUT", headers, body, callback): a string body sent as UTF
 test('CF.request to nothing (a refused port): status 0', async () => {
   const [status] = await call('http://127.0.0.1:9/nothing');
   assert.equal(status, 0);
+});
+
+test('CF.request(url, method, headers, body, timeout, callback): nothing back within the timeout (seconds) - status 0, once; an answer in time as usual; 30 s by default', async () => {
+  const t0 = Date.now();
+  const [status, , body] = await call(`${base}/slow`, 'GET', null, null, 0.2);
+  assert.equal(status, 0);
+  assert.match(body, /timed out/);
+  const took = Date.now() - t0;
+  assert.ok(took >= 180 && took < 2000, `gave up after ${took} ms`);
+  // the server answering late tells the script nothing more
+  let calls = 0;
+  await new Promise<void>((resolve) => {
+    new CFAPI().request(`${base}/slow`, 'GET', null, null, 0.1, () => {
+      calls++;
+      setTimeout(resolve, 150);
+    });
+  });
+  for (const res of slow.splice(0)) res.end('late');
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(calls, 1);
+  // in time: the answer, whatever the timeout
+  const [ok, , text] = await call(`${base}/quick`, 'GET', null, null, 5);
+  assert.deepEqual([ok, text], [200, 'GET /quick ']);
+  assert.equal(REQUEST_TIMEOUT, 30);
 });
 
 test('responseHeaders: repeated headers joined; JSON of it lists the usual names', () => {

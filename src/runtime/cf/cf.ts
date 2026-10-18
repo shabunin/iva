@@ -703,14 +703,15 @@ export class CFAPI implements CFContext {
         //   2. (url, headers, callback)
         //   3. (url, method, headers, callback)
         //   4. (url, method, headers, body, callback)
-        //   5. (url, method, headers, body, timeout, callback)  — timeout ignored
+        //   5. (url, method, headers, body, timeout, callback)  — timeout in seconds (default 30)
         //   6. (url, options, callback)  — agapi: options may include method, headers, body,
-        //        rejectUnauthorized, insecure
+        //        rejectUnauthorized, insecure, timeout
         let url: string, method: string, headers: any, body: any, callback: any;
         let tlsOptions: {
             rejectUnauthorized?: boolean;
             insecure?: boolean;
         } | null = null;
+        let timeout: number | undefined;
 
         if (args.length === 2 && typeof args[1] === 'function') {
             // Form 1
@@ -739,6 +740,7 @@ export class CFAPI implements CFContext {
                 rejectUnauthorized: opt.rejectUnauthorized,
                 insecure: opt.insecure,
             };
+            if (typeof opt.timeout === 'number') timeout = opt.timeout;
         } else if (args.length === 3 && typeof args[2] === 'function' && typeof args[1] === 'object') {
             // Form 2: (url, headers, callback)
             [url, headers, callback] = args;
@@ -751,9 +753,11 @@ export class CFAPI implements CFContext {
             // Form 4 / Form 5
             callback = args[args.length - 1];
             url = args[0]; method = args[1]; headers = args[2]; body = args[3];
-            // optional trailing options object before callback:
+            // form 5: the timeout, in seconds; or (iva) a trailing options object before the callback:
             // (url, method, headers, body, tlsOptions, callback)
-            if (
+            if (args.length >= 6 && typeof args[4] === 'number') {
+                timeout = args[4];
+            } else if (
                 args.length >= 6 &&
                 typeof args[4] === 'object' &&
                 args[4] !== null &&
@@ -764,12 +768,13 @@ export class CFAPI implements CFContext {
                     rejectUnauthorized: opt.rejectUnauthorized,
                     insecure: opt.insecure,
                 };
+                if (typeof opt.timeout === 'number') timeout = opt.timeout;
             }
         } else {
             console.warn('CF.request: unrecognized argument pattern', args);
             return;
         }
-        networkApi.request(this, url, method || 'GET', headers, body, callback, tlsOptions);
+        networkApi.request(this, url, method || 'GET', headers, body, callback, tlsOptions, timeout);
     };
 
     runCommand = (systemName: string, command: string, data?: string, tokenContext?: any) => {
