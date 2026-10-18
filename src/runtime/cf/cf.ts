@@ -13,6 +13,7 @@ import * as soundApi from "./jsapi/sound";
 import * as networkApi from "./jsapi/network";
 import * as sensorsApi from "./jsapi/sensors";
 import * as utilitiesApi from "./jsapi/utilities";
+import { CFDevice } from "./jsapi/device";
 import { ControlSystem, runMacroByName, stopMacroByName } from "./systemManager";
 
 export class CFAPI implements CFContext {
@@ -229,11 +230,19 @@ export class CFAPI implements CFContext {
         };
     }
 
+    /** CF.device's brightness, volume, battery and the bars as the device has them; CF.setDeviceProperty, CF.interceptHardwareKey */
+    deviceApi = new CFDevice(this);
+
     /**
      * CF.device and the network variables from the host - the device's own;
      * the placeholders stay where it has none (or doesn't answer in 2 s).
+     * The first time, its settings too, followed from then on.
      */
     async loadDevice(): Promise<void> {
+        await Promise.all([this.deviceApi.follow(), this.loadDeviceInfo()]);
+    }
+
+    private async loadDeviceInfo(): Promise<void> {
         const host = getHost();
         if (!host?.device) return;
         try {
@@ -913,11 +922,11 @@ export class CFAPI implements CFContext {
     };
     
     setDeviceProperty = (property: string, value: any) => {
-        utilitiesApi.setDeviceProperty(this, property, value);
+        this.deviceApi.setDeviceProperty(property, value);
     };
 
-    interceptHardwareKey = (key: string, intercept: boolean) => {
-        utilitiesApi.interceptHardwareKey(this, key, intercept);
+    interceptHardwareKey = (keyCode: number, pressTime: number, mode: string, callback?: CFCallback | null) => {
+        this.deviceApi.interceptHardwareKey(keyCode, pressTime, mode, callback);
     };
 
     // EVENTS SUBSCRIPTION

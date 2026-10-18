@@ -300,20 +300,3 @@ export function loadAsset(
             callback?.(null);
         });
 }
-
-export function setDeviceProperty(
-    ctx: CFContext,
-    property: string,
-    value: any
-) {
-    console.log(`CF STUB: setDeviceProperty(${property}, ${value})`);
-    ctx.dispatchEvent(ctx.DevicePropertyChangedEvent, property, value);
-}
-
-export function interceptHardwareKey(
-    ctx: CFContext,
-    key: string,
-    intercept: boolean
-) {
-    console.log(`CF STUB: interceptHardwareKey(${key}, ${intercept})`);
-}

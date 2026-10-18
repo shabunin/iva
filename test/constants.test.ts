@@ -10,19 +10,21 @@ import { loadAsset } from '../src/runtime/cf/jsapi/utilities.ts';
 
 (globalThis as any).window ??= { devicePixelRatio: 1 };
 
-test("the documented constants are there, as strings, each its own: loadAsset's cache modes, device properties and their values, hardware keys, sensors, beacons", () => {
+test("the documented constants are there, as strings, each its own: loadAsset's cache modes, device properties and their values, key press modes, sensors, beacons; the hardware keys Android's key codes", () => {
   const CF: any = new CFAPI();
   const names = [
     'CACHE_READONLY', 'CACHE', 'NO_CACHE', 'RECACHE', 'DECACHE',
     'ScreenBrightnessProperty', 'SoundOutputVolumeProperty', 'BatteryLevelProperty', 'BatteryChargeStatusProperty', 'StatusBarAppearanceProperty', 'NavigationBarAppearanceProperty',
     'CHARGE_UNKNOWN', 'CHARGE_UNPLUGGED', 'CHARGE_CHARGING', 'CHARGE_FULL',
     'STATUS_BAR_HIDDEN', 'STATUS_BAR_VISIBLE', 'STATUS_BAR_WHITE_TEXT', 'STATUS_BAR_BLACK_TEXT', 'NAVIGATION_BAR_HIDDEN', 'NAVIGATION_BAR_VISIBLE',
-    'KEYPRESS_INTERCEPT', 'KEYPRESS_OBSERVE', 'HARDWARE_KEY_BACK', 'HARDWARE_KEY_VOLUME_UP', 'HARDWARE_KEY_VOLUME_DOWN',
+    'KEYPRESS_INTERCEPT', 'KEYPRESS_OBSERVE',
     'AccelerometerSensor', 'GyroscopeSensor', 'AttitudeSensor', 'HeadingSensor', 'LocationSensor',
     'BeaconDetectionEvent', 'BeaconProximityUnknown', 'BeaconProximityImmediate', 'BeaconProximityNear', 'BeaconProximityFar',
   ];
   for (const n of names) assert.equal(typeof CF[n], 'string', `CF.${n}`);
   assert.equal(new Set(names.map((n) => CF[n])).size, names.length, 'distinct values');
+  // the hardware keys: Android's KeyEvent codes, as iViewer takes them (any other code goes too)
+  assert.deepEqual([CF.HARDWARE_KEY_BACK, CF.HARDWARE_KEY_VOLUME_UP, CF.HARDWARE_KEY_VOLUME_DOWN], [4, 24, 25]);
   // the Sensors API's names of the two sensors CF.device.hasSensors is keyed by: the same keys
   assert.equal(CF.AccelerometerSensor, CF.Accelerometer);
   assert.equal(CF.GyroscopeSensor, CF.Gyroscope);

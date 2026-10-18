@@ -9,6 +9,7 @@ import { TauriNetworkProvider } from './net/provider';
 import { createDnsHost } from './dns';
 import { createTlsHost } from './tls/index';
 import * as httpClient from './http/index';
+import { browserDevice } from './device';
 
 function createHttpHost(): HttpHost {
   return {
@@ -31,5 +32,6 @@ export function createIvaHost(): AgapiHost {
     dns: createDnsHost(),
     tls: createTlsHost(),
     device: () => invoke<HostDeviceInfo>('device_info'),
+    deviceControl: browserDevice(),
   };
 }

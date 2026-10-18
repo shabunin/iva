@@ -113,9 +113,10 @@ export const CONSTANTS = {
     // CF.interceptHardwareKey(keyCode, pressTime, mode, callback) (Android): its modes and key codes
     KEYPRESS_INTERCEPT: "KEYPRESS_INTERCEPT",
     KEYPRESS_OBSERVE: "KEYPRESS_OBSERVE",
-    HARDWARE_KEY_BACK: "HARDWARE_KEY_BACK",
-    HARDWARE_KEY_VOLUME_UP: "HARDWARE_KEY_VOLUME_UP",
-    HARDWARE_KEY_VOLUME_DOWN: "HARDWARE_KEY_VOLUME_DOWN",
+    // (the keys: Android's KeyEvent codes, as iViewer's - any other code works too)
+    HARDWARE_KEY_BACK: 4,
+    HARDWARE_KEY_VOLUME_UP: 24,
+    HARDWARE_KEY_VOLUME_DOWN: 25,
 
     // CF.startMonitoring's sensors (Sensors API)
     AccelerometerSensor: "ACCELEROMETER",
