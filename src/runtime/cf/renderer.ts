@@ -340,12 +340,21 @@ export class CFRenderer {
   }
 
   async loadAssets() {
+    // a link that drops a file now and then (ZeroTier does): asked for again, a little later, twice
+    const again = [300, 800];
     const promises = Object.entries(this.imageMap).map(async ([filename, url]) => {
-      try {
-        Assets.add({ alias: filename, src: url, parser: 'loadTextures' });
-        await Assets.load(filename);
-      } catch (e) {
-        console.error("Failed to load asset:", filename, e);
+      Assets.add({ alias: filename, src: url, parser: 'loadTextures' });
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await Assets.load(filename);
+          return;
+        } catch (e) {
+          if (attempt >= again.length) {
+            console.error("Failed to load asset:", filename, e);
+            return;
+          }
+          await new Promise((r) => setTimeout(r, again[attempt]));
+        }
       }
     });
     await Promise.all(promises);
