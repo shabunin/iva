@@ -41,8 +41,10 @@ const LIVE_SCRIPT = 'iva-live.js';
 
 interface Served {
   name: string;
-  /** the .gui as served (the live script added when live) */
+  /** the .gui as served (the live script added when live); a folder's: the page listing its GUIs */
   gui: Buffer;
+  /** a folder served: what's at / is that page (HTML), there's no one build */
+  html?: boolean;
   /** other files by lower-cased path: `path` as served (images/x.png) */
   files: Map<string, { name: string; path: string; data?: Buffer; file?: string }>;
   version: string;
@@ -79,6 +81,18 @@ function withLiveScript(xml: string): string {
   if (/<\/scripts>/.test(xml)) return xml.replace(/(\s*)<\/scripts>/, `$1  ${tag}$1</scripts>`);
   if (/<scripts\s*\/>/.test(xml)) return xml.replace(/<scripts\s*\/>/, `<scripts>${tag}</scripts>`);
   return xml.replace(/(\r?\n?\s*)<(page|subpage)\b/, `$1<scripts>${tag}</scripts>$1<$2`);
+}
+
+/** The page at / of a folder served: its GUIs (.gui files, zipped GUIs) as links, for a browser; the panel's address bar takes the same paths. */
+function indexPage(folder: string, paths: string[]): string {
+  const guis = paths.filter((p) => /\.(gui|zip)$/i.test(p)).sort();
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const link = (p: string) => `<li><a href="${esc(p.split('/').map(encodeURIComponent).join('/'))}">${esc(p)}</a></li>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(folder)}: GUIs</title>
+<style>body{font:16px/1.5 system-ui,sans-serif;margin:32px;color:#222}code{background:#eee;padding:1px 4px;border-radius:3px}</style></head>
+<body><h1>${esc(folder)}</h1><p>${guis.length ? 'The GUIs in this folder; in the iva panel\'s address bar, one of these paths after this address (<code>?page=Name</code> for a page):' : 'No .gui or zipped GUI in this folder.'}</p>
+<ul>${guis.map(link).join('')}</ul></body></html>
+`;
 }
 
 /** A TCP system of the .gui accepting connections (a server on the panel): its name, port, feedback. */
@@ -214,6 +228,8 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
   const target = path.resolve(opts.target);
   const log = opts.log ?? ((m: string) => console.log(`[iva] ${m}`));
   const isGui = target.toLowerCase().endsWith('.gui');
+  // a folder of GUIs (builds linking to one another: iva build -o dist/<name> each): every file by its path, a page at / listing them
+  const isDir = fs.statSync(target).isDirectory();
   // what's being served (replaced on each good build) and the last build error
   const state: { served: Served | null; error: string | null; inputs: CompileResult['inputs'] | null } = { served: null, error: null, inputs: null };
   const waiting = new Set<(v: string) => void>();
@@ -221,9 +237,9 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
   const load = async (): Promise<void> => {
     const t0 = Date.now();
     let next: Omit<Served, 'version' | 'modified'>;
-    if (isGui) {
-      // a .gui and the files next to it (and in its folders: an image folder, scripts/), as GUI Designer serves them
-      const dir = path.dirname(target);
+    if (isGui || isDir) {
+      // a .gui and the files next to it (and in its folders: an image folder, scripts/), as GUI Designer serves them; a folder: all of it
+      const dir = isDir ? target : path.dirname(target);
       const files = new Map<string, { name: string; path: string; file: string }>();
       const walk = (sub: string, depth: number) => {
         for (const e of fs.readdirSync(path.join(dir, sub), { withFileTypes: true })) {
@@ -233,7 +249,9 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
         }
       };
       walk('', 0);
-      next = { name: path.basename(target), gui: fs.readFileSync(target), files };
+      next = isDir
+        ? { name: 'index.html', gui: Buffer.from(indexPage(path.basename(target), [...files.values()].map((f) => f.path))), files, html: true }
+        : { name: path.basename(target), gui: fs.readFileSync(target), files };
     } else {
       let r: CompileResult;
       try {
@@ -259,7 +277,7 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
     }
     state.error = null;
     const version = `${Date.now().toString(36)}`;
-    if (opts.live) next.gui = Buffer.from(withLiveScript(next.gui.toString('utf8')));
+    if (opts.live && !next.html) next.gui = Buffer.from(withLiveScript(next.gui.toString('utf8')));
     state.served = { ...next, version, modified: new Date() };
     for (const w of waiting) w(version);
     waiting.clear();
@@ -347,18 +365,21 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
     // the build the asker has already (the panel's saved copy): not again
     const unchanged = req.headers['if-none-match'] === `"${s.version}"`;
     if (url.pathname === '/__iva/gui.zip') {
+      // a folder served is not one build to keep as one archive: its GUIs come as .gui files with what's beside them
+      if (s.html) return send(404, 'a folder of GUIs: no one build', 'text/plain');
       if (unchanged) return send(304, '', 'application/zip');
       const host = req.headers.host ?? `${lanAddresses()[0]?.address ?? '127.0.0.1'}:${opts.port}`;
       return send(200, zipOf(s, host), 'application/zip');
     }
 
     const name = decodeURIComponent(url.pathname.slice(1));
-    if (name === '' || name.toLowerCase() === s.name.toLowerCase() || (name.toLowerCase().endsWith('.gui') && !s.files.has(name.toLowerCase()))) {
-      if (unchanged) return send(304, '', 'text/xml');
-      return send(200, s.gui, 'text/xml');
+    const type = s.html ? 'text/html; charset=utf-8' : 'text/xml';
+    if (name === '' || name.toLowerCase() === s.name.toLowerCase() || (name.toLowerCase().endsWith('.gui') && !s.files.has(name.toLowerCase()) && !s.html)) {
+      if (unchanged) return send(304, '', type);
+      return send(200, s.gui, type);
     }
     // the live script: in the image folder, as iViewer looks for scripts (images/iva-live.js)
-    if (opts.live && name.toLowerCase().split('/').pop() === LIVE_SCRIPT) {
+    if (opts.live && !s.html && name.toLowerCase().split('/').pop() === LIVE_SCRIPT) {
       const host = req.headers.host ?? `${lanAddresses()[0]?.address ?? '127.0.0.1'}:${opts.port}`;
       const xml = s.gui.toString('utf8');
       return send(200, liveScript(`http://${host}`, s.version, panelServers(xml), systemNames(xml)), TYPES['.js']);
@@ -380,9 +401,9 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
     await load();
     if (state.inputs) inputs?.set(state.inputs);
   };
-  const inputs = isGui ? null : watchInputs(changed, log);
+  const inputs = isGui || isDir ? null : watchInputs(changed, log);
   if (inputs && state.inputs) inputs.set(state.inputs);
-  const watcher = inputs ?? watchTree(path.dirname(target), false, changed, log);
+  const watcher = inputs ?? watchTree(isDir ? target : path.dirname(target), isDir, changed, log);
 
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);

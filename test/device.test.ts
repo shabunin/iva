@@ -179,3 +179,32 @@ test('a request for // or worse is answered, not a crash', async () => {
     await s.close();
   }
 });
+
+test('serves a folder of GUIs: every file by its path, a page at / listing the GUIs, no one build to archive', async () => {
+  const dir = tmpDir('iva-serve-dir-');
+  for (const name of ['home', 'lights']) {
+    fs.mkdirSync(path.join(dir, name, 'assets'), { recursive: true });
+    fs.copyFileSync(ECHO, path.join(dir, name, `${name[0].toUpperCase()}${name.slice(1)}.gui`));
+    fs.writeFileSync(path.join(dir, name, 'assets', 'logo.png'), `png ${name}`);
+  }
+  const s = await startDeviceServer({ target: dir, port: 0, host: '127.0.0.1', live: true, log: quiet });
+  try {
+    const index = await get(s.port, '/');
+    assert.equal(index.status, 200);
+    assert.match(index.headers.get('content-type') ?? '', /^text\/html/);
+    assert.match(index.body, /href="home\/Home\.gui"/);
+    assert.match(index.body, /href="lights\/Lights\.gui"/);
+    const gui = await get(s.port, '/lights/Lights.gui');
+    assert.equal(gui.status, 200);
+    assert.equal(gui.headers.get('content-type'), 'text/xml');
+    assert.match(gui.body, /<project>Echo system/);
+    // no live script in a folder's GUIs (nothing is built here)
+    assert.doesNotMatch(gui.body, /iva-live\.js/);
+    assert.equal((await get(s.port, '/home/assets/logo.png')).body, 'png home');
+    // a .gui that isn't there is not there (a single .gui served answers any .gui name with itself)
+    assert.equal((await get(s.port, '/nope.gui')).status, 404);
+    assert.equal((await get(s.port, '/__iva/gui.zip')).status, 404);
+  } finally {
+    await s.close();
+  }
+});

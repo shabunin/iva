@@ -122,7 +122,7 @@ a server of your own, on its own port.
 ## `iva serve`: on a real device
 
 ```bash
-iva serve            # app.jsx; or: iva serve Project.gui
+iva serve            # app.jsx; or: iva serve Project.gui; or: iva serve dist/ (a folder of GUIs)
 ```
 
 Serves the project the way GUI Designer's Upload Service does (port 8019,
@@ -139,7 +139,10 @@ keeps a GUI's sockets past a reload: a server would hold its port from the
 next one) and calls `CF.loadGUI`. A `.gui` is re-read when it changes, so a
 project saved from GUI Designer reloads too. `--no-live` serves it untouched.
 Every request is logged, unknown ones in full (iViewer's cache-complete and
-debugger callbacks aren't documented).
+debugger callbacks aren't documented). A folder (`iva serve dist/`) is
+served as it is - every file by its path, a page at `/` listing its GUIs -
+for GUIs that link to one another (`examples/browse`: one build each in
+`dist/<name>/`); no live reload there.
 
 The same script brings the panel's log to the console - `CF.log`, script
 errors, what the panel's servers get and send, whether they answer, and what

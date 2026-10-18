@@ -17,7 +17,7 @@ matter), No (a stub, or nothing behind it).
 
 | | Documented | Yes | Partly | No |
 |---|---|---|---|---|
-| Functions | 44 | 34 | 2 | 8 |
+| Functions | 44 | 35 | 1 | 8 |
 | Events | 25 | 18 | 1 | 6 |
 | Constants | all | all present | | |
 
@@ -107,8 +107,8 @@ device-property calls, which need hardware iva's hosts don't expose.
 | `CF.log`, `CF.logObject` | | Yes | To the console; `iva serve` forwards it. |
 | `CF.crc(type, string, format, cb)` | six types, four formats | Yes | Known answers for "123456789": CRC_8 F4, CRC_16 BB3D (ARC), CRC_16_CCITT 29B1 (CCITT-FALSE), CRC_16_MODBUS 4B37, CRC_32 CBF43926, CRC_32C E3069283. iViewer's choice of CCITT variant is not documented, so that one is a best guess. |
 | `CF.hash(type, string, cb)` | MD5, SHA1, SHA256, SHA384, SHA512 | Yes | Known answers for "abc" all match. |
-| `CF.openURL(url)` | `cf://` loads a GUI; http(s) to the browser; `tel:`, `mailto:` to their apps | Partly | `cf://` loads the GUI. Anything else goes to `window.open`: a new tab in the preview, host dependent in the panel app. |
-| `CF.loadGUI(url, settings)` | `""` reloads, null the app default; 13 settings | Partly | url, `""`, null, `startPage`, `reloadGUI`, `reloadAssets` and `disconnectOnSuspend` are honoured; the other settings are not. null is the app's default GUI: the preview's picker's first GUI, the panel's settings URL (kept apart from the GUI last loaded). `profile:` URLs are refused. |
+| `CF.openURL(url)` | `cf://` loads a GUI; http(s) to the browser; `tel:`, `mailto:` to their apps | Yes | `cf://` loads the GUI. The rest goes to the host: the panel app opens a web page, `tel:` or `mailto:` in the device's app for it (and loads a GUI's URL - a `.gui`, a zipped GUI, an Upload Service's root - itself, being a browser of GUIs); the preview opens a tab. |
+| `CF.loadGUI(url, settings)` | `""` reloads, null the app default; 13 settings | Partly | url (relative to the GUI, `?page=` in it the page), `""`, null and the settings `startPage`, `reloadGUI`, `reloadAssets`, `rememberLastGUI`, `showPreloadStatus` and `disconnectOnSuspend` are honoured. Not: `preloadAllAssets`, `buttonPressSound`, `enableMultitasking`, `enableProximitySensor`, `autoLockDelay`, `password`, `remoteDebugging`, `remoteDebuggingPort` (nothing here for them). null is the app's default GUI: the preview's picker's first GUI, the panel's settings URL (kept apart from the GUI last loaded). `profile:` URLs are refused. |
 | `CF.loadAsset(name, CF.BINARY or CF.UTF8, cb, cache)` | five cache modes | Yes | |
 | `CF.setDeviceProperty(property, value)`, DevicePropertyChangedEvent | brightness, status bar, navigation bar | No | The event fires from the stub itself; the device is not touched and `CF.device` does not change. |
 | `CF.interceptHardwareKey(key, pressTime, mode, cb)` | Android | No | Stub. |
