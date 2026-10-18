@@ -135,7 +135,8 @@ export function renderInput(
     input.addEventListener('input', () => {
         show();
         if (s) cf()?.setJoin(joinName, input.value);
-        cf()?.dispatchEvent(cf().InputFieldEditedEvent, joinName, input.value);
+        // as JoinChangeEvent hands a join: (join, value, tokens, tags)
+        cf()?.dispatchEvent(cf().InputFieldEditedEvent, joinName, input.value, cf().tokensStore?.[joinName] ?? {}, cf().tagsOf?.(joinName) ?? []);
         run(a.changeCommand, a.changeMacro);
     });
     input.addEventListener('keydown', (e) => {
@@ -148,7 +149,8 @@ export function renderInput(
     input.addEventListener('focus', () => cf()?.dispatchEvent(cf().KeyboardUpEvent, joinName));
     input.addEventListener('blur', () => {
         done();
-        cf()?.dispatchEvent(cf().KeyboardDownEvent, joinName);
+        // (the field edited, its text after the edit)
+        cf()?.dispatchEvent(cf().KeyboardDownEvent, joinName, input.value);
     });
 
     if (a.autoFocus === '1') {

@@ -200,6 +200,19 @@ export function renderSliderOrGauge(
 
     updateVisuals(currentRawValue, false);
 
+    /**
+     * ObjectPressedEvent / ObjectDraggedEvent / ObjectReleasedEvent as CF
+     * gives them to a watcher: (join, value, tokens, tags) - the value a
+     * string, as scripts see joins (the slider's raw 0..65535).
+     */
+    const tellEvent = (event: string) => {
+        const cf = renderer.cfApi;
+        if (!cf || !node.j) return;
+        const nj = getNormJoin("a", node.j);
+        if (!nj) return;
+        cf.dispatchEvent(event, nj, String(joinStore.get(node.j, "a")), cf.tokensStore?.[nj] ?? {}, cf.tagsOf?.(nj) ?? []);
+    };
+
     const emitUpdate = (rawVal: number) => {
         rawVal = Math.round(rawVal) || 0;
         const safeRawVal = Number.isNaN(rawVal) ? 0 : rawVal;
@@ -212,12 +225,7 @@ export function renderSliderOrGauge(
         if (node.dragCmd && renderer.cfApi?.runCommand) {
             renderer.cfApi.runCommand("", node.dragCmd, formattedVal);
         }
-        if (renderer.cfApi && node.j) {
-            const nj = getNormJoin("a", node.j);
-            // Notice we dispatch the RAW val for standard join events, but wait...
-            // Legacy apps expect scaledVal or raw value? usually CF passes raw value unless format tokens are used
-            if (nj) renderer.cfApi.dispatchEvent(renderer.cfApi.ObjectDraggedEvent, nj, safeRawVal);
-        }
+        if (renderer.cfApi) tellEvent(renderer.cfApi.ObjectDraggedEvent);
     };
     
     const handlePointerMove = (e: any) => {
@@ -254,10 +262,7 @@ export function renderSliderOrGauge(
         if (node.releaseCmd && renderer.cfApi?.runCommand) {
             renderer.cfApi.runCommand("", node.releaseCmd, getFormattedValue(currentRawValue));
         }
-        if (renderer.cfApi && node.j) {
-            const nj = getNormJoin("a", node.j);
-            if (nj) renderer.cfApi.dispatchEvent(renderer.cfApi.ObjectReleasedEvent, nj, joinStore.get(node.j, "a"));
-        }
+        if (renderer.cfApi) tellEvent(renderer.cfApi.ObjectReleasedEvent);
     };
 
     sliderContainer.on('pointerdown', (e: any) => {
@@ -270,11 +275,8 @@ export function renderSliderOrGauge(
         if (node.pressCmd && renderer.cfApi?.runCommand) {
             renderer.cfApi.runCommand("", node.pressCmd, getFormattedValue(currentRawValue));
         }
-        if (renderer.cfApi && node.j) {
-            const nj = getNormJoin("a", node.j);
-            if (nj) renderer.cfApi.dispatchEvent(renderer.cfApi.ObjectPressedEvent, nj, joinStore.get(node.j, "a"));
-        }
-        
+        if (renderer.cfApi) tellEvent(renderer.cfApi.ObjectPressedEvent);
+
         sliderContainer.on('globalpointermove', handlePointerMove);
         window.addEventListener('pointerup', handleUp);
         

@@ -7,6 +7,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { Event as DomEvent } from 'linkedom';
 import { runGui, answer } from './gui-runtime.ts';
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
@@ -85,6 +86,62 @@ test("JoinChangeEvent for a list item's join: the join as a script names it (l1:
   CF.setJoin('l1:0:s1', 'b');
   await tick();
   assert.deepEqual(got, [['l1:0:s1', 'b']]);
+});
+
+// ── the objects' events ──────────────────────────────────────────
+
+test("a slider's ObjectPressedEvent / ObjectDraggedEvent / ObjectReleasedEvent: (join, value as a string, tokens, tags), as the docs' examples read them", async () => {
+  const { CF, renderer } = await gui();
+  CF.setToken('a1', 'room', 'Hall');
+  CF.addTag('a1', 'level');
+  const heard: unknown[][] = [];
+  for (const ev of ['ObjectPressedEvent', 'ObjectDraggedEvent', 'ObjectReleasedEvent'] as const) CF.watch(CF[ev], 'a1', (...a: unknown[]) => heard.push([ev, ...a]));
+  const slider = renderer.nodesMap['a1'][0].children.find((c: any) => c.eventMode === 'dynamic')!;
+  slider.emit('pointerdown', { global: { x: 100, y: 158 }, stopPropagation() {} } as any);
+  slider.emit('pointerup', {} as any);
+  const moved = String(await value(CF, 'a1'));
+  assert.ok(Number(moved) > 0, 'the touch moved it');
+  assert.deepEqual(heard, [
+    ['ObjectPressedEvent', 'a1', '0', { room: 'Hall' }, ['level']],
+    ['ObjectDraggedEvent', 'a1', moved, { room: 'Hall' }, ['level']],
+    ['ObjectReleasedEvent', 'a1', moved, { room: 'Hall' }, ['level']],
+  ]);
+});
+
+test('an input field: InputFieldEditedEvent (join, value, tokens, tags) on each edit; KeyboardUpEvent (join) as editing starts, KeyboardDownEvent (join, the text) as it ends', async () => {
+  // the <input> the field types into (laid over the canvas; here: caught as it is made)
+  const inputs: any[] = [];
+  const create = document.createElement;
+  (document as any).createElement = (tag: string) => {
+    const el = create.call(document, tag);
+    if (tag === 'input') inputs.push(el);
+    return el;
+  };
+  try {
+    const { CF } = await gui();
+    CF.setToken('s40', 'field', 'name');
+    CF.addTag('s40', 'form');
+    const heard: unknown[][] = [];
+    for (const ev of ['InputFieldEditedEvent', 'KeyboardUpEvent', 'KeyboardDownEvent'] as const) CF.watch(CF[ev], (...a: unknown[]) => heard.push([ev, ...a]));
+    const field = inputs[0];
+    assert.ok(field, 'the field has its <input>');
+    // the keyboard up (the field focused), two edits, the keyboard down
+    field.dispatchEvent(new DomEvent('focus'));
+    field.value = 'Ad';
+    field.dispatchEvent(new DomEvent('input'));
+    field.value = 'Ada';
+    field.dispatchEvent(new DomEvent('input'));
+    field.dispatchEvent(new DomEvent('blur'));
+    assert.equal(await value(CF, 's40'), 'Ada');
+    assert.deepEqual(heard, [
+      ['KeyboardUpEvent', 's40'],
+      ['InputFieldEditedEvent', 's40', 'Ad', { field: 'name' }, ['form']],
+      ['InputFieldEditedEvent', 's40', 'Ada', { field: 'name' }, ['form']],
+      ['KeyboardDownEvent', 's40', 'Ada'],
+    ]);
+  } finally {
+    (document as any).createElement = create;
+  }
 });
 
 // ── CF.getJoin / CF.getJoins ─────────────────────────────────────

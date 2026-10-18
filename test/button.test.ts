@@ -1,7 +1,8 @@
 /**
- * A button's events as CF gives them to a watcher (ObjectPressedEvent /
- * ObjectReleasedEvent: join, value "1" / "0", tokens) - with an <actions>
- * group as without one; a watcher of a join hears that join's only.
+ * A button's events as CF gives them to a watcher (ObjectPressedEvent: join,
+ * value "1" / "0", tokens; ObjectReleasedEvent: those and the tags) - with
+ * an <actions> group as without one; a watcher of a join hears that join's
+ * only.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -24,17 +25,18 @@ const view = (renderer: any, join: string) => renderer.nodesMap[join][0].childre
 /** a touch as the view hears it (pixi/ui binds mouse events where Pixi sees no mobile device: here) */
 const touch = (v: any, type: 'down' | 'up') => v.emit(`mouse${type}`, { type: `mouse${type}` });
 
-test('ObjectPressedEvent / ObjectReleasedEvent: (join, "1" / "0", tokens), for a button with <actions> too; a watcher of a join hears that join only', async () => {
+test('ObjectPressedEvent (join, "1" / "0", tokens) / ObjectReleasedEvent (those, tags), for a button with <actions> too; a watcher of a join hears that join only', async () => {
   const { CF, renderer } = await runGui(GUI);
   const heard: unknown[][] = [];
   CF.watch(CF.ObjectPressedEvent, 'd5', (...a: unknown[]) => heard.push(['pressed', ...a]));
   CF.watch(CF.ObjectReleasedEvent, 'd5', (...a: unknown[]) => heard.push(['released', ...a]));
   CF.setToken('d5', 'room', 'Kitchen');
+  CF.addTag('d5', 'keypad');
   touch(view(renderer, 'd5'), 'down');
   assert.deepEqual(heard, [['pressed', 'd5', '1', { room: 'Kitchen' }]]);
   assert.equal(joinStore.get('9', 's'), 'pressed', 'its press action ran');
   touch(view(renderer, 'd5'), 'up');
-  assert.deepEqual(heard[1], ['released', 'd5', '0', { room: 'Kitchen' }]);
+  assert.deepEqual(heard[1], ['released', 'd5', '0', { room: 'Kitchen' }, ['keypad']]);
   assert.equal(joinStore.get('9', 's'), 'released', 'its release action ran');
   // another button's press is not d5's; a plain button (no <actions>) tells its events the same way
   const plain: unknown[][] = [];

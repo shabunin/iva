@@ -303,15 +303,19 @@ export function renderButton(
     };
 
     /**
-     * ObjectPressedEvent / ObjectReleasedEvent as CF gives them to a watcher:
-     * (join, value, tokens) - the value "1" / "0", a string as scripts see
-     * joins; whatever the button's actions are (an <actions> group or not).
+     * ObjectPressedEvent (join, value, tokens) / ObjectReleasedEvent (join,
+     * value, tokens, tags) as CF gives them to a watcher - the value "1" /
+     * "0", a string as scripts see joins; whatever the button's actions are
+     * (an <actions> group or not).
      */
     const tellEvent = (event: string) => {
-        if (!renderer.cfApi || !node.j || node.j === "0") return;
+        const cf = renderer.cfApi;
+        if (!cf || !node.j || node.j === "0") return;
         const nj = getNormJoin("d", node.j);
         if (!nj) return;
-        renderer.cfApi.dispatchEvent(event, nj, joinStore.get(node.j, "d") ? "1" : "0", renderer.cfApi.tokensStore?.[nj] ?? {});
+        const args: unknown[] = [nj, joinStore.get(node.j, "d") ? "1" : "0", cf.tokensStore?.[nj] ?? {}];
+        if (event === cf.ObjectReleasedEvent) args.push(cf.tagsOf?.(nj) ?? []);
+        cf.dispatchEvent(event, ...args);
     };
 
     /** The press: the button down, its press actions. */
