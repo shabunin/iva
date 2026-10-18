@@ -45,6 +45,8 @@ test("one JoinChangeEvent bridge however many GUIs were loaded: the CF object ma
   a.CF.watch(a.CF.JoinChangeEvent, 's1', () => heard.push('old'));
   b.CF.watch(b.CF.JoinChangeEvent, 's1', () => heard.push('new'));
   b.CF.setJoin('s1', 'x');
+  // (JoinChangeEvent reaches a watcher once the script has moved on)
+  await new Promise((r) => setTimeout(r, 0));
   assert.deepEqual(heard, ['new']);
   // a store cleared (a GUI loaded anew) has no bridge till the new CF's
   const store = new JoinStore();

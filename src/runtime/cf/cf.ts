@@ -405,9 +405,12 @@ export class CFAPI implements CFContext {
         CFAPI.bridge = (id: string, type: JoinType, val: any) => {
             // the join as a script names it ("s1"; a list item's "l1:0:s1")
             const j = normalizeJoinString(type, id);
-            const tokens = this.tokensStore[j] || {};
             // a string, as iViewer hands values to scripts ("1" / "0" for a digital join)
-            this.dispatchEvent(this.JoinChangeEvent, j, joinText(val) ?? "", tokens, this.tagsOf(j));
+            const value = joinText(val) ?? "";
+            // As iViewer: the watchers hear of it once the script that set the join has moved on
+            // (a microtask later) - the script's own CF.setJoin included - not inside setJoin, where a
+            // watcher writing the join it watches would recurse at once. Each change in its turn.
+            queueMicrotask(() => this.dispatchEvent(this.JoinChangeEvent, j, value, this.tokensStore[j] || {}, this.tagsOf(j)));
         };
         joinStore.onAny(CFAPI.bridge);
     }

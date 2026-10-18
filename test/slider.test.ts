@@ -27,6 +27,8 @@ test("a slider's d join is high while it is dragged, low once let go; the parser
   assert.ok((joinStore.get('1', 'a') as number) > 0, 'the drag moved it');
   slider.emit('pointerup', {} as any);
   assert.equal(joinStore.get('20', 'd'), false);
+  // (JoinChangeEvent reaches a watcher once the script has moved on)
+  await new Promise((r) => setTimeout(r, 0));
   assert.deepEqual(pressed, [true, false]);
 });
 

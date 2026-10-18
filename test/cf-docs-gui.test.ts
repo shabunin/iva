@@ -78,6 +78,28 @@ test('JoinChangeEvent: (join, value as a string, tokens, tags), for a join or an
   assert.deepEqual(got, []);
 });
 
+test("JoinChangeEvent: delivered once the script has moved on (as iViewer), for the script's own setJoin too, each change in its turn; a watcher reading the join sees it as it is then", async () => {
+  const { CF } = await gui();
+  const seen: unknown[][] = [];
+  CF.watch(CF.JoinChangeEvent, 's1', (j: string, v: string) => seen.push([v, CF.getJoin('s1')]));
+  CF.setJoin('s1', 'a');
+  CF.setJoin('s1', 'b');
+  assert.deepEqual(seen, [], 'nothing while the script runs on');
+  await Promise.resolve();
+  assert.deepEqual(seen, [['a', 'b'], ['b', 'b']], 'both, in order, a moment later');
+  // a watcher writing the join it watches: not inside setJoin (no recursion there), the next turn
+  seen.length = 0;
+  let echoes = 0;
+  CF.watch(CF.JoinChangeEvent, 's2', (j: string, v: string) => {
+    if (++echoes < 3) CF.setJoin('s2', v + '!');
+  });
+  CF.setJoin('s2', 'x');
+  assert.equal(await value(CF, 's2'), 'x');
+  await tick();
+  assert.equal(await value(CF, 's2'), 'x!!');
+  assert.equal(echoes, 3);
+});
+
 test("JoinChangeEvent for a list item's join: the join as a script names it (l1:0:s1)", async () => {
   const { CF } = await gui();
   CF.listAdd('l1', [{ s1: 'a' }]);
@@ -295,6 +317,8 @@ test("setJoins: the docs' example - in order (a3 is a1 + a2 just set: 28), token
 test('setJoins: a value of null is no value (the join is left as it is), tokens of null none; false: no JoinChangeEvent', async () => {
   const { CF } = await gui();
   CF.setJoin('s2', 'kept');
+  // (a watcher set up now would hear of 'kept' a moment later, as on iViewer)
+  await tick();
   let fired = 0;
   CF.watch(CF.JoinChangeEvent, ['s2', 's3'], () => fired++);
   CF.setJoins([{ join: 's2', value: null, tokens: { x: 1 } }, { join: 's3', value: 'v', tokens: null }], false);
