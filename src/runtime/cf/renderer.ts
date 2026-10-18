@@ -163,6 +163,8 @@ export class CFRenderer {
   webUrl?: (url: string) => string | undefined;
   /** the host loads another GUI (CF.loadGUI; see LoadProjectOptions.loadGui): a URL, '' this one again, null its default */
   loadGui?: (url: string | null, settings: Record<string, unknown>) => void;
+  /** the host opens a URL that isn't a GUI link (CF.openURL; see LoadProjectOptions.openUrl) */
+  openUrl?: (url: string) => void;
   /** the page to show first instead of the GUI's start page */
   startPage?: string;
   /** the frame rate shown (setShowFps) */

@@ -208,13 +208,21 @@ export function hash(
     });
 }
 
-/** A URL: cf://host/file.gui loads that GUI (as iViewer does), anything else opens outside. */
+/**
+ * A URL, as iViewer's button URL actions take it: cf://host/file.gui loads
+ * that GUI; anything else goes to the host (openUrl: the device's browser,
+ * the app for its scheme - or, a GUI browser's, a GUI it names), else to
+ * window.open.
+ */
 export function openURL(
     ctx: CFContext,
     url: string
 ) {
-    if (/^cf:\/\//i.test(String(url))) return loadGUI(ctx, url, {});
-    window.open(url, "_blank");
+    const text = String(url ?? '');
+    if (/^cf:\/\//i.test(text)) return loadGUI(ctx, text, {});
+    const renderer = (ctx as any).renderer;
+    if (renderer?.openUrl) return renderer.openUrl(text);
+    window.open(text, "_blank");
 }
 
 /**

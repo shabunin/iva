@@ -68,6 +68,21 @@ test('CF.loadGUI, CF.openURL("cf://..."): the host loads it; iViewer 5 profiles 
   assert.deepEqual(calls, [['http://host/x.gui', { startPage: 'Main' }], ['cf://host:8019/y.gui', {}], ['', {}]]);
 });
 
+test("CF.openURL: a cf:// link to the host's loadGui; anything else to its openUrl (a GUI browser decides), window.open without one", () => {
+  const calls: unknown[][] = [];
+  const ctx = { renderer: { loadGui: (...a: unknown[]) => calls.push(['gui', ...a]), openUrl: (u: string) => calls.push(['open', u]) } } as never;
+  openURL(ctx, 'cf://host:8019/y.gui');
+  openURL(ctx, 'http://host:8019/lights/lights.gui?page=Kitchen');
+  openURL(ctx, 'https://example.com/');
+  openURL(ctx, 'tel:+123');
+  assert.deepEqual(calls, [
+    ['gui', 'cf://host:8019/y.gui', {}],
+    ['open', 'http://host:8019/lights/lights.gui?page=Kitchen'],
+    ['open', 'https://example.com/'],
+    ['open', 'tel:+123'],
+  ]);
+});
+
 test('<Button href>: a link, written as GUI Designer does (before flip)', async () => {
   const dir = tmpDir('iva-href-');
   fs.writeFileSync(path.join(dir, 'app.jsx'), `export default (

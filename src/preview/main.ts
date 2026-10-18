@@ -104,6 +104,15 @@ function setOrientation(o: Orientation) {
  */
 async function loadGui(url: string | null, settings: Record<string, unknown>) {
   let gui: string | null = shown;
+  // ?page=Name (or #Name) on a GUI's URL: the page to start on, as the panel's address bar has it
+  let page = typeof settings.startPage === 'string' && settings.startPage ? settings.startPage : '';
+  if (url) {
+    const named = /[?&]page=([^&#]*)/.exec(url);
+    if (named && !page) page = decodeURIComponent(named[1].replace(/\+/g, ' '));
+    const hash = /#(.+)$/.exec(url);
+    if (hash && !page) page = decodeURIComponent(hash[1]);
+    url = url.replace(/#.*$/, '').replace(/([?&])page=[^&#]*&?/, '$1').replace(/[?&]$/, '');
+  }
   if (url === null) {
     gui = null;
   } else if (url) {
@@ -120,7 +129,7 @@ async function loadGui(url: string | null, settings: Record<string, unknown>) {
   const next = new URL(location.href);
   if (gui === null) next.searchParams.delete('gui');
   else next.searchParams.set('gui', gui);
-  if (typeof settings.startPage === 'string' && settings.startPage) next.searchParams.set('page', settings.startPage);
+  if (page) next.searchParams.set('page', page);
   else next.searchParams.delete('page');
   location.href = next.toString();
 }

@@ -60,6 +60,12 @@ export interface LoadProjectOptions {
    * (startPage, reloadGUI, ...).
    */
   loadGui?: (url: string | null, settings: Record<string, unknown>) => void;
+  /**
+   * Open a URL that isn't a GUI link (CF.openURL, a button's href): the host's
+   * way to the device's browser or the app for its scheme (tel:, mailto:).
+   * undefined: window.open.
+   */
+  openUrl?: (url: string) => void;
   /** The page to show first (CF.loadGUI's startPage), when the GUI has it. */
   startPage?: string;
   /** Where the GUI came from (CF.guiURL). */
@@ -165,6 +171,7 @@ export async function loadProject(options: LoadProjectOptions): Promise<LoadProj
   renderer.fileUrl = options.fileUrl;
   renderer.webUrl = options.webUrl;
   renderer.loadGui = options.loadGui;
+  renderer.openUrl = options.openUrl;
   renderer.startPage = options.startPage;
   renderer.targetOrientation = orientation;
   renderer.setDebugMode(debugMode);
