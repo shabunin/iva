@@ -930,15 +930,9 @@ export class CFAPI implements CFContext {
             } else if (event === this.NetworkStatusChangeEvent) {
                 callback(this.networkStatus());
             } else if (event === this.JoinChangeEvent && joins) {
-                // Fire with current value for each watched join
-                const joinList = Array.isArray(joins) ? joins : [joins];
-                for (const j of joinList) {
-                    const parsed = this.parseJoin(j);
-                    if (parsed) {
-                        const tokens = this.tokensStore[j] || {};
-                        callback(j, joinText(joinStore.get(parsed.id, parsed.type)) ?? "", tokens, []);
-                    }
-                }
+                // each watched join as it is now - what CF.getJoin hands: (join, value, tokens, tags), a null
+                // value and null tokens for a join the GUI lacks
+                for (const j of Array.isArray(joins) ? joins : [joins]) guiApi.getJoin(this, j, callback);
             } else if (event === this.PageFlipEvent && this.currentPage !== 'CURRENT_PAGE') {
                 // the page shown now: no page before it
                 callback(null, this.currentPage, this.currentOrientation);

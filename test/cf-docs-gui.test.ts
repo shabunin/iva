@@ -88,6 +88,21 @@ test("JoinChangeEvent for a list item's join: the join as a script names it (l1:
   assert.deepEqual(got, [['l1:0:s1', 'b']]);
 });
 
+test('watch(JoinChangeEvent, join, cb, true): the callback once now, with what getJoin gives - the tags too; a join the GUI lacks: a null value and null tokens', async () => {
+  const { CF } = await gui();
+  CF.setJoin('s1', 'now');
+  CF.listAdd('l1', [{ s1: 'row' }]);
+  const now: unknown[][] = [];
+  CF.watch(CF.JoinChangeEvent, ['s1', 's1000', 'l1:0:s1', 'l1:4:s1', CF.GlobalTokensJoin], (...a: unknown[]) => now.push(a), true);
+  assert.deepEqual(now, [
+    ['s1', 'now', {}, ['label']],
+    ['s1000', null, null, []],
+    ['l1:0:s1', 'row', {}, []],
+    ['l1:4:s1', null, null, []],
+    [CF.GlobalTokensJoin, '', { '[currentartist]': 'Adele', SERVER_URL: 'http://music.local' }, []],
+  ]);
+});
+
 // ── the objects' events ──────────────────────────────────────────
 
 test("a slider's ObjectPressedEvent / ObjectDraggedEvent / ObjectReleasedEvent: (join, value as a string, tokens, tags), as the docs' examples read them", async () => {
