@@ -30,6 +30,16 @@
       <label class="check"><input type="checkbox" id="opt-outline" /> Outline: every element's bounds and joins</label>
       <label class="check"><input type="checkbox" id="opt-fps" /> Frame rate in the corner</label>
       <label class="check"><input type="checkbox" id="opt-disconnect" /> Disconnect the systems while the panel sleeps (iViewer's Disconnect on Exit/Sleep)</label>
+      <label class="pick">Screen stays on
+        <select id="opt-autolock">
+          <option value="0">always</option>
+          <option value="1">for 1 minute</option>
+          <option value="2">for 2 minutes</option>
+          <option value="5">for 5 minutes</option>
+          <option value="10">for 10 minutes</option>
+          <option value="30">for 30 minutes</option>
+        </select>
+        without a touch, then the device may lock (iViewer's Auto Lock Delay)</label>
       <h2>Copies on this device</h2>
       <p class="hint">A GUI loaded from its server is kept here and starts without the server next time (the server is asked for a newer one behind it). Per GUI: whether a copy is kept, one saved now, one cleared.</p>
       <div id="copies"></div>

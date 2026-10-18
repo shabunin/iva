@@ -21,6 +21,7 @@ import { installFonts } from '../src/preview/fonts';
 import { formatLocation, History, isGuiUrl, parseLocation, type GuiLocation } from '../src/runtime/location';
 import { loadManifest, newerVersion, savedManifest, toSave, type Download, type Manifest } from './loader';
 import { forgetAllGuis, forgetGui, keptGuis, saveGui, savedGui, usedGui, type Kept, type SavedGui } from './store';
+import { androidDevice } from './device';
 
 // ── what the panel keeps: between starts (localStorage), across a GUI change (sessionStorage) ──
 /** the GUI shown last: what the next start runs (it follows GUI links) */
@@ -31,6 +32,8 @@ const DEFAULT_GUI = 'iva-panel:default-gui';
 const PAGE = 'iva-panel:page';
 /** iViewer's "Disconnect on Exit/Sleep" ('0': off), as CF.loadGUI or the settings last set it */
 const DISCONNECT = 'iva-panel:disconnectOnSuspend';
+/** iViewer's "Auto Lock Delay": minutes without a touch the screen stays on (0, none: always), as CF.loadGUI or the settings last set it */
+const AUTOLOCK = 'iva-panel:autoLockDelay';
 /** the server's GUI, not the copy kept (CF.loadGUI's reloadGUI, Ctrl+R) */
 const FRESH = 'iva-panel:fresh';
 /** a GUI shown once, not made the next start's (CF.loadGUI's rememberLastGUI: false) */
@@ -64,6 +67,7 @@ const options = {
   outline: $<HTMLInputElement>('opt-outline'),
   fps: $<HTMLInputElement>('opt-fps'),
   disconnect: $<HTMLInputElement>('opt-disconnect'),
+  autoLock: $<HTMLSelectElement>('opt-autolock'),
 };
 
 /** where the panel has been (back, forward), across the page reloads a GUI change takes */
@@ -114,7 +118,18 @@ addEventListener('error', (e) => noteError(`${e.message} (${e.filename?.split('/
 addEventListener('unhandledrejection', (e) => noteError(`unhandled: ${e.reason?.message ?? e.reason}`));
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-installHost(createIvaHost());
+// the phone's own settings and keys (the app's side: PanelDevice.kt), where the app offers them
+const device = androidDevice();
+installHost({ ...createIvaHost(), ...(device ? { deviceControl: device } : {}) });
+
+/** the auto-lock delay set (minutes; 0: the screen always on) */
+const autoLockDelay = () => Math.max(0, Number(localStorage.getItem(AUTOLOCK)) || 0);
+device?.autoLock(autoLockDelay());
+function setAutoLockDelay(minutes: number) {
+  const m = Number.isFinite(minutes) ? Math.max(0, Math.round(minutes)) : 0;
+  localStorage.setItem(AUTOLOCK, String(m));
+  device?.autoLock(m);
+}
 
 /** the GUI's size in the orientation shown */
 function guiSize(o: Orientation) {
@@ -203,7 +218,7 @@ async function letGo() {
  * '' this one again, null the settings' GUI - the panel's default - with
  * the settings iViewer's has that mean something here: startPage,
  * reloadGUI / reloadAssets (the server's copy), rememberLastGUI,
- * showPreloadStatus, disconnectOnSuspend.
+ * showPreloadStatus, disconnectOnSuspend, autoLockDelay (minutes).
  */
 function loadGui(from: string, url: string | null, settings: Record<string, unknown>) {
   const loc: GuiLocation | null = url === null
@@ -215,6 +230,7 @@ function loadGui(from: string, url: string | null, settings: Record<string, unkn
   }
   if (typeof settings.startPage === 'string' && settings.startPage) loc.page = settings.startPage;
   if (typeof settings.disconnectOnSuspend === 'boolean') localStorage.setItem(DISCONNECT, settings.disconnectOnSuspend ? '1' : '0');
+  if (typeof settings.autoLockDelay === 'number') setAutoLockDelay(settings.autoLockDelay);
   goTo(loc, {
     once: settings.rememberLastGUI === false,
     fresh: settings.reloadGUI === true || settings.reloadAssets === true,
@@ -525,6 +541,7 @@ function openSettings() {
   options.outline.checked = flag(OUTLINE);
   options.fps.checked = flag(FPS);
   options.disconnect.checked = localStorage.getItem(DISCONNECT) !== '0';
+  showAutoLock();
   $('errors').textContent = errors.slice().reverse().join('\n');
   $('cancel').hidden = !current && !failed;
   void showCopies();
@@ -627,6 +644,15 @@ options.fps.addEventListener('change', () => {
   setFlag(FPS, options.fps.checked);
   current?.renderer.setShowFps(options.fps.checked);
 });
+/** the delay set in the list - one it hasn't (a script's) added to it */
+function showAutoLock() {
+  const m = String(autoLockDelay());
+  const list = options.autoLock;
+  if (![...list.options].some((o) => o.value === m)) list.add(new Option(`${m} minutes`, m));
+  list.value = m;
+  list.disabled = !device;
+}
+options.autoLock.addEventListener('change', () => setAutoLockDelay(Number(options.autoLock.value)));
 options.disconnect.addEventListener('change', () => {
   localStorage.setItem(DISCONNECT, options.disconnect.checked ? '1' : '0');
   if (current?.renderer.cfApi) current.renderer.cfApi.disconnectOnSuspend = options.disconnect.checked;

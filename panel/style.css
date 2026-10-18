@@ -119,6 +119,16 @@ html, body {
 #settings input[type="text"]:focus { border-color: #00a884; }
 #settings .check { display: flex; align-items: flex-start; gap: 10px; color: #c4c9cf; font-size: 15px; }
 #settings .check input { margin: 4px 0 0; width: 18px; height: 18px; flex: none; accent-color: #00a884; }
+#settings .pick { color: #c4c9cf; font-size: 15px; line-height: 2; }
+#settings select {
+  font: inherit;
+  margin: 0 4px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid #2c333a;
+  background: #191d21;
+  color: inherit;
+}
 #settings .row { display: flex; flex-wrap: wrap; gap: 10px; }
 #settings button {
   font: inherit;

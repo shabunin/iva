@@ -4,24 +4,28 @@ import android.content.Context
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
+import android.view.KeyEvent
 import android.view.WindowManager
 import android.webkit.WebView
+import androidx.activity.BackEventCompat
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 
 class MainActivity : TauriActivity() {
   private var multicastLock: WifiManager.MulticastLock? = null
 
   private var webView: WebView? = null
 
+  /** the phone as the GUI's scripts have it: brightness, volume, battery, the bars, hardware keys, the auto-lock */
+  private val device by lazy { PanelDevice(this) }
+
   // Back: not the web view's history (the panel has none)
   override val handleBackNavigation: Boolean = false
 
   override fun onWebViewCreate(webView: WebView) {
     this.webView = webView
+    // (before its first page: the page's channel to the device)
+    device.attach(webView)
   }
 
   // In the background the GUI sleeps, as iViewer's does: the page is told first (GUISuspended - its
@@ -43,6 +47,7 @@ class MainActivity : TauriActivity() {
   override fun onResume() {
     super.onResume()
     asleep = false
+    device.touched()
     webView?.resumeTimers()
     webView?.evaluateJavascript("window.ivaPanelSleep && window.ivaPanelSleep(false)", null)
   }
@@ -50,17 +55,24 @@ class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
-    // a panel on the wall: the screen stays on while it shows, the GUI takes all of it
+    // a panel on the wall: the screen stays on while it shows (unless a GUI's autoLockDelay says
+    // for how long without a touch), the GUI takes all of it
     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
       window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
     }
-    immersive()
+    device.start()
+    device.applyBars()
     // Back puts the panel away, as Home does: it keeps running (its systems connected). Closing
-    // it would end the process under its Rust threads (an abort on the way out).
+    // it would end the process under its Rust threads (an abort on the way out). A GUI's
+    // CF.interceptHardwareKey can keep it for itself.
     onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+      override fun handleOnBackStarted(backEvent: BackEventCompat) = device.backStarted()
+
+      override fun handleOnBackCancelled() = device.backCancelled()
+
       override fun handleOnBackPressed() {
-        moveTaskToBack(true)
+        if (!device.backPressed()) moveTaskToBack(true)
       }
     })
     try {
@@ -79,19 +91,21 @@ class MainActivity : TauriActivity() {
 
   override fun onWindowFocusChanged(hasFocus: Boolean) {
     super.onWindowFocusChanged(hasFocus)
-    if (hasFocus) immersive()
+    // no status or navigation bar (a swipe from the edge shows them for a while), unless the GUI shows one
+    if (hasFocus) device.applyBars()
   }
 
-  /** no status or navigation bar (a swipe from the edge shows them for a while) */
-  private fun immersive() {
-    WindowCompat.setDecorFitsSystemWindows(window, false)
-    WindowInsetsControllerCompat(window, window.decorView).let {
-      it.hide(WindowInsetsCompat.Type.systemBars())
-      it.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-    }
+  // the keys a GUI watches (CF.interceptHardwareKey): to it, or kept from the system
+  override fun dispatchKeyEvent(event: KeyEvent): Boolean = device.keyEvent(event) { super.dispatchKeyEvent(it) }
+
+  // a touch, a key: the screen stays on (autoLockDelay counts from here)
+  override fun onUserInteraction() {
+    super.onUserInteraction()
+    device.touched()
   }
 
   override fun onDestroy() {
+    device.stop()
     super.onDestroy()
     try {
       if (multicastLock?.isHeld == true) multicastLock?.release()

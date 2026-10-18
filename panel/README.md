@@ -93,6 +93,36 @@ scripts' timers stop; on coming back `CF.GUIResumedEvent`, the systems
 connect again, and `CF.NetworkStatusChangeEvent` if the network changed
 meanwhile. Back puts the app in the background, as Home does.
 
+## The device
+
+The GUI's scripts have the phone as iViewer gives it to them, through a
+message channel between the page and the app's activity (`window.ivaAndroid`,
+offered to the panel's own page only - no web view in a GUI gets it; the
+page's side is [device.ts](device.ts), the app's
+[PanelDevice.kt](src-tauri/gen/android/app/src/main/java/tech/bobalus/iva/panel/PanelDevice.kt)):
+
+- `CF.device.screenBrightness`, `soundOutputVolume` (the media volume),
+  `batteryLevel` and `batteryChargeStatus` are the phone's, and
+  `CF.DevicePropertyChangedEvent` tells of each change the phone makes: the
+  user's brightness or volume, the battery, the bars shown or hidden.
+- `CF.setDeviceProperty`: the brightness (this window's, not the system's
+  setting; 0 is dim, not dark), the volume, the status bar (shown, hidden,
+  its text white or black) and the navigation bar. A bar shown takes its
+  room: the GUI fits beside it. A script's own change raises no event.
+- `CF.interceptHardwareKey(keyCode, pressTime, mode, callback)`: Back, the
+  volume keys or any other key (Android's key code; the Titan 2's keyboard
+  too) let go after being held at least `pressTime` ms calls
+  `callback(keyCode, held)`. `CF.KEYPRESS_INTERCEPT` keeps such a press from
+  the system - a shorter one it gets after all - and `CF.KEYPRESS_OBSERVE`
+  leaves the key its usual effect. Back's hold counts from the key's press or
+  the swipe's start, as Android tells them.
+- `CF.loadGUI`'s `autoLockDelay` (minutes, also in the settings: "Screen
+  stays on"): the screen stays on for so long without a touch, then the
+  device's own timeout turns it off. 0, the default: always on.
+
+Each GUI starts with the panel's own: the system's brightness, both bars
+hidden, no keys watched.
+
 ## Sockets
 
 A system's socket lives on the app's Rust side; the system in the page owns
