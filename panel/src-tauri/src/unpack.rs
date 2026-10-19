@@ -1,11 +1,11 @@
 // A GUI's archive unpacked on the device - the size the screen runs, one
 // folder per GUI and version in the app's data (unpacked/<GUI>/<version>/gui/)
-// - and its images packed into sheets there (atlas.rs), behind the GUI
-// running: the page's first start runs from the archive, the starts after
-// that from the folder (the asset protocol: each file by its URL), its
-// images in sheets. The archive comes from the page (gui_upload, in pieces:
-// an Android web view hands the app strings, not bytes), or is the app's
-// own (the built-in demo, among its assets). Events: iva-gui-unpacked,
+// - and its images packed into sheets there (atlas.rs). The page runs the
+// GUI from that folder (the asset protocol: each file by its URL), at once
+// on its first start, its images one by one while they're packed behind it,
+// in sheets from the next start on. The archive comes from the page
+// (gui_upload, in pieces: an Android web view hands the app strings, not
+// bytes), or is the app's own (the built-in demo, among its assets). Events:
 // iva-gui-packing (groups done, of how many), iva-gui-packed.
 
 use std::collections::{HashMap, HashSet};
@@ -29,7 +29,7 @@ pub struct Guis {
     busy: Mutex<HashSet<PathBuf>>,
 }
 
-/// What the page asks to unpack.
+/// What the page asks to unpack (and what's unpacked: meta.json).
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct UnpackArgs {
@@ -37,16 +37,23 @@ pub struct UnpackArgs {
     id: String,
     version: String,
     /// the app's own file (the built-in demo: /demo/x.gui.zip) ...
-    #[serde(default)]
+    #[serde(default, skip_serializing)]
     asset: Option<String>,
     /// ... or what the page sent (gui_upload)
-    #[serde(default)]
+    #[serde(default, skip_serializing)]
     upload: Option<u32>,
     /// the archive's files to unpack (the size run)
     files: Vec<String>,
-    /// where the sheets go (beside the .gui: 1400w1400h/iva-atlas)
+    /// where its sheets go (beside the .gui: 1400w1400h/iva-atlas)
     atlas: String,
-    /// the images to pack: [file, name in the .gui, group], in the groups' order
+}
+
+/// What the page asks to pack: the images, [file, name in the .gui, group], in the groups' order.
+#[derive(serde::Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PackArgs {
+    id: String,
+    version: String,
     images: Vec<[String; 3]>,
 }
 
@@ -58,6 +65,9 @@ pub struct Unpacked {
     files: Vec<String>,
     /// its sheets made (atlas.json there)
     packed: bool,
+    /// how long unpacking took (unpacked just now)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ms: Option<u128>,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -80,11 +90,10 @@ struct Event {
 }
 
 impl Event {
-    fn of(a: &UnpackArgs) -> Self {
-        Event { id: a.id.clone(), version: a.version.clone(), ms: None, done: None, total: None, sheets: None, images: None, error: None }
+    fn of(id: &str, version: &str) -> Self {
+        Event { id: id.into(), version: version.into(), ms: None, done: None, total: None, sheets: None, images: None, error: None }
     }
 }
-
 /// a name for a folder: FNV-1a, 64 bits
 fn hash(s: &str) -> String {
     let mut h: u64 = 0xcbf29ce484222325;
@@ -184,7 +193,7 @@ pub fn gui_upload(state: State<'_, Guis>, token: u32, data: String) -> Result<()
 }
 
 /// The files unpacked into the version's folder, and what they are (meta.json: written last - there, they are).
-fn unpack_files<R: Runtime>(app: &AppHandle<R>, a: &UnpackArgs, ver: &Path) -> Result<usize, String> {
+fn unpack_files<R: Runtime>(app: &AppHandle<R>, a: &UnpackArgs, ver: &Path) -> Result<(), String> {
     let bytes = match (&a.asset, a.upload) {
         (Some(path), _) => app.asset_resolver().get(path.clone()).ok_or_else(|| format!("{path}: not among the app's files"))?.bytes,
         (None, Some(token)) => app.state::<Guis>().uploads.lock().unwrap().remove(&token).ok_or("no such upload")?,
@@ -193,103 +202,110 @@ fn unpack_files<R: Runtime>(app: &AppHandle<R>, a: &UnpackArgs, ver: &Path) -> R
     let zip = Zip::open(&bytes)?;
     let _ = fs::remove_dir_all(ver);
     let dir = ver.join("gui");
-    let mut n = 0;
     for name in &a.files {
         let Some(rel) = safe(name) else { continue };
-        let data = match zip.read(name) {
-            Ok(d) => d,
-            Err(_) => continue,
-        };
+        let Ok(data) = zip.read(name) else { continue };
         let to = dir.join(rel);
         if let Some(parent) = to.parent() {
             fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
         fs::write(&to, data).map_err(|e| e.to_string())?;
-        n += 1;
     }
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     fs::write(ver.join("meta.json"), serde_json::to_vec(a).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
-    Ok(n)
+    Ok(())
 }
 
-/// Its images packed into sheets beside its .gui.
-fn pack_images<R: Runtime>(app: &AppHandle<R>, a: &UnpackArgs, ver: &Path) {
-    let t0 = Instant::now();
+/// The version's folder taken (it's unpacked or packed now: once at a time), let go when the guard goes.
+struct Busy<R: Runtime>(AppHandle<R>, PathBuf);
+
+impl<R: Runtime> Busy<R> {
+    fn take(app: &AppHandle<R>, ver: &Path) -> Option<Self> {
+        app.state::<Guis>().busy.lock().unwrap().insert(ver.to_path_buf()).then(|| Busy(app.clone(), ver.to_path_buf()))
+    }
+}
+
+impl<R: Runtime> Drop for Busy<R> {
+    fn drop(&mut self) {
+        self.0.state::<Guis>().busy.lock().unwrap().remove(&self.1);
+    }
+}
+
+/// The archive's files of the size run unpacked (if they aren't): where they are.
+#[tauri::command]
+pub async fn gui_unpack<R: Runtime>(app: AppHandle<R>, args: UnpackArgs) -> Result<Unpacked, String> {
+    let (gui, ver) = folders(&app, &args.id, &args.version)?;
+    if let Some(token) = args.upload.filter(|_| ver.join("meta.json").exists()) {
+        app.state::<Guis>().uploads.lock().unwrap().remove(&token);
+    }
+    if !ver.join("meta.json").exists() {
+        let t0 = Instant::now();
+        let a = args.clone();
+        let app2 = app.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let _busy = Busy::take(&app2, &ver).ok_or("being unpacked")?;
+            unpack_files(&app2, &a, &ver)?;
+            // its other versions go
+            for old in fs::read_dir(&gui).into_iter().flatten().flatten() {
+                if old.path() != ver {
+                    let _ = fs::remove_dir_all(old.path());
+                }
+            }
+            Ok::<_, String>(())
+        })
+        .await
+        .map_err(|e| e.to_string())??;
+        let mut u = gui_unpacked(app, args.id, args.version)?.ok_or("not unpacked")?;
+        u.ms = Some(t0.elapsed().as_millis());
+        return Ok(u);
+    }
+    gui_unpacked(app, args.id, args.version)?.ok_or_else(|| "not unpacked".into())
+}
+
+/// Its images packed into sheets beside its .gui, in a thread of its own (the events say how far it got) - if
+/// they aren't, and nothing is packing them now.
+#[tauri::command]
+pub fn gui_pack<R: Runtime>(app: AppHandle<R>, args: PackArgs) -> Result<(), String> {
+    let (_, ver) = folders(&app, &args.id, &args.version)?;
+    let meta: UnpackArgs = serde_json::from_slice(&fs::read(ver.join("meta.json")).map_err(|_| "not unpacked")?).map_err(|e| e.to_string())?;
     let dir = ver.join("gui");
-    let files: HashSet<&str> = a.files.iter().map(|s| s.as_str()).collect();
-    let inputs = a
+    let out = dir.join(safe(&meta.atlas).ok_or("no folder for the sheets")?);
+    if out.join("atlas.json").exists() {
+        return Ok(());
+    }
+    let Some(busy) = Busy::take(&app, &ver) else { return Ok(()) };
+    let files: HashSet<&str> = meta.files.iter().map(|s| s.as_str()).collect();
+    let inputs: Vec<atlas::Input> = args
         .images
         .iter()
         .filter(|[file, ..]| files.contains(file.as_str()))
         .filter_map(|[file, name, group]| Some(atlas::Input { file: dir.join(safe(file)?), name: name.clone(), group: group.clone() }))
         .collect();
-    let Some(out) = safe(&a.atlas).map(|p| dir.join(p)) else { return };
-    let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2).saturating_sub(2).clamp(1, 3);
-    let progress = |done, total| {
-        let _ = app.emit("iva-gui-packing", Event { done: Some(done), total: Some(total), ..Event::of(a) });
-    };
-    let mut e = Event::of(a);
-    match atlas::pack(inputs, &out, threads, &progress) {
-        Ok(map) => {
-            e.sheets = Some(map.sheets.len());
-            e.images = Some(map.frames.len());
-            log::info!("[iva] {} packed: {} images in {} sheets, {} ms", a.id, map.frames.len(), map.sheets.len(), t0.elapsed().as_millis());
-        }
-        Err(err) => e.error = Some(err.to_string()),
-    }
-    e.ms = Some(t0.elapsed().as_millis());
-    let _ = app.emit("iva-gui-packed", e);
-}
-
-/// unpacked (if it isn't) and packed, in a thread of its own - one at a time a folder
-fn work<R: Runtime>(app: AppHandle<R>, a: UnpackArgs, unpack: bool) -> Result<(), String> {
-    let (gui, ver) = folders(&app, &a.id, &a.version)?;
-    if !app.state::<Guis>().busy.lock().unwrap().insert(ver.clone()) {
-        return Ok(());
-    }
     std::thread::spawn(move || {
-        if unpack {
-            let t0 = Instant::now();
-            let mut e = Event::of(&a);
-            match unpack_files(&app, &a, &ver) {
-                Ok(n) => {
-                    e.done = Some(n);
-                    // its other versions go
-                    for old in fs::read_dir(&gui).into_iter().flatten().flatten() {
-                        if old.path() != ver {
-                            let _ = fs::remove_dir_all(old.path());
-                        }
-                    }
-                }
-                Err(err) => e.error = Some(err),
+        let _busy = busy;
+        let t0 = Instant::now();
+        // a core for the page, one for the web view's drawing
+        let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2).saturating_sub(2).clamp(1, 3);
+        let progress = |done, total| {
+            let _ = app.emit("iva-gui-packing", Event { done: Some(done), total: Some(total), ..Event::of(&args.id, &args.version) });
+        };
+        let mut e = Event::of(&args.id, &args.version);
+        match atlas::pack(inputs, &out, threads, &progress) {
+            Ok(map) => {
+                e.sheets = Some(map.sheets.len());
+                e.images = Some(map.frames.len());
+                log::info!("[iva] {} packed: {} images in {} sheets, {} ms", args.id, map.frames.len(), map.sheets.len(), t0.elapsed().as_millis());
             }
-            e.ms = Some(t0.elapsed().as_millis());
-            let failed = e.error.is_some();
-            let _ = app.emit("iva-gui-unpacked", e);
-            if failed {
-                app.state::<Guis>().busy.lock().unwrap().remove(&ver);
-                return;
-            }
+            Err(err) => e.error = Some(err.to_string()),
         }
-        pack_images(&app, &a, &ver);
-        app.state::<Guis>().busy.lock().unwrap().remove(&ver);
+        e.ms = Some(t0.elapsed().as_millis());
+        let _ = app.emit("iva-gui-packed", e);
     });
     Ok(())
 }
 
-/// The archive's files unpacked and its images packed, behind the GUI running (the events say how far it got).
-#[tauri::command]
-pub fn gui_unpack<R: Runtime>(app: AppHandle<R>, args: UnpackArgs) -> Result<(), String> {
-    let (_, ver) = folders(&app, &args.id, &args.version)?;
-    if ver.join("meta.json").exists() {
-        // unpacked already: packed, if it isn't
-        return gui_unpacked(app, args.id, args.version).map(|_| ());
-    }
-    work(app, args, true)
-}
-
-/// The GUI's files unpacked from this version, if they are: where, which, whether its images are in sheets
-/// yet (if they aren't, and nothing is packing them - the app stopped meanwhile - they're packed now).
+/// The GUI's files unpacked from this version, if they are: where, which (its sheets among them), whether
+/// its images are in sheets yet.
 #[tauri::command]
 pub fn gui_unpacked<R: Runtime>(app: AppHandle<R>, id: String, version: String) -> Result<Option<Unpacked>, String> {
     let (_, ver) = folders(&app, &id, &version)?;
@@ -301,7 +317,6 @@ pub fn gui_unpacked<R: Runtime>(app: AppHandle<R>, id: String, version: String) 
     let dir = ver.join("gui");
     let packed = safe(&a.atlas).is_some_and(|p| dir.join(p).join("atlas.json").exists());
     let mut files: Vec<String> = a.files.iter().filter(|f| safe(f).is_some_and(|p| dir.join(p).is_file())).cloned().collect();
-    // and the sheets and their map
     if packed {
         for e in fs::read_dir(dir.join(&a.atlas)).into_iter().flatten().flatten() {
             let name = e.file_name().to_string_lossy().into_owned();
@@ -310,10 +325,7 @@ pub fn gui_unpacked<R: Runtime>(app: AppHandle<R>, id: String, version: String) 
             }
         }
     }
-    if !packed {
-        work(app, a, false)?;
-    }
-    Ok(Some(Unpacked { root: dir.to_string_lossy().into_owned(), files, packed }))
+    Ok(Some(Unpacked { root: dir.to_string_lossy().into_owned(), files, packed, ms: None }))
 }
 
 /// A GUI's files unpacked let go - every GUI's, without one.

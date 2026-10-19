@@ -25,21 +25,12 @@ export interface Manifest {
   fileUrl: (name: string) => string | undefined;
   /** its images packed in sheets (iva-atlas/ beside the .gui: the app packed them, a start before), when it has them */
   atlas?: Atlas;
-  /** from an archive: what to unpack of it for the next start, and how to pack its images (the app's side does it) */
-  adapt?: () => Adapt;
-}
-
-/**
- * A GUI's archive as the app unpacks it and packs its images in sheets
- * (src-tauri/src/unpack.rs): the files of the size run, where the sheets go
- * (beside its .gui), the images to pack - [file, name in the .gui, group],
- * the groups in their sheets' order (atlasGroups) - and the archive's bytes.
- */
-export interface Adapt {
-  files: string[];
-  atlas: string;
-  images: [string, string, string][];
-  bytes?: Uint8Array<ArrayBuffer>;
+  /**
+   * from an archive: its images as the app packs them in sheets
+   * (src-tauri/src/atlas.rs) - [file, name in the .gui, group], the groups
+   * in their sheets' order (atlasGroups)
+   */
+  toPack?: () => [string, string, string][];
 }
 
 /**
@@ -120,7 +111,7 @@ async function download(url: string, known?: { etag?: string; lastModified?: str
 }
 
 const get = async (url: string) => (await download(url))!.bytes;
-const isZip = (b: Uint8Array) => b[0] === 0x50 && b[1] === 0x4b && b[2] === 3 && b[3] === 4;
+export const isZip = (b: Uint8Array) => b[0] === 0x50 && b[1] === 0x4b && b[2] === 3 && b[3] === 4;
 
 function decodeXml(b: Uint8Array): string {
   // GUI Designer writes UTF-8 with a BOM; tolerate UTF-16 too
@@ -146,13 +137,17 @@ function scriptNames(xml: string): string[] {
 const folderOf = (xml: string) => (xml.match(/<imagefolder>([^<]*)<\/imagefolder>/)?.[1] ?? '').trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
 const titleOf = (xml: string, fallback: string) => xml.match(/<project>([^<]*)<\/project>/)?.[1]?.trim() || fallback;
 
+/** The GUI at `url` from its server, as it came: a .gui, or a zip (by what comes, whatever the URL says). */
+export const fetchGui = async (url: string) => (await download(guiUrl(url)))!;
+
 /** The GUI at `url` from its server - a .gui, or a zip (by what comes, whatever the URL says) - and what came. */
 export async function loadManifest(url: string): Promise<{ manifest: Manifest; got: Download }> {
-  const got = (await download(guiUrl(url)))!;
+  const got = await fetchGui(url);
   return { manifest: await manifestOf(got), got };
 }
 
-async function manifestOf(got: Download): Promise<Manifest> {
+/** The GUI that came from its server (fetchGui). */
+export async function manifestOf(got: Download): Promise<Manifest> {
   if (isZip(got.bytes)) return zipManifest(openZip(got.bytes), got.url);
   const xml = decodeXml(got.bytes);
   // a web page, a wrong address: say so, not an empty screen
@@ -185,9 +180,10 @@ async function each<T>(items: T[], n: number, work: (item: T) => Promise<void>) 
  * missing means no copy (the one kept before stays) - a copy without the
  * start script would run nothing, every start.
  */
-export async function toSave(got: Download, m: Manifest): Promise<SavedGui> {
+export async function toSave(got: Download, m?: Manifest): Promise<SavedGui> {
   const base = { url: got.url, etag: got.etag, lastModified: got.lastModified, savedAt: Date.now() };
   if (isZip(got.bytes)) return { ...base, zip: got.bytes, bytes: got.bytes.length };
+  m ??= await manifestOf(got);
   const gui = decodeXml(got.bytes);
   if (got.server?.startsWith('iva')) {
     // the whole build in one archive (asked for twice: a flaky link)
@@ -313,8 +309,6 @@ export interface Archive {
   read(name: string): Promise<Uint8Array<ArrayBuffer>>;
   /** a file's own URL, where it has one (a folder's files: no Blob made of it) */
   url?(name: string): string;
-  /** the archive as it came (a zip) */
-  bytes?: Uint8Array<ArrayBuffer>;
 }
 
 /** A zip archive opened: stored or deflated entries (no zip64, no encryption). */
@@ -347,7 +341,6 @@ export function openZip(z: Uint8Array<ArrayBuffer>): Archive {
   }
   return {
     names: [...entries.keys()],
-    bytes: z,
     stored: (name) => {
       const e = entries.get(name);
       return e && e.method === 0 ? z.subarray(e.start, e.start + e.size) : undefined;
@@ -391,32 +384,27 @@ const SIZE_DIR = /^\d+w\d+h\//i;
 const RETINA = /@2x\.(png|jpe?g|gif)$/i;
 
 /**
- * A zipped GUI's files: its .gui - the one named after the archive
- * (clock.gui.zip: clock.gui), else the shallowest; one in several sizes
- * (iva build's <Project sizes>: 1400w1400h/x.gui beside x.gui) the one
- * shaped like the screen - and that size's images, scripts and sheets,
- * read as they're needed (as src/server/project.ts zipManifest). With it, what
- * the app unpacks of it for the next start, and how it packs its images (adapt).
+ * What the app unpacks of a zipped GUI (src-tauri/src/unpack.rs): the size
+ * run's files - but for sheets of its own (the app's go there) - and the
+ * folder its sheets go in, beside its .gui.
+ */
+export async function unpackPlan(zip: Uint8Array<ArrayBuffer>, id: string): Promise<{ files: string[]; atlas: string }> {
+  const { dir, names } = await sizeRun(openZip(zip), id);
+  const sheets = `${dir}${ATLAS_DIR}`;
+  return { files: names.filter((n) => !n.toLowerCase().startsWith(sheets.toLowerCase())), atlas: sheets.replace(/\/$/, '') };
+}
+
+/**
+ * A zipped GUI's files: its .gui and that size's images, scripts and
+ * sheets, read as they're needed (as src/server/project.ts zipManifest).
+ * With it, how the app packs its images (toPack).
  */
 async function zipManifest(a: Archive, id: string): Promise<Manifest> {
-  const guis = a.names.filter((n) => /\.gui$/i.test(n));
-  if (!guis.length) throw new Error(`${id}: no .gui in the archive`);
-  const own = decodeURIComponent(new URL(id).pathname.split('/').filter(Boolean).pop() ?? '').replace(/\.zip$/i, '').toLowerCase();
+  const { entry, dir, names } = await sizeRun(a, id);
   const leaf = (n: string) => n.split('/').pop()!.toLowerCase();
-  let entry = guis.find((n) => leaf(n) === own)
-    ?? guis.find((n) => leaf(n).replace(/\.gui$/, '') === own)
-    ?? [...guis].sort((x, y) => x.split('/').length - y.split('/').length || x.localeCompare(y))[0];
-  const sizes = guis.filter((n) => leaf(n) === leaf(entry));
-  if (sizes.length > 1 && typeof screen !== 'undefined') {
-    const heads = new Map(await Promise.all(sizes.map(async (n): Promise<[string, string]> => [n, decodeXml((await a.read(n)).subarray(0, 4096))])));
-    entry = shapedLike(sizes, heads, screen.width, screen.height);
-  }
   const guiXml = decodeXml(await a.read(entry));
-  const dir = entry.includes('/') ? entry.slice(0, entry.lastIndexOf('/') + 1) : '';
   const folder = folderOf(guiXml);
   const imageRoot = dir + (folder ? `${folder}/` : '');
-  // the size run: the files beside its .gui - not another size's, not the @2x ones only iViewer's retina screens take
-  const names = a.names.filter((n) => n.startsWith(dir) && !(SIZE_DIR.test(n.slice(dir.length)) && !SIZE_DIR.test(dir)) && !RETINA.test(n));
   const lower = new Map(names.map((n) => [n.toLowerCase(), n]));
   const blobs = new Map<string, string>();
   const blobOf = (name: string, bytes: Uint8Array<ArrayBuffer>) => {
@@ -480,27 +468,49 @@ async function zipManifest(a: Archive, id: string): Promise<Manifest> {
       const found = [imageRoot + n, dir + n].map((f) => lower.get(f.toLowerCase())).find(Boolean);
       return found ? urlNow(found) : undefined;
     },
-    adapt: () => {
-      // the PNGs to pack, by the group atlasGroups puts each in: the groups in their sheets' order
+    toPack: () => {
+      // the PNGs, by the group atlasGroups puts each in: the groups in their sheets' order
       const { groups, pages } = atlasGroups(guiXml, Object.values(ordered));
       const pack: [string, string, string][] = [];
       for (const [n, group] of groups) {
         const file = fileOf(n);
         if (file && /\.png$/i.test(file)) pack.push([file, n, group]);
       }
-      pack.sort((x, y) => groupRank(x[2], pages) - groupRank(y[2], pages) || x[2].localeCompare(y[2]));
-      // sheets of its own (an archive the app made them in): the app's go in their place
-      const sheets = `${dir}${ATLAS_DIR}`.toLowerCase();
-      return { files: names.filter((n) => !n.toLowerCase().startsWith(sheets)), atlas: `${dir}${ATLAS_DIR}`.replace(/\/$/, ''), images: pack, bytes: a.bytes };
+      return pack.sort((x, y) => groupRank(x[2], pages) - groupRank(y[2], pages) || x[2].localeCompare(y[2]));
     },
   };
 }
 
 /**
- * A GUI from its files unpacked on the device - by the app, from its archive,
- * a start before (src-tauri/src/unpack.rs) - each file by its URL in the
- * folder (the asset protocol): nothing to unzip, no Blob made; its images in
- * sheets, once the app packed them.
+ * Of a zipped GUI, the size run: its .gui - the one named after the archive
+ * (clock.gui.zip: clock.gui), else the shallowest; one in several sizes
+ * (iva build's <Project sizes>: 1400w1400h/x.gui beside x.gui) the one
+ * shaped like the screen - the folder it's in, and the files beside it (not
+ * another size's, not the @2x ones only iViewer's retina screens take).
+ */
+async function sizeRun(a: Archive, id: string): Promise<{ entry: string; dir: string; names: string[] }> {
+  const guis = a.names.filter((n) => /\.gui$/i.test(n));
+  if (!guis.length) throw new Error(`${id}: no .gui in the archive`);
+  const own = decodeURIComponent(new URL(id).pathname.split('/').filter(Boolean).pop() ?? '').replace(/\.zip$/i, '').toLowerCase();
+  const leaf = (n: string) => n.split('/').pop()!.toLowerCase();
+  let entry = guis.find((n) => leaf(n) === own)
+    ?? guis.find((n) => leaf(n).replace(/\.gui$/, '') === own)
+    ?? [...guis].sort((x, y) => x.split('/').length - y.split('/').length || x.localeCompare(y))[0];
+  const sizes = guis.filter((n) => leaf(n) === leaf(entry));
+  if (sizes.length > 1 && typeof screen !== 'undefined') {
+    const heads = new Map(await Promise.all(sizes.map(async (n): Promise<[string, string]> => [n, decodeXml((await a.read(n)).subarray(0, 4096))])));
+    entry = shapedLike(sizes, heads, screen.width, screen.height);
+  }
+  const dir = entry.includes('/') ? entry.slice(0, entry.lastIndexOf('/') + 1) : '';
+  const names = a.names.filter((n) => n.startsWith(dir) && !(SIZE_DIR.test(n.slice(dir.length)) && !SIZE_DIR.test(dir)) && !RETINA.test(n));
+  return { entry, dir, names };
+}
+
+/**
+ * A GUI from its files unpacked on the device - by the app, from its archive
+ * (src-tauri/src/unpack.rs) - each file by its URL in the folder (the asset
+ * protocol): nothing to unzip, no Blob made; its images in sheets, once the
+ * app packed them.
  */
 export function folderManifest(u: { root: string; files: string[] }, id: string): Promise<Manifest> {
   const sep = u.root.includes('\\') && !u.root.includes('/') ? '\\' : '/';

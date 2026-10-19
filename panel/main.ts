@@ -22,7 +22,7 @@ import { createIvaHost } from '../src/runtime/host';
 import { closeHostSockets } from '../src/runtime/host/net/provider';
 import { installFonts } from '../src/preview/fonts';
 import { formatLocation, History, isGuiUrl, parseLocation, type GuiLocation } from '../src/runtime/location';
-import { folderManifest, loadManifest, newerVersion, ownFile, savedManifest, toSave, type Download, type Manifest } from './loader';
+import { fetchGui, folderManifest, isZip, loadManifest, manifestOf, newerVersion, ownFile, savedManifest, toSave, unpackPlan, type Download, type Manifest } from './loader';
 import { forgetAllGuis, forgetGui, keptGui, keptGuis, saveGui, savedGui, usedGui, type Kept, type SavedGui } from './store';
 import { androidDevice } from './device';
 
@@ -455,10 +455,12 @@ interface Unpacked {
   root: string;
   files: string[];
   packed: boolean;
+  /** how long unpacking took (unpacked just now) */
+  ms?: number;
 }
 
-/** what the app says as it unpacks and packs, in the log: how long each took */
-interface Unpacking {
+/** what the app says as it packs, in the log: how far it got, how long it took */
+interface Packing {
   id: string;
   ms?: number;
   done?: number;
@@ -468,10 +470,8 @@ interface Unpacking {
   error?: string;
 }
 if (native) {
-  void listen<Unpacking>('iva-gui-unpacked', ({ payload: e }) =>
-    e.error ? noteError(`unpacking ${e.id}: ${e.error}`) : mark(`unpacked by the app: ${e.done} files in ${e.ms} ms`));
-  void listen<Unpacking>('iva-gui-packing', ({ payload: e }) => mark(`packing: ${e.done} of ${e.total} groups`));
-  void listen<Unpacking>('iva-gui-packed', ({ payload: e }) =>
+  void listen<Packing>('iva-gui-packing', ({ payload: e }) => mark(`packing: ${e.done} of ${e.total} groups`));
+  void listen<Packing>('iva-gui-packed', ({ payload: e }) =>
     e.error ? noteError(`packing ${e.id}'s images: ${e.error}`) : mark(`packed by the app: ${e.images} images in ${e.sheets} sheets in ${e.ms} ms`));
 }
 
@@ -502,26 +502,31 @@ async function upload(bytes: Uint8Array<ArrayBuffer>): Promise<number> {
 }
 
 /**
- * A GUI that ran from its archive, unpacked by the app for the next start
- * and its images packed in sheets (behind the GUI running): the app's own
- * (the built-in demo) it reads itself, any other it's sent.
+ * A GUI's archive unpacked by the app - the size this screen runs, into its
+ * folder for this version (its key) - and the GUI from there: each file by
+ * its URL, nothing unzipped here (a slow phone takes seconds to inflate a
+ * thousand images, the app a fraction of one). The app's own archive (the
+ * built-in demo) it reads itself, any other it's sent. None: no app, no
+ * version, or it failed - the page unzips it, as a browser does.
  */
-async function adapt(url: string, key: string | undefined, m: Manifest) {
-  if (!native || !key || !m.adapt) return;
+async function unpacked(url: string, key: string | undefined, zip: Uint8Array<ArrayBuffer>): Promise<Manifest | null> {
+  if (!native || !key) return null;
   try {
-    if (await unpackedFolder(url, key)) return;
-    const plan = m.adapt();
-    const own = ownFile(url);
-    if (!own && !plan.bytes) return;
-    const args = {
-      id: url, version: key, files: plan.files, atlas: plan.atlas, images: plan.images,
-      ...(own ? { asset: decodeURIComponent(new URL(url).pathname) } : { upload: await upload(plan.bytes!) }),
-    };
-    await invoke('gui_unpack', { args });
-    mark(`to the app to unpack: ${plan.files.length} files, ${plan.images.length} images to pack`);
+    const plan = await unpackPlan(zip, url);
+    const from = ownFile(url) ? { asset: decodeURIComponent(new URL(url).pathname) } : { upload: await upload(zip) };
+    const u = await invoke<Unpacked>('gui_unpack', { args: { id: url, version: key, files: plan.files, atlas: plan.atlas, ...from } });
+    mark(`unpacked by the app: ${u.files.length} files${u.ms === undefined ? ' (before)' : ` in ${u.ms} ms`}`);
+    return await folderManifest(u, url);
   } catch (e) {
-    noteError(`unpacking ${url} for the next start: ${message(e)}`);
+    noteError(`unpacking ${url}: ${message(e)}`);
+    return null;
   }
+}
+
+/** Its images packed in sheets by the app (behind the GUI running), for the next start - if they aren't. */
+function pack(url: string, key: string | undefined, m: Manifest) {
+  if (!native || !key || !m.toPack || m.atlas) return;
+  void invoke('gui_pack', { args: { id: url, version: key, images: m.toPack() } }).catch((e) => noteError(`packing ${url}'s images: ${message(e)}`));
 }
 
 /**
@@ -555,12 +560,14 @@ async function start() {
   if (ownFile(url)) void forgetGui(url).catch(() => {});
   // its files unpacked by the app from this version, a start before: nothing to read or unzip, its images in sheets
   const key = fresh ? undefined : await unpackKey(url);
-  const unpacked = key ? await unpackedFolder(url, key) : null;
-  const m = unpacked ? await folderManifest(unpacked, url).catch((e) => void noteError(`the files unpacked: ${message(e)}`)) : undefined;
-  if (unpacked && m && !m.missingScripts.length) {
-    mark(`unpacked files found: ${unpacked.files.length}, ${m.atlas ? `${m.atlas.sheets.length} sheets` : 'no sheets yet'}`);
+  const folder = key ? await unpackedFolder(url, key) : null;
+  const m = folder ? await folderManifest(folder, url).catch((e) => void noteError(`the files unpacked: ${message(e)}`)) : undefined;
+  if (folder && m && !m.missingScripts.length) {
+    mark(`unpacked files found: ${folder.files.length}, ${m.atlas ? `${m.atlas.sheets.length} sheets` : 'no sheets yet'}`);
     await show(m);
     mark('shown');
+    // the app stopped while it packed them: packed now
+    pack(url, key, m);
     // the copy kept, for its server's newer version (behind the GUI running)
     if (!ownFile(url)) {
       void savedCopy(url).then((s) => {
@@ -575,7 +582,8 @@ async function start() {
   const saved = ownFile(url) ? undefined : await savedCopy(url).catch((e) => void noteError(`the copy kept: ${message(e)}`));
   if (saved && !fresh) {
     try {
-      const m = await savedManifest(saved);
+      const key = keptKey(saved);
+      const m = (saved.zip && (await unpacked(url, key, saved.zip))) || (await savedManifest(saved));
       if (m.missingScripts.length) {
         // a copy with scripts missing (kept by an older panel from a load that lost them): its server first, if it answers
         try {
@@ -591,7 +599,7 @@ async function start() {
       await show(m);
       mark('shown');
       kept = saved;
-      void adapt(url, keptKey(saved), m);
+      pack(url, key, m);
       void usedGui(url).catch(() => {});
       void checkServer();
       return;
@@ -601,7 +609,24 @@ async function start() {
   }
   say(`loading ${url}…`, true);
   try {
-    const { manifest, got } = await loadManifest(url);
+    const got = await fetchGui(url);
+    // a zipped GUI (the built-in demo too): unpacked by the app, and a copy kept - by its version the app unpacked it as
+    if (isZip(got.bytes) && native) {
+      const copy = keepsCopy(got.url) ? await toSave(got) : undefined;
+      const key = copy ? keptKey(copy) : ownFile(url) ? await unpackKey(url) : undefined;
+      const m = await unpacked(url, key, got.bytes);
+      if (m && !m.missingScripts.length) {
+        mark('read');
+        await show(m);
+        mark('shown');
+        if (copy) {
+          void saveGui(copy).then(() => (kept = copy)).catch((e) => noteError(`keeping ${got.url} on the device: ${message(e)}`));
+        }
+        pack(url, key, m);
+        return;
+      }
+    }
+    const manifest = await manifestOf(got);
     // the link lost scripts the server has: a whole copy kept runs instead (a GUI short of its start script runs nothing)
     if (manifest.missingScripts.length && saved) {
       try {
@@ -619,8 +644,7 @@ async function start() {
     mark('read');
     await show(manifest);
     mark('shown');
-    if (ownFile(url)) void unpackKey(url).then((k) => adapt(url, k, manifest));
-    else void keep(got, manifest);
+    if (!ownFile(url)) void keep(got, manifest);
   } catch (e) {
     const why = message(e);
     noteError(why);
@@ -671,7 +695,11 @@ async function keep(got: Download, m: Manifest) {
     const s = await toSave(got, m);
     await saveGui(s);
     kept = s;
-    void adapt(got.url, keptKey(s), m);
+    // iva serve's whole build: unpacked and packed for the next start
+    if (s.zip) {
+      const key = keptKey(s);
+      void unpacked(got.url, key, s.zip).then((u) => u && pack(got.url, key, u));
+    }
   } catch (e) {
     noteError(`keeping ${got.url} on the device: ${message(e)}`);
   }

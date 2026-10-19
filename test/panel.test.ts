@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeZip } from '../src/server/zip.ts';
-import { folderManifest, loadManifest, savedManifest, toSave, unzip, useFetch } from '../panel/loader.ts';
+import { folderManifest, loadManifest, savedManifest, toSave, unpackPlan, unzip, useFetch } from '../panel/loader.ts';
 
 const GUI = '<gui><properties><project>Kept</project><imagefolder>images</imagefolder></properties><scripts><script name="scripts/main.js" /></scripts></gui>';
 const MAIN = 'var answer = 42;\n'.repeat(40);
@@ -91,13 +91,12 @@ test("a zipped GUI's size run, for the app to unpack and pack (not another size'
   const g = globalThis as { screen?: { width: number; height: number }; window?: unknown };
   g.screen = { width: 1920, height: 1080 };
   try {
-    const m = await savedManifest({ url: 'http://10.0.0.2/app.gui.zip', zip, savedAt: 0, bytes: zip.length });
-    const plan = m.adapt!();
+    const plan = await unpackPlan(zip, 'http://10.0.0.2/app.gui.zip');
     assert.deepEqual([...plan.files].sort(), ['app.gui', 'images/Shared.png', 'images/icons/a.png', 'images/icons/b.png', 'images/page.html', 'images/photo.jpg', 'images/scripts/main.js']);
     assert.equal(plan.atlas, 'iva-atlas');
-    // the shared one first; no JPEG
-    assert.deepEqual(plan.images, [['images/Shared.png', 'shared.png', 'shared'], ['images/icons/a.png', 'icons/a.png', 'page:P'], ['images/icons/b.png', 'icons/b.png', 'page:P']]);
-    assert.equal(plan.bytes, zip);
+    // its images to pack: the shared one first; no JPEG
+    const m = await savedManifest({ url: 'http://10.0.0.2/app.gui.zip', zip, savedAt: 0, bytes: zip.length });
+    assert.deepEqual(m.toPack!(), [['images/Shared.png', 'shared.png', 'shared'], ['images/icons/a.png', 'icons/a.png', 'page:P'], ['images/icons/b.png', 'icons/b.png', 'page:P']]);
     // the next start: from the folder the app unpacked it into (each file by its URL: the asset protocol), its sheets beside the .gui
     const disk = new Map<string, string>([...plan.files.map((n): [string, string] => [n, n === 'images/scripts/main.js' ? MAIN : n === 'app.gui' ? sized(1280, 800) : `file ${n}`]),
       ['iva-atlas/atlas.json', JSON.stringify({ version: 1, sheets: [{ file: 's1-0.png', w: 8, h: 8, group: 'page:P' }], frames: { 'icons/b.png': [0, 2, 2, 4, 4] } })], ['iva-atlas/s1-0.png', 'sheet']]);
@@ -111,7 +110,7 @@ test("a zipped GUI's size run, for the app to unpack and pack (not another size'
     assert.deepEqual(next.atlas?.sheets, [urls.get('/data/gui/iva-atlas/s1-0.png')]);
     assert.deepEqual(next.atlas?.frames['icons/b.png'], [0, 2, 2, 4, 4]);
     assert.equal(await (await fetch(next.fileUrl('page.html')!)).text(), 'file images/page.html');
-    assert.equal(next.adapt?.().images.length, 3);
+    assert.equal(next.toPack?.().length, 3);
   } finally {
     delete g.screen;
     delete g.window;
