@@ -339,25 +339,171 @@ export class CFRenderer {
     }
   }
 
+  // ── images: loaded as something is about to show them, let go when nothing does ──
+  //
+  // A GUI's images all decoded at once can be more than a phone has (a big GUI's: a GB), so each is loaded
+  // when a page, a subpage or a theme that shows it is about to be made, and let go once nothing on the
+  // stage shows it any more - but for the ones last used, up to textureBudget bytes (the page before: back
+  // at once). Components take textures as they're made (Assets.get): what they'll ask for is in by then.
+
+  /** images on their way in, by alias */
+  private loading = new Map<string, Promise<void>>();
+  /** the images loaded, by alias: when each was last seen in use (performance.now()) */
+  private lastUsed = new Map<string, number>();
+  /** decoded bytes kept of images nothing shows (the page before, the look switched off) */
+  textureBudget = 64e6;
+  /** a page waiting for its images: the latest navigate's number */
+  private navToken = 0;
+  private collectTimer?: ReturnType<typeof setTimeout>;
+  private lowerKeys?: Map<string, string>;
+
+  /** Every image known by its name - none loaded yet (ensureLoaded does that). */
   async loadAssets() {
-    // a link that drops a file now and then (ZeroTier does): asked for again, a little later, twice
-    const again = [300, 800];
-    const promises = Object.entries(this.imageMap).map(async ([filename, url]) => {
+    for (const [filename, url] of Object.entries(this.imageMap)) {
       Assets.add({ alias: filename, src: url, parser: 'loadTextures' });
-      for (let attempt = 0; ; attempt++) {
-        try {
-          await Assets.load(filename);
-          return;
-        } catch (e) {
-          if (attempt >= again.length) {
-            console.error("Failed to load asset:", filename, e);
-            return;
-          }
-          await new Promise((r) => setTimeout(r, again[attempt]));
-        }
+    }
+  }
+
+  /** The key an image the .gui names is known by, loaded or not: as named, else by file name, in any case. */
+  aliasOf(ref: string): string | undefined {
+    if (!ref) return undefined;
+    if (!this.lowerKeys) {
+      this.lowerKeys = new Map();
+      for (const k of Object.keys(this.imageMap)) if (!this.lowerKeys.has(k.toLowerCase())) this.lowerKeys.set(k.toLowerCase(), k);
+    }
+    const name = ref.replace(/\\/g, '/');
+    const leaf = name.split('/').pop() || name;
+    return [name, leaf].map((k) => (this.imageMap[k] ? k : this.lowerKeys!.get(k.toLowerCase()))).find(Boolean);
+  }
+
+  /** These images (aliases) loaded - a few tries each (a link that drops a file now and then: ZeroTier does). */
+  ensureLoaded(aliases: Iterable<string>): Promise<void> {
+    const waits: Promise<void>[] = [];
+    for (const alias of aliases) {
+      if (Assets.cache.has(alias)) {
+        this.lastUsed.set(alias, performance.now());
+        continue;
       }
-    });
-    await Promise.all(promises);
+      let p = this.loading.get(alias);
+      if (!p) {
+        p = this.loadOne(alias).finally(() => this.loading.delete(alias));
+        this.loading.set(alias, p);
+      }
+      waits.push(p);
+    }
+    return Promise.all(waits).then(() => undefined);
+  }
+
+  private async loadOne(alias: string) {
+    const again = [300, 800];
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await Assets.load(alias);
+        this.lastUsed.set(alias, performance.now());
+        return;
+      } catch (e) {
+        if (attempt >= again.length) {
+          console.error("Failed to load asset:", alias, e);
+          return;
+        }
+        await new Promise((r) => setTimeout(r, again[attempt]));
+      }
+    }
+  }
+
+  /** Of these images, the ones not loaded yet. */
+  private missing(aliases: Iterable<string>): string[] {
+    return [...aliases].filter((a) => !Assets.cache.has(a));
+  }
+
+  /**
+   * The images nodes can show (aliases): named in their text and attributes
+   * (and their children's: a button's <inactive><img>), and in every state of
+   * the themes they use - `overrides`: the themes set at runtime too. A
+   * subpage's own aren't followed: it loads them as it's made.
+   */
+  imagesOf(nodes: CFNode[], themes: (string | undefined)[] = [], overrides = false): Set<string> {
+    const found = new Set<string>();
+    const themeNames = new Set(themes.filter((t): t is string => !!t));
+    if (overrides) for (const t of Object.values(this.themeOf)) themeNames.add(t);
+    const image = (ref?: string) => {
+      const r = ref?.trim();
+      if (!r || !/\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(r)) return;
+      const alias = this.aliasOf(r);
+      if (alias) found.add(alias);
+    };
+    const walk = (n: CFNode) => {
+      image(n.text);
+      if (n.t) themeNames.add(n.t);
+      for (const v of Object.values(n.attributes ?? {})) {
+        image(v);
+        if (this.project.themes[v]) themeNames.add(v);
+      }
+      for (const c of n.children ?? []) walk(c);
+    };
+    nodes.forEach(walk);
+    for (const name of themeNames) {
+      for (const css of Object.values(this.project.themes[name]?.states ?? {})) {
+        for (const v of Object.values(css ?? {})) for (const m of String(v).matchAll(/url\(\s*['"]?([^'")]+?)['"]?\s*\)/g)) image(m[1]);
+      }
+    }
+    return found;
+  }
+
+  /** A page's images, either orientation's (the device may turn), its background's, the themes set at runtime. */
+  private pageImages(pageName: string): Set<string> {
+    const p = this.project.pages[pageName];
+    if (!p) return new Set();
+    return this.imagesOf([...(p.landscape ?? []), ...(p.portrait ?? [])], [p.landscapeTheme, p.portraitTheme], true);
+  }
+
+  /** In a moment (a flip's transition over, a look switched): the images nothing shows any more let go. */
+  scheduleCollect() {
+    clearTimeout(this.collectTimer);
+    this.collectTimer = setTimeout(() => this.collect(), 1500);
+  }
+
+  /**
+   * The loaded images nothing on the stage shows: kept, the latest used first,
+   * up to textureBudget bytes (any used in the last few seconds besides); the
+   * rest unloaded - their memory, and the GPU's, given back.
+   */
+  collect() {
+    const stage = this.app.stage;
+    if (!stage || stage.destroyed) return;
+    const inUse = new Set<unknown>();
+    const walk = (c: Container) => {
+      const t = (c as any).texture as Texture | undefined;
+      if (t?.source) inUse.add(t.source);
+      for (const k of c.children) walk(k as Container);
+    };
+    walk(stage);
+    const now = performance.now();
+    const idle: { alias: string; bytes: number; at: number }[] = [];
+    for (const [alias, at] of this.lastUsed) {
+      const t = Assets.cache.has(alias) ? (Assets.get(alias) as Texture) : undefined;
+      if (!t?.source) {
+        this.lastUsed.delete(alias);
+        continue;
+      }
+      if (inUse.has(t.source)) {
+        this.lastUsed.set(alias, now);
+        continue;
+      }
+      idle.push({ alias, bytes: (t.source.pixelWidth || 1) * (t.source.pixelHeight || 1) * 4, at });
+    }
+    idle.sort((x, y) => y.at - x.at);
+    let kept = 0;
+    const drop: string[] = [];
+    for (const it of idle) {
+      // used a moment ago (loaded for what's being made): kept, and not out of the budget
+      if (now - it.at < 5000) continue;
+      if (kept + it.bytes <= this.textureBudget) kept += it.bytes;
+      else drop.push(it.alias);
+    }
+    if (!drop.length) return;
+    for (const a of drop) this.lastUsed.delete(a);
+    Assets.unload(drop).catch((e) => console.warn('[cf images] unload', e));
   }
 
   applyProperties(changesArray: any[], delay: number = 0, duration: number = 0, curve: string = "linear") {
@@ -464,11 +610,20 @@ export class CFRenderer {
     const made = (c as any).cfMade as { node: CFNode; listPrefix?: string; listIndex?: number } | undefined;
     const parent = c.parent;
     if (!made || !parent || (c as any).cfNode?.t === theme) return;
+    // the theme's images first (a look switched: its drawings aren't in yet), then made again in it
+    const need = this.missing(this.imagesOf([], [theme]));
+    if (need.length) {
+      void this.ensureLoaded(need).then(() => {
+        if (!c.destroyed) this.retheme(c, theme);
+      });
+      return;
+    }
     const at = parent.getChildIndex(c);
     const fresh = this.createNode({ ...made.node, t: theme }, made.listPrefix, made.listIndex);
     parent.addChildAt(fresh, at);
     parent.removeChild(c);
     c.destroy({ children: true });
+    this.scheduleCollect();
   }
 
   /** An element's size as made: its node's w / h (a subpage placement's: its definition's where it gives none). */
@@ -924,12 +1079,6 @@ export class CFRenderer {
       container.addChild(boundsGfx);
     }
 
-    // Theme
-    if (def.theme) {
-      const theme = this.project.themes[def.theme];
-      if (theme) this.themeBackground(container, theme.states["0"], def.w, def.h);
-    }
-
     // Nodes
     const gestureNodes = def.nodes.filter(n => n.type === 'gesture');
     if (gestureNodes.length > 0) {
@@ -937,11 +1086,29 @@ export class CFRenderer {
       bindGestures(container, gestureNodes, this, { join: join ?? null, list: inList ? listPrefix : null, listIndex: inList ? listIndex : null, capture: true });
     }
 
-    def.nodes.forEach(n => {
-      if (n.type !== 'gesture') {
-        container.addChild(this.createNode(n, listPrefix, listIndex));
+    // its background and its objects - once their images are in (a subpage loads its own as it's made:
+    // a page's, a list's rows'); its box and gestures are there from the start
+    const fill = () => {
+      if (def.theme) {
+        const theme = this.project.themes[def.theme];
+        if (theme) this.themeBackground(container, theme.states["0"], def.w, def.h);
       }
-    });
+      def.nodes.forEach(n => {
+        if (n.type !== 'gesture') {
+          container.addChild(this.createNode(n, listPrefix, listIndex));
+        }
+      });
+    };
+    const need = this.missing(this.imagesOf(def.nodes, [def.theme], true));
+    if (!need.length) fill();
+    else {
+      void this.ensureLoaded(need).then(() => {
+        if (!container.destroyed) {
+          fill();
+          this.layoutDebugLabels(container);
+        }
+      });
+    }
 
     return container;
   }
@@ -1021,6 +1188,16 @@ export class CFRenderer {
 
     if (!this.project.pages[pageName]) {
       console.warn("Page not found:", pageName);
+      return;
+    }
+
+    // its images first: the page is made once they're in (a later navigate goes instead, if one comes meanwhile)
+    const token = ++this.navToken;
+    const need = this.missing(this.pageImages(pageName));
+    if (need.length) {
+      void this.ensureLoaded(need).then(() => {
+        if (token === this.navToken) this.navigate(pageName, forceOrientation, isBack, transition);
+      });
       return;
     }
 
@@ -1126,6 +1303,8 @@ export class CFRenderer {
     this.flip(this.currentContainer, newContainer, again ? {} : transition ?? own, pageWidth, pageHeight);
     this.layoutDebugLabels(newContainer);
     this.currentContainer = newContainer;
+    // the page before gone (its transition over): what nothing shows any more let go
+    this.scheduleCollect();
   }
 
   /** a gesture action's transition: for the subpages it shows or hides as it runs */
@@ -1194,13 +1373,12 @@ export class CFRenderer {
     this.initStore();
     await this.loadAssets();
     // CF.loadGUI(url, { startPage }): that page, if the GUI has it
-    if (this.startPage && this.project.pages[this.startPage]) {
-      this.navigate(this.startPage);
-    } else if (this.project.startPage) {
-      this.navigate(this.project.startPage);
-    } else {
-      const firstPage = Object.keys(this.project.pages)[0];
-      if (firstPage) this.navigate(firstPage);
-    }
+    const first = this.startPage && this.project.pages[this.startPage]
+      ? this.startPage
+      : this.project.startPage || Object.keys(this.project.pages)[0];
+    if (!first) return;
+    // the first page's images in before start() is done: the page is there when the scripts run
+    await this.ensureLoaded(this.pageImages(first));
+    this.navigate(first);
   }
 }

@@ -16,6 +16,62 @@ test("an image the .gui names with GUI Designer's backslashes: found where it wa
   assert.equal(r.assetKey('nowhere.png'), undefined);
 });
 
+test("a page's images, loaded as it's about to show: its objects', its themes' (every state), its runtime themes' - not its subpages' (they load their own)", () => {
+  const css = (url: string) => ({ 'background-image': `url(${url})` });
+  const r = Object.assign(Object.create(CFRenderer.prototype), {
+    imageMap: { 'buttons/a.png': 'blob:1', 'a.png': 'blob:1', 'buttons/a-down.png': 'blob:2', 'icons/lamp.png': 'blob:3', 'bg/home.png': 'blob:4', 'bg/sub.png': 'blob:5', 'buttons/b-light.png': 'blob:6' },
+    themeOf: {},
+    project: {
+      themes: {
+        btn: { states: { '0': css('buttons/a.png'), '1': css("'buttons/a-down.png'") } },
+        home: { states: { '0': css('bg/home.png') } },
+        sub: { states: { '0': css('bg/sub.png') } },
+        'btn-light': { states: { '0': css('buttons/b-light.png') } },
+      },
+      subpages: {},
+      pages: {
+        Home: {
+          landscapeTheme: 'home',
+          landscape: [
+            { type: 'btn', t: 'btn', attributes: {}, children: [{ type: 'inactive', attributes: {}, children: [{ type: 'img', text: 'icons\\Lamp.PNG', attributes: {}, children: [] }] }] },
+            { type: 'subpage', name: 'Menu', attributes: {}, children: [] },
+          ],
+        },
+      },
+    },
+  }) as any;
+  assert.deepEqual([...r.pageImages('Home')].sort(), ['bg/home.png', 'buttons/a-down.png', 'buttons/a.png', 'icons/lamp.png']);
+  // a look switched at runtime (CF.setProperties theme): its drawings too, on any page made after
+  r.themeOf['d5'] = 'btn-light';
+  assert.ok(r.pageImages('Home').has('buttons/b-light.png'));
+  // a subpage's: its own nodes and theme
+  assert.deepEqual([...r.imagesOf([], ['sub'])], ['bg/sub.png']);
+});
+
+test('images nothing shows are let go, but for the latest used (up to the budget) and any used a moment ago', async () => {
+  const { Container, Sprite, TextureSource } = await import('pixi.js');
+  const tex = (px: number) => new Texture({ source: new TextureSource({ width: px, height: px }) });
+  const shown = tex(10), back = tex(1000), old = tex(1000), recent = tex(1000);
+  for (const [k, t] of Object.entries({ shown, back, old, recent })) Assets.cache.set(`lazy-${k}.png`, t);
+  const stage = new Container();
+  stage.addChild(new Container()).addChild(new Sprite(shown));
+  const now = performance.now();
+  const r = Object.assign(Object.create(CFRenderer.prototype), { app: { stage }, textureBudget: 5e6 }) as any;
+  r.lastUsed = new Map([['lazy-shown.png', now - 60000], ['lazy-back.png', now - 20000], ['lazy-old.png', now - 40000], ['lazy-recent.png', now - 1000]]);
+  const unload = Assets.unload;
+  const unloaded: string[] = [];
+  (Assets as any).unload = async (keys: string[]) => void unloaded.push(...keys);
+  try {
+    r.collect();
+  } finally {
+    (Assets as any).unload = unload;
+  }
+  // 4 MB each: the one used a second ago kept anyway, the page before within the budget, the older one let go
+  assert.deepEqual(unloaded, ['lazy-old.png']);
+  assert.ok(r.lastUsed.get('lazy-shown.png') > now - 1000, 'on the stage: seen in use now');
+  for (const k of ['shown', 'back', 'old', 'recent']) Assets.cache.remove(`lazy-${k}.png`);
+});
+
 test("in a list item, a button's text joins are the item's own (each item its s1), as its join is", () => {
   const r = Object.assign(Object.create(CFRenderer.prototype), {
     imageMap: {}, themeOf: {}, tagsMap: {}, nodesMap: {}, project: { subpages: {}, themes: {} }, debugMode: false,

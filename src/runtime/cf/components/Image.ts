@@ -224,12 +224,23 @@ export function renderImage(node: CFNode, container: Container, renderer: CFRend
         if (!isUrl(value)) {
             const file = value ? renderer.texture(value) : undefined;
             // a file of the GUI's, or none: no load under way any more
-            ++loading;
+            const n = ++loading;
             clearTimeout(next);
             spinning(false);
             if (file) show(file, false);
             else if (!value) show(null, false);
-            else console.warn('[cf image] no image', value);
+            else {
+                // a file of the GUI's not loaded yet (images load as they're shown): shown once it's in
+                const alias = renderer.aliasOf(value);
+                if (alias) {
+                    void renderer.ensureLoaded([alias]).then(() => {
+                        const t = renderer.texture(value);
+                        if (n !== loading || source !== value || container.destroyed || !t) return;
+                        show(t, false);
+                        current = true;
+                    });
+                } else console.warn('[cf image] no image', value);
+            }
             current = !!file || !value;
             return;
         }
