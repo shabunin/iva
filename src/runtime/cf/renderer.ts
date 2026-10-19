@@ -355,10 +355,14 @@ export class CFRenderer {
    * switched off) - counted once each, though a loaded image is twice that in
    * memory (its bitmap and the GPU's copy): half as much on a phone with 2 GB.
    */
-  textureBudget = ((globalThis.navigator as { deviceMemory?: number } | undefined)?.deviceMemory ?? 4) <= 2 ? 32e6 : 64e6;
+  textureBudget = ((globalThis.navigator as { deviceMemory?: number } | undefined)?.deviceMemory ?? 4) <= 2 ? 128e6 : 256e6;
   /** a page waiting for its images: the latest navigate's number */
   private navToken = 0;
+  /** the page a navigate waits for: since when, how many files, when they were in */
+  private navTiming?: { page: string; at: number; files: number; loaded: number };
   private collectTimer?: ReturnType<typeof setTimeout>;
+  private prefetchTimer?: ReturnType<typeof setTimeout>;
+  private prefetching = false;
   private lowerKeys?: Map<string, string>;
   /** each name an image is known by: the one it's loaded under (a file named by path and by bare name: one texture) */
   private canon?: Map<string, string>;
@@ -480,6 +484,66 @@ export class CFRenderer {
     const p = this.project.pages[pageName];
     if (!p) return new Set();
     return this.imagesOf([...(p.landscape ?? []), ...(p.portrait ?? [])], [p.landscapeTheme, p.portraitTheme], true);
+  }
+
+  /** A page's images with those of the subpages placed on it: what showing it loads (a prefetch). */
+  private pageImagesDeep(pageName: string): Set<string> {
+    const found = this.pageImages(pageName);
+    const p = this.project.pages[pageName];
+    if (!p) return found;
+    const seen = new Set<string>();
+    const walk = (n: CFNode) => {
+      if (n.type === 'subpage' && n.name && !seen.has(n.name)) {
+        seen.add(n.name);
+        const def = this.project.subpages[n.name];
+        if (def) {
+          for (const a of this.imagesOf(def.nodes, [def.theme], true)) found.add(a);
+          def.nodes.forEach(walk);
+        }
+      }
+      for (const c of n.children ?? []) walk(c);
+    };
+    [...(p.landscape ?? []), ...(p.portrait ?? [])].forEach(walk);
+    return found;
+  }
+
+  /** decoded bytes of the images loaded (counted once each) */
+  private loadedBytes(): number {
+    let sum = 0;
+    for (const alias of this.lastUsed.keys()) {
+      const t = Assets.cache.has(alias) ? (Assets.get(alias) as Texture) : undefined;
+      if (t?.source) sum += (t.source.pixelWidth || 1) * (t.source.pixelHeight || 1) * 4;
+    }
+    return sum;
+  }
+
+  /** In a moment (a page up, its flip over): the other pages' images decoded while nothing happens. */
+  schedulePrefetch() {
+    clearTimeout(this.prefetchTimer);
+    this.prefetchTimer = setTimeout(() => void this.prefetch(), 3000);
+  }
+
+  /**
+   * The other pages' images decoded ahead - the pages after the one shown, in
+   * the GUI's order, one page at a time, until the images loaded reach the
+   * budget: a page visited then comes up without the wait. A flip meanwhile
+   * stops it (that page's own images first); the flip over, it goes on.
+   */
+  async prefetch() {
+    if (this.prefetching) return;
+    this.prefetching = true;
+    try {
+      const names = Object.keys(this.project.pages);
+      const at = Math.max(0, names.indexOf(this.currentPageName ?? ''));
+      const token = this.navToken;
+      for (const name of [...names.slice(at + 1), ...names.slice(0, at)]) {
+        if (this.navToken !== token || this.loadedBytes() >= this.textureBudget) return;
+        const need = this.missing(this.pageImagesDeep(name));
+        if (need.length) await this.ensureLoaded(need);
+      }
+    } finally {
+      this.prefetching = false;
+    }
   }
 
   /**
@@ -1224,11 +1288,18 @@ export class CFRenderer {
     const token = ++this.navToken;
     const need = this.missing(this.pageImages(pageName));
     if (need.length) {
+      const since = this.navTiming?.page === pageName ? this.navTiming.at : performance.now();
+      this.navTiming = { page: pageName, at: since, files: need.length, loaded: 0 };
       void this.ensureLoaded(need).then(() => {
-        if (token === this.navToken) this.navigate(pageName, forceOrientation, isBack, transition);
+        if (token !== this.navToken) return;
+        if (this.navTiming?.page === pageName) this.navTiming.loaded = performance.now();
+        this.navigate(pageName, forceOrientation, isBack, transition);
       });
       return;
     }
+    const making = performance.now();
+    const waited = this.navTiming?.page === pageName ? this.navTiming : undefined;
+    this.navTiming = undefined;
 
     // Push the current page to history if we are not navigating back and it's a new page
     if (this.currentPageName && this.currentPageName !== pageName && !isBack) {
@@ -1332,8 +1403,16 @@ export class CFRenderer {
     this.flip(this.currentContainer, newContainer, again ? {} : transition ?? own, pageWidth, pageHeight);
     this.layoutDebugLabels(newContainer);
     this.currentContainer = newContainer;
-    // the page before gone (its transition over): what nothing shows any more let go
+    // the page before gone (its transition over): what nothing shows any more let go; then the pages after
     this.scheduleCollect();
+    this.schedulePrefetch();
+    // how long the flip took: the wait for its images, making the page, and its first frame drawn (the
+    // textures uploaded) - a slow device's trouble told apart
+    const made = performance.now();
+    const report = (shown: number) =>
+      console.info(`[cf navigate] ${pageName}: images ${waited ? Math.round(waited.loaded - waited.at) : 0} ms (${waited?.files ?? 0} loaded), made ${Math.round(made - making)} ms, shown ${Math.round(shown - making)} ms`);
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => report(performance.now()));
+    else report(made);
   }
 
   /** a gesture action's transition: for the subpages it shows or hides as it runs */

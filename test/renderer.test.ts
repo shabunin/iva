@@ -66,6 +66,35 @@ test("a page's images, loaded as it's about to show: its objects', its themes' (
   assert.deepEqual([...r.imagesOf([], ['sub'])], ['bg/sub.png']);
 });
 
+test("the other pages' images are fetched ahead, the pages after the one shown first, until the budget is reached", async () => {
+  const page = (img: string, sub?: string) => ({ landscape: [{ type: 'img', text: img, attributes: {}, children: [] }, ...(sub ? [{ type: 'subpage', name: sub, attributes: {}, children: [] }] : [])] });
+  const loaded: string[][] = [];
+  const r = Object.assign(Object.create(CFRenderer.prototype), {
+    imageMap: { 'a.png': 'blob:a', 'b.png': 'blob:b', 'c.png': 'blob:c', 'd.png': 'blob:d', 's.png': 'blob:s' },
+    themeOf: {},
+    project: { themes: {}, subpages: { S: { nodes: [{ type: 'img', text: 's.png', attributes: {}, children: [] }] } }, pages: { A: page('a.png'), B: page('b.png'), C: page('c.png', 'S'), D: page('d.png') } },
+    currentPageName: 'B',
+    navToken: 1,
+    textureBudget: 1e9,
+    lastUsed: new Map(),
+    ensureLoaded: async (aliases: string[]) => void loaded.push([...aliases]),
+  }) as any;
+  await r.prefetch();
+  // after B: C with its subpage's, D, then round to A - not B's own
+  assert.deepEqual(loaded, [['c.png', 's.png'], ['d.png'], ['a.png']]);
+  // the budget reached (the images loaded weigh it): no more
+  loaded.length = 0;
+  r.textureBudget = 0;
+  await r.prefetch();
+  assert.equal(loaded.length, 0);
+  // a flip meanwhile: stopped after the page under way
+  loaded.length = 0;
+  r.textureBudget = 1e9;
+  r.ensureLoaded = async (aliases: string[]) => { loaded.push([...aliases]); r.navToken++; };
+  await r.prefetch();
+  assert.deepEqual(loaded, [['c.png', 's.png']]);
+});
+
 test('images nothing shows are let go, but for the latest used (up to the budget) and any used a moment ago', async () => {
   const { Container, Sprite, TextureSource } = await import('pixi.js');
   const tex = (px: number) => new Texture({ source: new TextureSource({ width: px, height: px }) });
