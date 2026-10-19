@@ -242,6 +242,8 @@ export function renderImage(node: CFNode, container: Container, renderer: CFRend
                 } else console.warn('[cf image] no image', value);
             }
             current = !!file || !value;
+            // the file before, if nothing else shows it: let go in a moment (a slideshow on one page)
+            renderer.scheduleCollect?.();
             return;
         }
         if (clearOnChange) show(null, false);

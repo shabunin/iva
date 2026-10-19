@@ -350,12 +350,18 @@ export class CFRenderer {
   private loading = new Map<string, Promise<void>>();
   /** the images loaded, by alias: when each was last seen in use (performance.now()) */
   private lastUsed = new Map<string, number>();
-  /** decoded bytes kept of images nothing shows (the page before, the look switched off) */
-  textureBudget = 64e6;
+  /**
+   * Decoded bytes kept of images nothing shows (the page before, the look
+   * switched off) - counted once each, though a loaded image is twice that in
+   * memory (its bitmap and the GPU's copy): half as much on a phone with 2 GB.
+   */
+  textureBudget = ((globalThis.navigator as { deviceMemory?: number } | undefined)?.deviceMemory ?? 4) <= 2 ? 32e6 : 64e6;
   /** a page waiting for its images: the latest navigate's number */
   private navToken = 0;
   private collectTimer?: ReturnType<typeof setTimeout>;
   private lowerKeys?: Map<string, string>;
+  /** each name an image is known by: the one it's loaded under (a file named by path and by bare name: one texture) */
+  private canon?: Map<string, string>;
 
   /** Every image known by its name - none loaded yet (ensureLoaded does that). */
   async loadAssets() {
@@ -364,16 +370,35 @@ export class CFRenderer {
     }
   }
 
-  /** The key an image the .gui names is known by, loaded or not: as named, else by file name, in any case. */
+  /**
+   * The key an image the .gui names is known by, loaded or not: as named, else
+   * by file name, in any case - and of a file known by several names (its path
+   * in the image folder and its bare name) always the first, so it's loaded
+   * once and let go whole: Pixi unloads a file's texture under every name but
+   * forgets only the names last loaded by.
+   */
   aliasOf(ref: string): string | undefined {
     if (!ref) return undefined;
-    if (!this.lowerKeys) {
+    if (!this.lowerKeys || !this.canon) {
       this.lowerKeys = new Map();
-      for (const k of Object.keys(this.imageMap)) if (!this.lowerKeys.has(k.toLowerCase())) this.lowerKeys.set(k.toLowerCase(), k);
+      this.canon = new Map();
+      const byUrl = new Map<string, string>();
+      for (const k of Object.keys(this.imageMap)) {
+        if (!this.lowerKeys.has(k.toLowerCase())) this.lowerKeys.set(k.toLowerCase(), k);
+        const url = this.imageMap[k];
+        if (!byUrl.has(url)) byUrl.set(url, k);
+        this.canon.set(k, byUrl.get(url)!);
+      }
     }
     const name = ref.replace(/\\/g, '/');
     const leaf = name.split('/').pop() || name;
-    return [name, leaf].map((k) => (this.imageMap[k] ? k : this.lowerKeys!.get(k.toLowerCase()))).find(Boolean);
+    const key = [name, leaf].map((k) => (this.imageMap[k] ? k : this.lowerKeys!.get(k.toLowerCase()))).find(Boolean);
+    return key ? this.canon.get(key) : undefined;
+  }
+
+  /** a theme by name - as the .gui names it, or with the dot its CSS selector had */
+  private themeNamed(name: string) {
+    return this.project.themes[name] ?? this.project.themes['.' + name];
   }
 
   /** These images (aliases) loaded - a few tries each (a link that drops a file now and then: ZeroTier does). */
@@ -437,13 +462,13 @@ export class CFRenderer {
       if (n.t) themeNames.add(n.t);
       for (const v of Object.values(n.attributes ?? {})) {
         image(v);
-        if (this.project.themes[v]) themeNames.add(v);
+        if (this.themeNamed(v)) themeNames.add(v);
       }
       for (const c of n.children ?? []) walk(c);
     };
     nodes.forEach(walk);
     for (const name of themeNames) {
-      for (const css of Object.values(this.project.themes[name]?.states ?? {})) {
+      for (const css of Object.values(this.themeNamed(name)?.states ?? {})) {
         for (const v of Object.values(css ?? {})) for (const m of String(v).matchAll(/url\(\s*['"]?([^'")]+?)['"]?\s*\)/g)) image(m[1]);
       }
     }
@@ -457,7 +482,11 @@ export class CFRenderer {
     return this.imagesOf([...(p.landscape ?? []), ...(p.portrait ?? [])], [p.landscapeTheme, p.portraitTheme], true);
   }
 
-  /** In a moment (a flip's transition over, a look switched): the images nothing shows any more let go. */
+  /**
+   * In a moment (a flip's transition over, a look switched, an image join set
+   * to another file, a list's rows scrolled off): the images nothing shows any
+   * more let go.
+   */
   scheduleCollect() {
     clearTimeout(this.collectTimer);
     this.collectTimer = setTimeout(() => this.collect(), 1500);
@@ -466,7 +495,8 @@ export class CFRenderer {
   /**
    * The loaded images nothing on the stage shows: kept, the latest used first,
    * up to textureBudget bytes (any used in the last few seconds besides); the
-   * rest unloaded - their memory, and the GPU's, given back.
+   * rest unloaded - the GPU's copy given back at once, and the decoded bitmap
+   * closed (Pixi only lets go of it, for the garbage collector to find later).
    */
   collect() {
     const stage = this.app.stage;
@@ -503,7 +533,12 @@ export class CFRenderer {
     }
     if (!drop.length) return;
     for (const a of drop) this.lastUsed.delete(a);
-    Assets.unload(drop).catch((e) => console.warn('[cf images] unload', e));
+    const bitmaps = drop.map((a) => (Assets.get(a) as Texture | undefined)?.source?.resource as { close?: () => void } | undefined);
+    Assets.unload(drop)
+      .then(() => {
+        for (const b of bitmaps) if (typeof b?.close === 'function') b.close();
+      })
+      .catch((e) => console.warn('[cf images] unload', e));
   }
 
   applyProperties(changesArray: any[], delay: number = 0, duration: number = 0, curve: string = "linear") {
@@ -677,11 +712,12 @@ export class CFRenderer {
    */
   assetKey(ref: string): string | undefined {
     if (!ref) return undefined;
+    const key = this.aliasOf(ref);
+    if (key) return Assets.cache.has(key) ? key : undefined;
+    // not a file of the GUI's: loaded under the name itself, if at all
     const name = ref.replace(/\\/g, '/');
     const leaf = name.split('/').pop() || name;
-    const keys = Object.keys(this.imageMap);
-    const tries = [name, keys.find((k) => k.toLowerCase() === name.toLowerCase()), leaf, keys.find((k) => k.toLowerCase() === leaf.toLowerCase())];
-    return tries.find((k): k is string => !!k && Assets.cache.has(k));
+    return [name, leaf].find((k) => Assets.cache.has(k));
   }
 
   /** What a web view loads for a URL: the host's way to it, else the URL (a project file by name). */
@@ -708,16 +744,9 @@ export class CFRenderer {
     if (url.startsWith("'") || url.startsWith('"')) url = url.substring(1);
     if (url.endsWith("'") || url.endsWith('"')) url = url.substring(0, url.length - 1);
     url = url.replace(/\\/g, '/');
-    const possibleKeys = Object.keys(this.imageMap);
-    // as the .gui names it (a path in its image folder: icons/x.png), then by file name
-    if (Assets.get(url)) return url;
-    const fullKey = possibleKeys.find(k => k.toLowerCase() === url.toLowerCase());
-    if (fullKey) return fullKey;
-    const fileName = url.split('/').pop() || url;
-
-    if (Assets.get(fileName)) return fileName;
-    const foundKey = possibleKeys.find(k => k.toLowerCase() === fileName.toLowerCase());
-    return foundKey || fileName;
+    // the key it's loaded under (as the .gui names it - a path in its image folder: icons/x.png - or by file
+    // name), else the file name
+    return this.aliasOf(url) ?? (url.split('/').pop() || url);
   }
 
   /** an object's tags now: the .gui's as scripts left them, and those they gave its join */

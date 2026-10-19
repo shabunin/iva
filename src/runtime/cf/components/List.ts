@@ -155,6 +155,8 @@ export function renderList(
         } catch (e) {
             console.error("Failed to destroy a list item", e);
         }
+        // its images, if no row left shows them: let go in a moment (a long list scrolled through)
+        renderer.scheduleCollect();
         if (row.kind !== 'item') return;
         joinStore.clearScope(row.scope);
         const prefix = `l${listId}:${row.idx}:`;

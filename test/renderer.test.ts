@@ -14,6 +14,24 @@ test("an image the .gui names with GUI Designer's backslashes: found where it wa
   // by file name, any case
   assert.equal(r.assetKey('White\\lamp0.PNG'), 'Lamp0.png');
   assert.equal(r.assetKey('nowhere.png'), undefined);
+  Assets.cache.remove('computer&mobile-32/icon-volume-down.png');
+  Assets.cache.remove('Lamp0.png');
+});
+
+test('a file the .gui names by path and by bare name: one texture, under the first name (unloaded whole)', () => {
+  const r = Object.assign(Object.create(CFRenderer.prototype), {
+    imageMap: { 'icons/x.png': 'blob:x', 'x.png': 'blob:x', 'y.png': 'blob:y' },
+  }) as CFRenderer;
+  assert.equal(r.aliasOf('x.png'), 'icons/x.png');
+  assert.equal(r.aliasOf('icons\\X.PNG'), 'icons/x.png');
+  assert.equal(r.aliasOf('y.png'), 'y.png');
+  assert.equal(r.getBgImage('url("x.png")'), 'icons/x.png');
+  // loaded under the first name: found by the other
+  Assets.cache.set('icons/x.png', Texture.WHITE);
+  assert.equal(r.assetKey('x.png'), 'icons/x.png');
+  assert.equal(r.texture('x.png'), Texture.WHITE);
+  Assets.cache.remove('icons/x.png');
+  assert.equal(r.assetKey('x.png'), undefined);
 });
 
 test("a page's images, loaded as it's about to show: its objects', its themes' (every state), its runtime themes' - not its subpages' (they load their own)", () => {
@@ -58,16 +76,21 @@ test('images nothing shows are let go, but for the latest used (up to the budget
   const now = performance.now();
   const r = Object.assign(Object.create(CFRenderer.prototype), { app: { stage }, textureBudget: 5e6 }) as any;
   r.lastUsed = new Map([['lazy-shown.png', now - 60000], ['lazy-back.png', now - 20000], ['lazy-old.png', now - 40000], ['lazy-recent.png', now - 1000]]);
+  // the decoded bitmap (an ImageBitmap in a browser): closed once unloaded
+  let closed = 0;
+  old.source.resource = { close: () => ++closed };
   const unload = Assets.unload;
   const unloaded: string[] = [];
   (Assets as any).unload = async (keys: string[]) => void unloaded.push(...keys);
   try {
     r.collect();
+    await new Promise((res) => setTimeout(res, 0));
   } finally {
     (Assets as any).unload = unload;
   }
   // 4 MB each: the one used a second ago kept anyway, the page before within the budget, the older one let go
   assert.deepEqual(unloaded, ['lazy-old.png']);
+  assert.equal(closed, 1);
   assert.ok(r.lastUsed.get('lazy-shown.png') > now - 1000, 'on the stage: seen in use now');
   for (const k of ['shown', 'back', 'old', 'recent']) Assets.cache.remove(`lazy-${k}.png`);
 });
