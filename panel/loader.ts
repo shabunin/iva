@@ -279,17 +279,26 @@ function zipManifest(files: Map<string, Uint8Array<ArrayBuffer>>, id: string): M
     }
     return u;
   };
-  // images by their path in the image folder, and by bare name
+  // the images the .gui names (as remoteManifest maps them), by their path in the image folder and by bare
+  // name: found in the image folder, then by the .gui, then anywhere by name - not the archive's every image
+  // (another size's, the @2x ones iViewer's retina screens take: a GUI's own a good many times over)
+  const names = [...files.keys()];
+  const lower = new Map(names.map((n) => [n.toLowerCase(), n]));
+  const byLeaf = new Map<string, string>();
+  for (const n of [...names].sort((a, b) => a.split('/').length - b.split('/').length)) {
+    const leaf = n.split('/').pop()!.toLowerCase();
+    if (IMAGE_RE.test(n) && !byLeaf.has(leaf)) byLeaf.set(leaf, n);
+  }
   const imageMap: Record<string, string> = {};
-  for (const name of [...files.keys()].sort((a, b) => a.split('/').length - b.split('/').length)) {
-    if (!IMAGE_RE.test(name)) continue;
-    if (name.startsWith(imageRoot) && !imageMap[name.slice(imageRoot.length)]) imageMap[name.slice(imageRoot.length)] = blobUrl(name);
-    const leaf = name.split('/').pop()!;
-    if (!imageMap[leaf]) imageMap[leaf] = blobUrl(name);
+  for (const named of imageNames(guiXml)) {
+    const n = named.replace(/\\/g, '/');
+    const file = lower.get((imageRoot + n).toLowerCase()) ?? lower.get((dir + n).toLowerCase()) ?? byLeaf.get(n.split('/').pop()!.toLowerCase());
+    if (!file) continue;
+    imageMap[n] ??= blobUrl(file);
+    imageMap[n.split('/').pop()!] ??= blobUrl(file);
   }
   const scriptMap: Record<string, string> = {};
   const missingScripts: string[] = [];
-  const names = [...files.keys()];
   for (const name of scriptNames(guiXml)) {
     const want = name.replace(/\\/g, '/').toLowerCase();
     const leaf = want.split('/').pop()!;

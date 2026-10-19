@@ -15,14 +15,18 @@ test("the panel reads iva's zips: deflated, a thousand files and more (iva serve
   assert.equal(new TextDecoder().decode(files.get('images/icons/i1499.png')), 'png 1499 '.repeat(30));
 });
 
-test('a GUI runs from its copy on the device: an archive, or a .gui and the files beside it', async () => {
-  const zip = writeZip([['app.gui', Buffer.from(GUI)], ['images/scripts/main.js', Buffer.from(MAIN)], ['images/icons/a.png', Buffer.from('png')]]);
+test('a GUI runs from its copy on the device: an archive, or a .gui and the files beside it - the images it names', async () => {
+  const gui = GUI.replace('</scripts>', '</scripts><pages><page name="P"><img>icons/a.png</img></page></pages>');
+  // beside the one it names: its @2x (iViewer's retina screens) and another size's - not its images
+  const extra = { 'images/icons/a@2x.png': 'png2x', '1400w1400h/images/icons/b.png': 'other' };
+  const zip = writeZip([['app.gui', Buffer.from(gui)], ['images/scripts/main.js', Buffer.from(MAIN)], ['images/icons/a.png', Buffer.from('png')],
+    ...Object.entries(extra).map(([n, s]): [string, Buffer] => [n, Buffer.from(s)])]);
   const fromZip = await savedManifest({ url: 'http://10.0.0.2:8019', zip: new Uint8Array(zip), savedAt: 0, bytes: zip.length });
   const enc = (s: string) => new TextEncoder().encode(s) as Uint8Array<ArrayBuffer>;
   const fromFiles = await savedManifest({
     url: 'http://10.0.0.2/gui/app.gui',
-    files: { 'app.gui': enc(GUI), 'images/scripts/main.js': enc(MAIN), 'images/icons/a.png': enc('png') },
-    gui: GUI,
+    files: { 'app.gui': enc(gui), 'images/scripts/main.js': enc(MAIN), 'images/icons/a.png': enc('png'), ...Object.fromEntries(Object.entries(extra).map(([n, s]) => [n, enc(s)])) },
+    gui,
     savedAt: 0,
     bytes: 0,
   });
@@ -30,9 +34,10 @@ test('a GUI runs from its copy on the device: an archive, or a .gui and the file
     assert.equal(m.title, 'Kept');
     assert.equal(m.scriptMap['scripts/main.js'], MAIN);
     assert.deepEqual(m.missingScripts, []);
-    // its images by their path in the image folder, and by name
+    // its images by their path in the image folder, and by name - the ones it names only
     assert.match(m.imageMap['icons/a.png'], /^blob:/);
     assert.equal(m.imageMap['a.png'], m.imageMap['icons/a.png']);
+    assert.deepEqual(Object.keys(m.imageMap).sort(), ['a.png', 'icons/a.png']);
     assert.match(m.fileUrl('icons/a.png') ?? '', /^blob:/);
   }
 });
