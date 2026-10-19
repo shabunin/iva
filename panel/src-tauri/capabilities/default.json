@@ -1,12 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The panel page: GUIs and their requests from anywhere (the HTTP client), WebSockets, links opened outside (the opener: http, https, mailto, tel)",
+  "description": "The panel page: GUIs and their requests from anywhere (the HTTP client), WebSockets, links opened outside (the opener: http, https, mailto, tel), the window sized to the GUI (desktop)",
   "windows": [
     "main"
   ],
   "permissions": [
     "core:default",
+    "core:window:allow-set-size",
     {
       "identifier": "http:default",
       "allow": [

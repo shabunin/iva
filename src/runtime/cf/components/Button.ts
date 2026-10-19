@@ -123,7 +123,9 @@ export function renderButton(
 
     const txtObj = new Text({
         text: node.inactiveText || "",
-        style: layout0.style
+        style: layout0.style,
+        // on whole pixels: a centred label lands between them otherwise, and its texture goes soft
+        roundPixels: true,
     });
     placeText(txtObj, layout0, node.w, node.h);
 

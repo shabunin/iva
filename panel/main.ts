@@ -12,6 +12,7 @@
  * again from its server.
  */
 import { getVersion } from '@tauri-apps/api/app';
+import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import { openUrl as openOutside } from '@tauri-apps/plugin-opener';
 import { installHost } from '../src/runtime/stdlib';
 import { loadProject, type LoadProjectResult, type Orientation } from '../src/runtime/cf';
@@ -152,6 +153,33 @@ function fit() {
   stage.style.height = `${Math.round(h * s)}px`;
   stage.style.top = `${top + room / 2}px`;
   current.app.renderer.resize(w, h, s * (devicePixelRatio || 1));
+}
+
+/** the size the window was last made (this run of the app): a reload of the same GUI leaves it as the user left it */
+const SIZED = 'iva-panel:window-size';
+
+/**
+ * On a desktop, the window as big as the GUI (and the address bar): drawn
+ * 1:1 - at another size it's scaled, and its text goes soft. Once a size:
+ * iva serve's live reloads leave a window the user sized alone, a GUI of
+ * another size gets its own. Not on a phone, not a window maximized or full
+ * screen, not past the screen.
+ */
+async function sizeWindow() {
+  if (!current || /Android|iPhone|iPad/i.test(navigator.userAgent)) return;
+  const { w, h } = guiSize(orientation);
+  const top = bar.hidden ? 0 : bar.offsetHeight;
+  const want = `${w}x${h + top}`;
+  if (sessionStorage.getItem(SIZED) === want) return;
+  sessionStorage.setItem(SIZED, want);
+  if (w > screen.availWidth || h + top > screen.availHeight - 48) return;
+  try {
+    const win = getCurrentWindow();
+    if ((await win.isMaximized()) || (await win.isFullscreen())) return;
+    await win.setSize(new LogicalSize(w, h + top));
+  } catch (e) {
+    noteError(`the window's size: ${message(e)}`);
+  }
 }
 
 /** a text field has the keyboard: the window got shorter for it, not turned */
@@ -344,6 +372,7 @@ async function show(m: Manifest) {
   });
   showAddress();
   fit();
+  void sizeWindow();
   say('');
   for (const p of m.problems) noteError(p);
   if (m.missingScripts.length) {

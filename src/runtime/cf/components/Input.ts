@@ -52,6 +52,7 @@ export function renderInput(
     const align = (css?.['text-align'] || 'left').toLowerCase();
     const label = new Text({
         text: '',
+        roundPixels: true,
         style: new TextStyle({
             fill: css?.color || '#000000',
             fontSize: parseInt(css?.['font-size'] ?? '', 10) || 16,

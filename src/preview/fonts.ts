@@ -6,7 +6,8 @@
  */
 import fonts from '../compiler/fonts.json';
 
-const SANS = ['Helvetica Neue', 'Helvetica', 'Arial', 'Liberation Sans', 'DejaVu Sans', 'Noto Sans', 'Roboto'];
+// Segoe UI before Arial: Windows' own, drawn for its screens (where Helvetica isn't)
+const SANS = ['Helvetica Neue', 'Helvetica', 'Segoe UI', 'Arial', 'Liberation Sans', 'DejaVu Sans', 'Noto Sans', 'Roboto'];
 const SERIF = ['Georgia', 'Times New Roman', 'Liberation Serif', 'DejaVu Serif', 'Noto Serif'];
 const MONO = ['Courier New', 'Menlo', 'Liberation Mono', 'DejaVu Sans Mono', 'Noto Sans Mono'];
 

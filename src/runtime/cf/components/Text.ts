@@ -16,7 +16,8 @@ export function renderText(
     
     // wrap="True": lines break at the box; else one line
     const layout = textLayout(cssState0, node.w || 100, node.attributes?.wrap === 'True', 'left', node.attributes?.overrideFontAlignmentH);
-    const txtObj = new Text({ text: "", style: layout.style });
+    // on whole pixels: a centred line lands between them otherwise, and its texture goes soft
+    const txtObj = new Text({ text: "", style: layout.style, roundPixels: true });
     // text never takes a touch in iViewer: it goes to what's under it (a button the text is on)
     txtObj.eventMode = 'none';
     container.hitArea = null;
