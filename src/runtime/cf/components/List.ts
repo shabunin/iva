@@ -38,6 +38,9 @@ interface Row {
     scope: string;
 }
 
+/** every list's ScrollBox: the wheel goes to the innermost under the pointer */
+const lists = new WeakSet<Container>();
+
 export function renderList(
     node: CFNode,
     container: Container,
@@ -55,6 +58,19 @@ export function renderList(
         height: H,
         type: isVertical ? 'vertical' : 'horizontal',
         elementsMargin: 0,
+        // the wheel scrolls the list under the pointer, not every list on the page (@pixi/ui's default)
+        globalScroll: false,
+    });
+    // ...and of lists in lists (a page's ScrollArea), the innermost: a list between the pointer's target
+    // and this one has it, and this one (over too, as far as @pixi/ui knows) lets the wheel be
+    lists.add(scrollBox);
+    scrollBox.on('pointerover', (e) => {
+        for (let c = e.target as Container | null; c && c !== scrollBox; c = c.parent) {
+            if (lists.has(c)) {
+                (scrollBox as unknown as { isOver: boolean }).isOver = false;
+                return;
+            }
+        }
     });
     // The list takes drags anywhere in its box, not just on what its rows draw.
     // ScrollBox is interactive, so everything in it is hit tested as such: its
