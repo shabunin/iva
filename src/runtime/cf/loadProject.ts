@@ -68,6 +68,8 @@ export interface LoadProjectOptions {
   guiXml: string;
   /** what draws it (a new app only: one passed in `app` keeps its own) */
   renderer?: RendererChoice;
+  /** a frame drawn only when something changed (default), or every tick (false) - CFRenderer.setRenderOnDemand */
+  renderOnDemand?: boolean;
   imageMap: Record<string, string>;
   /**
    * Its images packed in sheets (iva build's iva-atlas/): each sheet's URL,
@@ -211,6 +213,7 @@ export async function loadProject(options: LoadProjectOptions): Promise<LoadProj
 
   const renderer = new CFRenderer(app, project, imageMap);
   renderer.atlas = options.atlas;
+  renderer.setRenderOnDemand(options.renderOnDemand !== false);
   renderer.fileUrl = options.fileUrl;
   renderer.webUrl = options.webUrl;
   renderer.loadGui = options.loadGui;

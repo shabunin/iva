@@ -291,9 +291,11 @@ function shapedLike(sizes: string[], heads: Map<string, string>, w: number, h: n
     const tag = /<landscape\b[^>]*>/.exec(heads.get(n) ?? '')?.[0] ?? '';
     const gw = Number(/width="(\d+)"/.exec(tag)?.[1]);
     const gh = Number(/height="(\d+)"/.exec(tag)?.[1]);
-    return gw && gh ? Math.abs(Math.log(long(gw, gh) / want)) : Infinity;
+    const d = gw && gh ? Math.abs(Math.log(long(gw, gh) / want)) : Infinity;
+    // a screen with no size yet (0 x 0): no shape to go by
+    return Number.isNaN(d) ? Infinity : d;
   });
-  return sizes[off.indexOf(Math.min(...off))];
+  return sizes[Math.max(0, off.indexOf(Math.min(...off)))];
 }
 
 /**

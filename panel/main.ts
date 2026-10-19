@@ -44,6 +44,9 @@ const QUIET = 'iva-panel:quiet';
 /** the view's options */
 const OUTLINE = 'iva-panel:outline';
 const FPS = 'iva-panel:fps';
+/** a frame drawn only when something changed ('0': every frame) */
+const ON_DEMAND = 'iva-panel:on-demand';
+const onDemand = () => localStorage.getItem(ON_DEMAND) !== '0';
 /** what draws the GUI (the settings' Graphics): auto, webgl2, webgl1, webgpu, canvas */
 const RENDERER = 'iva-panel:renderer';
 const RENDERERS: RendererChoice[] = ['auto', 'webgl2', 'webgl1', 'webgpu', 'canvas'];
@@ -77,6 +80,7 @@ const options = {
   disconnect: $<HTMLInputElement>('opt-disconnect'),
   autoLock: $<HTMLSelectElement>('opt-autolock'),
   renderer: $<HTMLSelectElement>('opt-renderer'),
+  onDemand: $<HTMLInputElement>('opt-ondemand'),
 };
 
 /** where the panel has been (back, forward), across the page reloads a GUI change takes */
@@ -350,6 +354,7 @@ async function show(m: Manifest) {
   current = await loadProject({
     guiXml: m.guiXml,
     renderer: rendererChoice(),
+    renderOnDemand: onDemand(),
     imageMap: m.imageMap,
     atlas: m.atlas,
     scriptMap: m.scriptMap,
@@ -656,6 +661,7 @@ function openSettings() {
   options.bar.checked = flag(BAR);
   options.outline.checked = flag(OUTLINE);
   options.fps.checked = flag(FPS);
+  options.onDemand.checked = onDemand();
   options.disconnect.checked = localStorage.getItem(DISCONNECT) !== '0';
   showAutoLock();
   options.renderer.value = rendererChoice();
@@ -761,6 +767,10 @@ options.bar.addEventListener('change', () => {
 options.outline.addEventListener('change', () => {
   setFlag(OUTLINE, options.outline.checked);
   current?.renderer.setDebugMode(options.outline.checked);
+});
+options.onDemand.addEventListener('change', () => {
+  localStorage.setItem(ON_DEMAND, options.onDemand.checked ? '1' : '0');
+  current?.renderer.setRenderOnDemand(options.onDemand.checked);
 });
 options.fps.addEventListener('change', () => {
   setFlag(FPS, options.fps.checked);

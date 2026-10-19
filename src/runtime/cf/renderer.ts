@@ -1,4 +1,4 @@
-import { Application, Container, Sprite, Text, Graphics, Assets, TextStyle, Color, NineSliceSprite, Rectangle, TilingSprite, Texture } from 'pixi.js';
+import { Application, Container, Sprite, Text, Graphics, Assets, TextStyle, Color, NineSliceSprite, Rectangle, TilingSprite, Texture, TextureSource, UPDATE_PRIORITY } from 'pixi.js';
 import { ownJoin } from './guiIndex';
 import { Slider, FancyButton, ScrollBox } from '@pixi/ui';
 import { animate, type AnimationPlaybackControlsWithThen } from 'motion';
@@ -136,6 +136,53 @@ export function stopAllAnimations() {
 }
 
 /**
+ * A texture's pixels changed in place - a video's next frame, a canvas drawn
+ * on (TextureSource.update) - which no container's change says: drawn too.
+ */
+let sourcesUpdated = false;
+{
+  const proto = TextureSource.prototype as TextureSource & { __ivaWatched?: boolean };
+  if (!proto.__ivaWatched) {
+    const update = proto.update;
+    proto.update = function (this: TextureSource) {
+      sourcesUpdated = true;
+      return update.call(this);
+    };
+    proto.__ivaWatched = true;
+  }
+}
+
+/** a frame drawn: what changed in place, taken in */
+function drewSources() {
+  sourcesUpdated = false;
+}
+/** a test's: a frame drawn */
+export const drewSourcesForTest = drewSources;
+
+/**
+ * Whether anything on the stage changed since it was drawn, by Pixi's own
+ * bookkeeping (each render group's: its children added or gone, the ones
+ * whose transform or view changed) - cleared as a frame is drawn. A stage not
+ * drawn yet (no render group): changed.
+ */
+export function stageChanged(stage: Container): boolean {
+  if (sourcesUpdated) return true;
+  type Group = {
+    structureDidChange?: boolean;
+    childrenRenderablesToUpdate?: { index: number };
+    childrenToUpdate?: Record<string, { index: number }>;
+    renderGroupChildren?: Group[];
+  };
+  const changed = (g: Group | undefined): boolean => {
+    if (!g) return true;
+    if (g.structureDidChange || (g.childrenRenderablesToUpdate?.index ?? 0) > 0) return true;
+    for (const k in g.childrenToUpdate ?? {}) if (g.childrenToUpdate![k].index > 0) return true;
+    return (g.renderGroupChildren ?? []).some(changed);
+  };
+  return changed((stage as unknown as { renderGroup?: Group }).renderGroup);
+}
+
+/**
  * A GUI's images packed in sheets (iva build's iva-atlas/): each sheet's
  * URL, and each image's frame by its name in the .gui - [sheet, x, y, w, h].
  */
@@ -226,9 +273,15 @@ export class CFRenderer {
       this.app.stage.addChild(this.fpsContainer);
       this.app.stage.sortableChildren = true;
 
+      // the frames drawn a second (drawing on demand: the ones drawn, not the ticks), redrawn only when it
+      // changes - a counter redrawn every tick would have every frame drawn
+      let shown = '';
       this.fpsTicker = () => {
         if (this.fpsText && this.fpsBg && this.fpsContainer) {
-          this.fpsText.text = `FPS: ${Math.round(this.app.ticker.FPS)}`;
+          const text = `FPS: ${(this.app as any).__ivaDraw ? this.drawnRate : Math.round(this.app.ticker.FPS)}`;
+          if (text === shown) return;
+          shown = text;
+          this.fpsText.text = text;
 
           // Re-draw background
           this.fpsBg.clear();
@@ -246,6 +299,59 @@ export class CFRenderer {
       this.app.ticker.add(this.fpsTicker);
     }
     if (this.fpsContainer) this.fpsContainer.visible = on;
+  }
+
+  // ── drawing only when something changed ──
+
+  /** frames drawn in the second before (the FPS counter's, drawing on demand) */
+  private drawnRate = 0;
+  /** a frame to draw on the next tick, changed or not */
+  private drawSoon = false;
+
+  /**
+   * Draw a frame only when the stage changed - as Pixi's own bookkeeping
+   * says: a child added or gone, a transform, a texture, a text, a drawing -
+   * or the canvas' size did, and once a second besides; else the tick goes by
+   * without drawing. The ticker runs on (tweens, lists' scrolling, the DOM
+   * layer): an idle GUI costs next to nothing, and a slow phone's time goes to
+   * what changes. Off: a frame drawn every tick, as Pixi does.
+   */
+  setRenderOnDemand(on: boolean) {
+    const app = this.app as Application & { __ivaDraw?: () => void };
+    // one per app (a GUI loaded again keeps it): the one before goes
+    if (app.__ivaDraw) app.ticker.remove(app.__ivaDraw);
+    app.ticker.remove(app.render, app);
+    let last = 0;
+    let w = -1;
+    let h = -1;
+    let second = performance.now();
+    let count = 0;
+    const draw = () => {
+      const now = performance.now();
+      const r = app.renderer;
+      if (!r) return;
+      if (!on || this.drawSoon || now - last >= 1000 || r.width !== w || r.height !== h || stageChanged(app.stage)) {
+        this.drawSoon = false;
+        last = now;
+        w = r.width;
+        h = r.height;
+        drewSources();
+        app.render();
+        count++;
+      }
+      if (now - second >= 1000) {
+        this.drawnRate = Math.round((count * 1000) / (now - second));
+        count = 0;
+        second = now;
+      }
+    };
+    app.__ivaDraw = on ? draw : undefined;
+    app.ticker.add(on ? draw : app.render, on ? undefined : app, UPDATE_PRIORITY.LOW);
+  }
+
+  /** a frame drawn on the next tick, changed or not (what Pixi doesn't see change) */
+  requestRender() {
+    this.drawSoon = true;
   }
 
   setDebugMode(val: boolean) {
