@@ -418,12 +418,13 @@ test('the build: the .gui, assets/ (its image folder: drawings in a folder per c
   assert.deepEqual(tree(out), ['T.gui', 'assets/boxes/100x50-r8-123456.png', 'assets/boxes/100x50-r8-123456@2x.png', 'assets/icons/lightbulb.png',
     'assets/icons/lightbulb@2x.png', 'assets/scripts/main.js', 'assets/sounds/beep.mp3', 'iva-atlas/atlas.json', 'iva-atlas/sheet-0.png', 'joins.json'].sort());
   assert.doesNotMatch(r.xml, /iva-atlas/);
-  // the archives: iViewer's - every image a file of its own, no sheets; the iva panel's - the sheets, and only the
-  // images not in one (here: none - and no @2x, which only iViewer's retina screens take)
+  // the archives: iViewer's - every image a file of its own, no sheets; the iva panel's - the sheets too, every
+  // image still a file of its own, but no @2x (only iViewer's retina screens take them)
   const names = (files: [string, Buffer][]) => files.map(([p]) => p.replace(/_[0-9a-f]{8}(@2x)?\.png$/, '_#$1.png')).sort();
   assert.deepEqual(names(buildFiles(r)), ['T.gui', 'assets/boxes/100x50-r8-123456.png', 'assets/boxes/100x50-r8-123456@2x.png', 'assets/icons/lightbulb.png',
     'assets/icons/lightbulb@2x.png', 'assets/scripts/main.js', 'assets/sounds/beep.mp3'].sort());
-  assert.deepEqual(names(buildFiles(r, 'panel')), ['T.gui', 'assets/scripts/main.js', 'assets/sounds/beep.mp3', 'iva-atlas/atlas.json', 'iva-atlas/sheet-0.png'].sort());
+  assert.deepEqual(names(buildFiles(r, 'panel')), ['T.gui', 'assets/boxes/100x50-r8-123456.png', 'assets/icons/lightbulb.png', 'assets/scripts/main.js', 'assets/sounds/beep.mp3',
+    'iva-atlas/atlas.json', 'iva-atlas/sheet-0.png'].sort());
   // as before: everything beside the .gui (a decompiled project keeps its own layout)
   const flat = await build(jsx(' folders={false}'), files);
   assert.match(flat.xml, /<imagefolder \/>/);

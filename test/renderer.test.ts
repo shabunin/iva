@@ -154,6 +154,30 @@ test("an image in a sheet (iva build's atlas) comes with its sheet: the sheet lo
   for (const k of ['iva-atlas:blob:sheet0', 'icons/a.png', 'icons/b.png', 'big.png']) if (Assets.cache.has(k)) Assets.cache.remove(k);
 });
 
+test("made once its images are in - asked again just before (a look switched meanwhile names others); one that never comes isn't waited for twice", async () => {
+  const r = Object.assign(Object.create(CFRenderer.prototype), { imageMap: {}, loading: new Map(), lastUsed: new Map() }) as any;
+  const loaded = new Set<string>();
+  const asked: string[][] = [];
+  r.missing = (a: Iterable<string>) => [...a].filter((x) => !loaded.has(x));
+  r.ensureLoaded = async (a: string[]) => {
+    asked.push([...a]);
+    await new Promise((res) => setTimeout(res, 1));
+    for (const x of a) if (x !== 'broken.png') loaded.add(x);
+  };
+  // dark when it starts waiting; the look switched to light before its images are in
+  let look = ['dark.png'];
+  let made = 0;
+  const now = r.whenLoaded(() => look, () => made++, () => true);
+  assert.equal(now, false);
+  look = ['dark.png', 'light.png', 'broken.png'];
+  for (let i = 0; i < 20 && !made; i++) await new Promise((res) => setTimeout(res, 2));
+  assert.equal(made, 1);
+  assert.deepEqual(asked, [['dark.png'], ['light.png', 'broken.png']], 'the light look asked for too; the broken one once');
+  // all in: made at once
+  assert.equal(r.whenLoaded(() => ['dark.png'], () => made++, () => true), true);
+  assert.equal(made, 2);
+});
+
 test("a sheet that doesn't come: its images on their own", async () => {
   const r = Object.assign(Object.create(CFRenderer.prototype), {
     imageMap: { 'icons/x.png': 'blob:x' },

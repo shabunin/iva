@@ -369,6 +369,8 @@ export class CFRenderer {
   private navToken = 0;
   /** the page a navigate waits for: since when, how many files, when they were in */
   private navTiming?: { page: string; at: number; images: number; files: number; loaded: number };
+  /** the images a navigate has waited for (the page it's for): not waited for again */
+  private navTried?: { page: string; images: Set<string> };
   private collectTimer?: ReturnType<typeof setTimeout>;
   private prefetchTimer?: ReturnType<typeof setTimeout>;
   private prefetching = false;
@@ -514,6 +516,27 @@ export class CFRenderer {
         await new Promise((r) => setTimeout(r, again[attempt]));
       }
     }
+  }
+
+  /**
+   * `make` once the images `images()` names are in - asked for again just
+   * before it's made: a look switched meanwhile (a script at start sets the
+   * one kept) names others, which must be in too, or what's made comes out
+   * without them and no retheme reaches it (it wasn't there to retheme). An
+   * image that hasn't come after its tries isn't waited for again. Whether it
+   * was made at once.
+   */
+  private whenLoaded(images: () => Iterable<string>, make: () => void, alive: () => boolean, tried = new Set<string>()): boolean {
+    const need = this.missing(images()).filter((a) => !tried.has(a));
+    if (!need.length) {
+      make();
+      return true;
+    }
+    need.forEach((a) => tried.add(a));
+    void this.ensureLoaded(need).then(() => {
+      if (alive()) this.whenLoaded(images, make, alive, tried);
+    });
+    return false;
   }
 
   /** Of these images, the ones not loaded yet. */
@@ -790,15 +813,17 @@ export class CFRenderer {
   }
 
   /** An object in another theme: made again from its node, in the same place. */
-  retheme(c: Container, theme: string) {
+  retheme(c: Container, theme: string, tried = new Set<string>()) {
     const made = (c as any).cfMade as { node: CFNode; listPrefix?: string; listIndex?: number } | undefined;
     const parent = c.parent;
     if (!made || !parent || (c as any).cfNode?.t === theme) return;
-    // the theme's images first (a look switched: its drawings aren't in yet), then made again in it
-    const need = this.missing(this.imagesOf([], [theme]));
+    // the theme's images first (a look switched: its drawings aren't in yet), then made again in it - one that
+    // didn't come after its tries isn't waited for again
+    const need = this.missing(this.imagesOf([], [theme])).filter((a) => !tried.has(a));
     if (need.length) {
+      need.forEach((a) => tried.add(a));
       void this.ensureLoaded(need).then(() => {
-        if (!c.destroyed) this.retheme(c, theme);
+        if (!c.destroyed) this.retheme(c, theme, tried);
       });
       return;
     }
@@ -1277,16 +1302,16 @@ export class CFRenderer {
         }
       });
     };
-    const need = this.missing(this.imagesOf(def.nodes, [def.theme], true));
-    if (!need.length) fill();
-    else {
-      void this.ensureLoaded(need).then(() => {
-        if (!container.destroyed) {
-          fill();
-          this.layoutDebugLabels(container);
-        }
-      });
-    }
+    let now = true;
+    this.whenLoaded(
+      () => this.imagesOf(def.nodes, [def.theme], true),
+      () => {
+        fill();
+        if (!now) this.layoutDebugLabels(container);
+      },
+      () => !container.destroyed,
+    );
+    now = false;
 
     return container;
   }
@@ -1371,7 +1396,12 @@ export class CFRenderer {
 
     // its images first: the page is made once they're in (a later navigate goes instead, if one comes meanwhile)
     const token = ++this.navToken;
-    const need = this.missing(this.pageImages(pageName));
+    // asked again once they're in (a look switched meanwhile names others); one that didn't come after its tries
+    // isn't waited for again
+    const tried = this.navTried?.page === pageName ? this.navTried.images : new Set<string>();
+    const need = this.missing(this.pageImages(pageName)).filter((a) => !tried.has(a));
+    this.navTried = need.length ? { page: pageName, images: tried } : undefined;
+    need.forEach((a) => tried.add(a));
     if (need.length) {
       const since = this.navTiming?.page === pageName ? this.navTiming.at : performance.now();
       this.navTiming = { page: pageName, at: since, images: need.length, files: this.filesFor(need), loaded: 0 };
