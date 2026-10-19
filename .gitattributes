@@ -1,0 +1,6 @@
+# LF in every checkout, Windows too (Git for Windows defaults to CRLF): tests
+# compare text exactly, and iva copies its docs into projects as they are.
+* text=auto eol=lf
+# but Windows' own scripts CRLF (gradlew.bat): cmd.exe misses labels in LF ones
+*.bat text eol=crlf
+*.cmd text eol=crlf
