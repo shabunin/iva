@@ -20,7 +20,7 @@ import { createIvaHost } from '../src/runtime/host';
 import { closeHostSockets } from '../src/runtime/host/net/provider';
 import { installFonts } from '../src/preview/fonts';
 import { formatLocation, History, isGuiUrl, parseLocation, type GuiLocation } from '../src/runtime/location';
-import { loadManifest, newerVersion, savedManifest, toSave, type Download, type Manifest } from './loader';
+import { loadManifest, newerVersion, ownFile, savedManifest, toSave, type Download, type Manifest } from './loader';
 import { forgetAllGuis, forgetGui, keptGuis, saveGui, savedGui, usedGui, type Kept, type SavedGui } from './store';
 import { androidDevice } from './device';
 
@@ -417,7 +417,9 @@ async function start() {
   if (url !== stored && !sessionStorage.getItem(ONCE)) localStorage.setItem(GUI, url);
   const fresh = sessionStorage.getItem(FRESH) === '1';
   sessionStorage.removeItem(FRESH);
-  const saved = await savedCopy(url).catch((e) => void noteError(`the copy kept: ${message(e)}`));
+  // the app's own files: from the app, always (a copy kept by an older version of it: let go)
+  if (ownFile(url)) void forgetGui(url).catch(() => {});
+  const saved = ownFile(url) ? undefined : await savedCopy(url).catch((e) => void noteError(`the copy kept: ${message(e)}`));
   if (saved && !fresh) {
     try {
       const m = await savedManifest(saved);
@@ -494,7 +496,8 @@ const noCopy = (): Set<string> => {
   }
 };
 /** whether a copy of the GUI is kept on the device (the settings say; yes unless said otherwise) */
-const keepsCopy = (url: string) => !noCopy().has(url);
+// the app's own files (the built-in demo) aren't kept: they're in the app, and a copy outlives an update of it
+const keepsCopy = (url: string) => !ownFile(url) && !noCopy().has(url);
 function setKeepsCopy(url: string, on: boolean) {
   const s = noCopy();
   if (on) s.delete(url);

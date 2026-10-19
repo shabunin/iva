@@ -53,7 +53,7 @@ export const useFetch = (f: typeof hostFetch) => {
 };
 
 /** the app's own files (the built-in demo): the page's fetch has them, no server does */
-const ownFile = (url: string) => {
+export const ownFile = (url: string) => {
   if (typeof location === 'undefined') return false;
   const u = new URL(url);
   return u.protocol === location.protocol && u.host === location.host;
@@ -64,7 +64,8 @@ async function download(url: string, known?: { etag?: string; lastModified?: str
   const headers: Record<string, string> = {};
   if (known?.etag) headers['If-None-Match'] = known.etag;
   if (known?.lastModified) headers['If-Modified-Since'] = known.lastModified;
-  const res = ownFile(url) ? await fetch(url, { headers }) : await fetching(url, { method: 'GET', headers, connectTimeout: 15000 });
+  // the app's own: past the web view's cache - an app updated keeps the file's URL, and the cache its old bytes
+  const res = ownFile(url) ? await fetch(url, { headers, cache: 'no-store' }) : await fetching(url, { method: 'GET', headers, connectTimeout: 15000 });
   if (res.status === 304) return null;
   if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
   const header = (name: string) => res.headers.get(name) ?? undefined;
