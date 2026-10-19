@@ -12,6 +12,8 @@
  * again from its server.
  */
 import { getVersion } from '@tauri-apps/api/app';
+import { invoke, isTauri } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import { openUrl as openOutside } from '@tauri-apps/plugin-opener';
 import { installHost } from '../src/runtime/stdlib';
@@ -20,10 +22,9 @@ import { createIvaHost } from '../src/runtime/host';
 import { closeHostSockets } from '../src/runtime/host/net/provider';
 import { installFonts } from '../src/preview/fonts';
 import { formatLocation, History, isGuiUrl, parseLocation, type GuiLocation } from '../src/runtime/location';
-import { loadManifest, newerVersion, ownFile, savedManifest, toSave, unpackedManifest, type Download, type Manifest } from './loader';
-import { forgetAllGuis, forgetAllUnpacked, forgetGui, forgetUnpacked, keptGui, keptGuis, saveGui, savedGui, saveUnpacked, unpackedGui, usedGui, type Kept, type SavedGui } from './store';
+import { folderManifest, loadManifest, newerVersion, ownFile, savedManifest, toSave, type Download, type Manifest } from './loader';
+import { forgetAllGuis, forgetGui, keptGui, keptGuis, saveGui, savedGui, usedGui, type Kept, type SavedGui } from './store';
 import { androidDevice } from './device';
-import { packSheets } from './pack';
 
 // ── what the panel keeps: between starts (localStorage), across a GUI change (sessionStorage) ──
 /** the GUI shown last: what the next start runs (it follows GUI links) */
@@ -441,48 +442,80 @@ async function unpackKey(url: string): Promise<string | undefined> {
   return undefined;
 }
 
-/** A GUI's files, unpacked from the archive it ran from, kept for the next start (behind the GUI running). */
-async function cacheUnpacked(url: string, key: string | undefined, m: Manifest) {
-  if (!key || !m.unpack) return;
-  try {
-    const u = await m.unpack();
-    await saveUnpacked({ ...u, url, key, savedAt: Date.now() });
-    mark(`unpacked for the next start: ${Object.keys(u.files).length} files`);
-    if (!u.atlas) void packLater(url, key);
-  } catch (e) {
-    noteError(`unpacking ${url} for the next start: ${message(e)}`);
-  }
+/** the app's side: it unpacks a GUI's archive and packs its images in sheets (src-tauri/src/unpack.rs) - a browser has none */
+const native = isTauri();
+
+/** a GUI's files unpacked by the app: the folder, its files, whether its images are in sheets yet */
+interface Unpacked {
+  root: string;
+  files: string[];
+  packed: boolean;
 }
 
-/** the GUI whose sheets are being packed (one at a time) */
-let packing: string | null = null;
+/** what the app says as it unpacks and packs, in the log: how long each took */
+interface Unpacking {
+  id: string;
+  ms?: number;
+  done?: number;
+  total?: number;
+  sheets?: number;
+  images?: number;
+  error?: string;
+}
+if (native) {
+  void listen<Unpacking>('iva-gui-unpacked', ({ payload: e }) =>
+    e.error ? noteError(`unpacking ${e.id}: ${e.error}`) : mark(`unpacked by the app: ${e.done} files in ${e.ms} ms`));
+  void listen<Unpacking>('iva-gui-packing', ({ payload: e }) => mark(`packing: ${e.done} of ${e.total} groups`));
+  void listen<Unpacking>('iva-gui-packed', ({ payload: e }) =>
+    e.error ? noteError(`packing ${e.id}'s images: ${e.error}`) : mark(`packed by the app: ${e.images} images in ${e.sheets} sheets in ${e.ms} ms`));
+}
+
+/** the GUI's files unpacked by the app from this version (its key), if they are */
+async function unpackedFolder(url: string, key: string): Promise<Unpacked | null> {
+  if (!native) return null;
+  return invoke<Unpacked | null>('gui_unpacked', { id: url, version: key }).catch((e) => {
+    noteError(`the files unpacked: ${message(e)}`);
+    return null;
+  });
+}
+
+/** bytes as base64 (the browser's own encoder) */
+const base64 = (bytes: Uint8Array<ArrayBuffer>) =>
+  new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).slice(String(r.result).indexOf(',') + 1));
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(new Blob([bytes]));
+  });
+
+/** an archive to the app, in pieces (an Android web view hands the app strings, not bytes): its token */
+async function upload(bytes: Uint8Array<ArrayBuffer>): Promise<number> {
+  const token = await invoke<number>('gui_upload_begin');
+  const piece = 2 << 20;
+  for (let at = 0; at < bytes.length; at += piece) await invoke('gui_upload', { token, data: await base64(bytes.subarray(at, at + piece)) });
+  return token;
+}
 
 /**
- * A GUI that came without sheets (GUI Designer's, iViewer's archive): its
- * images packed into sheets on the device, behind it running - a while after
- * it's up, a moment's pause between two images - and kept with its files: the
- * next start loads a page's sheets, not its images one by one.
+ * A GUI that ran from its archive, unpacked by the app for the next start
+ * and its images packed in sheets (behind the GUI running): the app's own
+ * (the built-in demo) it reads itself, any other it's sent.
  */
-async function packLater(url: string, key: string) {
-  if (packing) return;
-  packing = url;
+async function adapt(url: string, key: string | undefined, m: Manifest) {
+  if (!native || !key || !m.adapt) return;
   try {
-    await new Promise((r) => setTimeout(r, 5000));
-    const u = await unpackedGui(url, key);
-    if (!u || u.atlas || shown?.gui !== url) return;
-    const t0 = performance.now();
-    mark('packing sheets');
-    const packed = await packSheets(u, () => shown?.gui === url);
-    if (!packed) return;
-    // the files as they are now (unpacked again meanwhile: those)
-    const now = await unpackedGui(url, key);
-    if (!now || now.atlas) return;
-    await saveUnpacked({ ...now, files: { ...now.files, ...packed.files }, atlas: packed.atlas });
-    mark(`sheets packed for the next start: ${packed.atlas.files.length}, ${Object.keys(packed.atlas.frames).length} images, in ${Math.round(performance.now() - t0)} ms`);
+    if (await unpackedFolder(url, key)) return;
+    const plan = m.adapt();
+    const own = ownFile(url);
+    if (!own && !plan.bytes) return;
+    const args = {
+      id: url, version: key, files: plan.files, atlas: plan.atlas, images: plan.images,
+      ...(own ? { asset: decodeURIComponent(new URL(url).pathname) } : { upload: await upload(plan.bytes!) }),
+    };
+    await invoke('gui_unpack', { args });
+    mark(`to the app to unpack: ${plan.files.length} files, ${plan.images.length} images to pack`);
   } catch (e) {
-    noteError(`packing sheets for ${url}: ${message(e)}`);
-  } finally {
-    packing = null;
+    noteError(`unpacking ${url} for the next start: ${message(e)}`);
   }
 }
 
@@ -515,14 +548,14 @@ async function start() {
   sessionStorage.removeItem(FRESH);
   // the app's own files: from the app, always (a copy kept by an older version of it: let go)
   if (ownFile(url)) void forgetGui(url).catch(() => {});
-  // its files unpacked by a start before, from this version: nothing to read or unzip
+  // its files unpacked by the app from this version, a start before: nothing to read or unzip, its images in sheets
   const key = fresh ? undefined : await unpackKey(url);
-  const unpacked = key ? await unpackedGui(url, key).catch((e) => void noteError(`the files unpacked: ${message(e)}`)) : undefined;
-  if (unpacked && !unpacked.missingScripts.length) {
-    mark(`unpacked files found: ${Object.keys(unpacked.files).length}`);
-    await show(unpackedManifest(unpacked));
+  const unpacked = key ? await unpackedFolder(url, key) : null;
+  const m = unpacked ? await folderManifest(unpacked, url).catch((e) => void noteError(`the files unpacked: ${message(e)}`)) : undefined;
+  if (unpacked && m && !m.missingScripts.length) {
+    mark(`unpacked files found: ${unpacked.files.length}, ${m.atlas ? `${m.atlas.sheets.length} sheets` : 'no sheets yet'}`);
+    await show(m);
     mark('shown');
-    if (!unpacked.atlas && key) void packLater(url, key);
     // the copy kept, for its server's newer version (behind the GUI running)
     if (!ownFile(url)) {
       void savedCopy(url).then((s) => {
@@ -553,7 +586,7 @@ async function start() {
       await show(m);
       mark('shown');
       kept = saved;
-      void cacheUnpacked(url, keptKey(saved), m);
+      void adapt(url, keptKey(saved), m);
       void usedGui(url).catch(() => {});
       void checkServer();
       return;
@@ -581,7 +614,7 @@ async function start() {
     mark('read');
     await show(manifest);
     mark('shown');
-    if (ownFile(url)) void unpackKey(url).then((k) => cacheUnpacked(url, k, manifest));
+    if (ownFile(url)) void unpackKey(url).then((k) => adapt(url, k, manifest));
     else void keep(got, manifest);
   } catch (e) {
     const why = message(e);
@@ -633,7 +666,7 @@ async function keep(got: Download, m: Manifest) {
     const s = await toSave(got, m);
     await saveGui(s);
     kept = s;
-    void cacheUnpacked(got.url, keptKey(s), m);
+    void adapt(got.url, keptKey(s), m);
   } catch (e) {
     noteError(`keeping ${got.url} on the device: ${message(e)}`);
   }
@@ -727,7 +760,7 @@ async function showCopies() {
 }
 
 /** a copy forgotten under every spelling of its URL */
-const forgetCopy = (url: string) => Promise.all(spellings(url).flatMap((u) => [forgetGui(u), forgetUnpacked(u)]));
+const forgetCopy = (url: string) => Promise.all(spellings(url).flatMap((u) => [forgetGui(u), native ? invoke('gui_forget', { id: u }) : undefined]));
 
 function copyRow(url: string, k: Kept | undefined): HTMLElement {
   const row = document.createElement('div');
@@ -781,7 +814,7 @@ async function saveNow(url: string) {
   }
   void showCopies();
 }
-$('clear-all').addEventListener('click', () => void Promise.all([forgetAllGuis(), forgetAllUnpacked()]).catch((e) => noteError(message(e))).then(showCopies));
+$('clear-all').addEventListener('click', () => void Promise.all([forgetAllGuis(), native ? invoke('gui_forget', { id: null }) : undefined]).catch((e) => noteError(message(e))).then(showCopies));
 
 form.addEventListener('submit', (e) => {
   e.preventDefault();

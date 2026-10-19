@@ -6,8 +6,10 @@
  * other origins - iva serve does), or from the archive (blob URLs).
  * src/server/project.ts does the same for iva dev, on the server side.
  */
+import { convertFileSrc } from '@tauri-apps/api/core';
 import { fetch as hostFetch } from '@tauri-apps/plugin-http';
-import type { SavedGui, Unpacked } from './store';
+import { atlasGroups, groupRank } from '../src/runtime/cf/atlas';
+import type { SavedGui } from './store';
 
 export interface Manifest {
   /** where it came from: CF.loadGUI's links resolve against it */
@@ -21,17 +23,30 @@ export interface Manifest {
   problems: string[];
   /** a file of the GUI by its name (a web view's url="page.html") */
   fileUrl: (name: string) => string | undefined;
-  /** its images packed in sheets (iva build's iva-atlas/ beside the .gui), when it has them */
+  /** its images packed in sheets (iva-atlas/ beside the .gui: the app packed them, a start before), when it has them */
   atlas?: Atlas;
-  /** from an archive: the size run, its files as Blobs - kept on the device, the next start doesn't unzip it */
-  unpack?: () => Promise<Omit<Unpacked, 'url' | 'key' | 'savedAt'>>;
+  /** from an archive: what to unpack of it for the next start, and how to pack its images (the app's side does it) */
+  adapt?: () => Adapt;
 }
 
 /**
- * A GUI's images packed in sheets for the panel (iva build: iva-atlas/
- * beside the .gui, which the .gui doesn't name - iViewer loads the images one
- * by one): each sheet's URL and file, each image's frame by its name in the
- * .gui - [sheet, x, y, w, h].
+ * A GUI's archive as the app unpacks it and packs its images in sheets
+ * (src-tauri/src/unpack.rs): the files of the size run, where the sheets go
+ * (beside its .gui), the images to pack - [file, name in the .gui, group],
+ * the groups in their sheets' order (atlasGroups) - and the archive's bytes.
+ */
+export interface Adapt {
+  files: string[];
+  atlas: string;
+  images: [string, string, string][];
+  bytes?: Uint8Array<ArrayBuffer>;
+}
+
+/**
+ * A GUI's images packed in sheets (iva-atlas/ beside the .gui, which the
+ * .gui doesn't name: the app packs them, src-tauri/src/atlas.rs): each
+ * sheet's URL and file, each image's frame by its name in the .gui -
+ * [sheet, x, y, w, h].
  */
 export interface Atlas {
   sheets: string[];
@@ -195,16 +210,6 @@ export async function toSave(got: Download, m: Manifest): Promise<SavedGui> {
     }
   });
   for (const [name, code] of Object.entries(m.scriptMap)) files[inFolder(name)] = new TextEncoder().encode(code);
-  // its images in sheets, beside the .gui as they came (one missing: the copy loads the images one by one)
-  if (m.atlas) {
-    try {
-      const sheets = await Promise.all(m.atlas.sheets.map((u) => get(u)));
-      files[ATLAS_DIR + 'atlas.json'] = await get(new URL(ATLAS_DIR + 'atlas.json', got.url).href);
-      m.atlas.files.forEach((file, i) => (files[ATLAS_DIR + file] = sheets[i]));
-    } catch {
-      // without them
-    }
-  }
   // the scripts the load lost: once more, for the copy
   const lost: string[] = [];
   await each(m.missingScripts, 2, async (name) => {
@@ -275,12 +280,8 @@ async function remoteManifest(at: string, guiXml: string): Promise<Manifest> {
   }
   const path = new URL(at).pathname;
   const title = titleOf(guiXml, decodeURIComponent(path.split('/').pop() || new URL(at).host));
-  // its images in sheets, if it has them (an older build, GUI Designer's: no - the images one by one); after
-  // the scripts, not beside them - a flaky link takes a few requests at a time
-  const atlasAt = (file: string) => new URL(ATLAS_DIR + file, base).href;
-  const atlas = await get(atlasAt('atlas.json')).then((b) => atlasOf(new TextDecoder().decode(b), atlasAt), () => undefined);
   // a project file (CF.loadAsset, a web view's page): in the image folder, where iViewer keeps them
-  return { url: at, title, guiXml, imageMap, scriptMap, missingScripts, problems, fileUrl: (name) => new URL(name.replace(/\\/g, '/'), files).href, atlas };
+  return { url: at, title, guiXml, imageMap, scriptMap, missingScripts, problems, fileUrl: (name) => new URL(name.replace(/\\/g, '/'), files).href };
 }
 
 /** of one GUI's sizes, the one shaped most like the screen (turned either way) - by each .gui's first lines */
@@ -310,6 +311,10 @@ export interface Archive {
   /** a stored entry's bytes as they lie in the archive (no copy); undefined for a deflated one */
   stored(name: string): Uint8Array<ArrayBuffer> | undefined;
   read(name: string): Promise<Uint8Array<ArrayBuffer>>;
+  /** a file's own URL, where it has one (a folder's files: no Blob made of it) */
+  url?(name: string): string;
+  /** the archive as it came (a zip) */
+  bytes?: Uint8Array<ArrayBuffer>;
 }
 
 /** A zip archive opened: stored or deflated entries (no zip64, no encryption). */
@@ -342,6 +347,7 @@ export function openZip(z: Uint8Array<ArrayBuffer>): Archive {
   }
   return {
     names: [...entries.keys()],
+    bytes: z,
     stored: (name) => {
       const e = entries.get(name);
       return e && e.method === 0 ? z.subarray(e.start, e.start + e.size) : undefined;
@@ -389,8 +395,8 @@ const RETINA = /@2x\.(png|jpe?g|gif)$/i;
  * (clock.gui.zip: clock.gui), else the shallowest; one in several sizes
  * (iva build's <Project sizes>: 1400w1400h/x.gui beside x.gui) the one
  * shaped like the screen - and that size's images, scripts and sheets,
- * read as they're needed (as src/server/project.ts zipManifest). With it, how
- * to unpack that size's files for the next start (unpack).
+ * read as they're needed (as src/server/project.ts zipManifest). With it, what
+ * the app unpacks of it for the next start, and how it packs its images (adapt).
  */
 async function zipManifest(a: Archive, id: string): Promise<Manifest> {
   const guis = a.names.filter((n) => /\.gui$/i.test(n));
@@ -421,101 +427,92 @@ async function zipManifest(a: Archive, id: string): Promise<Manifest> {
     }
     return u;
   };
-  const urlOf = async (name: string) => blobs.get(name) ?? blobOf(name, a.stored(name) ?? (await a.read(name)));
-  /** a file's URL at once: one made already, or a stored one's */
+  const urlOf = async (name: string) => a.url?.(name) ?? blobs.get(name) ?? blobOf(name, a.stored(name) ?? (await a.read(name)));
+  /** a file's URL at once: its own, one made already, or a stored one's */
   const urlNow = (name: string) => {
+    if (a.url) return a.url(name);
     if (blobs.has(name)) return blobs.get(name);
     const b = a.stored(name);
     return b ? blobOf(name, b) : undefined;
   };
-  // its images in sheets, beside its .gui (iva build's)
-  const inAtlas = (file: string) => lower.get((dir + ATLAS_DIR + file).toLowerCase());
+  // its images in sheets, beside its .gui (the app packed them)
+  const inAtlas = (file: string) => lower.get(`${dir}${ATLAS_DIR}${file}`.toLowerCase());
   const mapFile = inAtlas('atlas.json');
   const mapped = mapFile ? atlasOf(decodeXml(await a.read(mapFile)), (file) => inAtlas(file)) : undefined;
-  const atlas = mapped ? { ...mapped, sheets: await Promise.all(mapped.sheets.map(urlOf)) } : undefined;
-  const framed = new Set(Object.keys(atlas?.frames ?? {}).map((n) => n.toLowerCase()));
+  const atlas = mapped?.sheets.length ? { ...mapped, sheets: await Promise.all(mapped.sheets.map(urlOf)) } : undefined;
   // the images the .gui names (as remoteManifest maps them), by their path in the image folder and by bare
-  // name: found in the image folder, then by the .gui, then by name; only in a sheet (the panel's archive, iva
-  // build's .iva.zip): known by its names all the same ('#' its name)
+  // name: found in the image folder, then by the .gui, then by name
   const byLeaf = new Map<string, string>();
   for (const n of [...names].sort((x, y) => x.split('/').length - y.split('/').length)) {
     if (IMAGE_RE.test(n) && !byLeaf.has(leaf(n))) byLeaf.set(leaf(n), n);
   }
+  const fileOf = (n: string) => lower.get((imageRoot + n).toLowerCase()) ?? lower.get((dir + n).toLowerCase()) ?? byLeaf.get(leaf(n));
   const images: Record<string, string> = {};
   for (const named of imageNames(guiXml)) {
     const n = named.replace(/\\/g, '/');
-    const file = lower.get((imageRoot + n).toLowerCase()) ?? lower.get((dir + n).toLowerCase()) ?? byLeaf.get(n.split('/').pop()!.toLowerCase());
-    const where = file ?? (framed.has(n.toLowerCase()) ? `#${n}` : undefined);
-    if (!where) continue;
-    images[n] ??= where;
-    images[n.split('/').pop()!] ??= where;
+    const file = fileOf(n);
+    if (!file) continue;
+    images[n] ??= file;
+    images[n.split('/').pop()!] ??= file;
   }
   const imageMap: Record<string, string> = {};
-  await each(Object.entries(images), 8, async ([n, where]) => void (imageMap[n] = where.startsWith('#') ? ATLAS_DIR + where.slice(1) : await urlOf(where)));
+  await each(Object.entries(images), 8, async ([n, file]) => void (imageMap[n] = await urlOf(file)));
   const scriptMap: Record<string, string> = {};
   const missingScripts: string[] = [];
-  for (const name of scriptNames(guiXml)) {
+  await each(scriptNames(guiXml), 4, async (name) => {
     const want = name.replace(/\\/g, '/').toLowerCase();
     // in the image folder, where iViewer looks for it; then by the .gui, then by name
     const found = lower.get(imageRoot.toLowerCase() + want) ?? lower.get(dir.toLowerCase() + want) ?? names.find((n) => leaf(n) === want.split('/').pop());
     if (found) scriptMap[name] = new TextDecoder().decode(await a.read(found));
     else missingScripts.push(name);
-  }
+  });
+  // the order the .gui has them in (they run in it)
+  const ordered = Object.fromEntries(scriptNames(guiXml).filter((n) => n in scriptMap).map((n) => [n, scriptMap[n]]));
   // the size's other files a deflated archive holds (a web view's page, a script's data): ready for fileUrl, which
   // answers at once
-  await each(names.filter((n) => !a.stored(n) && !IMAGE_RE.test(n) && !/\.gui$/i.test(n)), 4, async (n) => void (await urlOf(n)));
+  if (!a.url) await each(names.filter((n) => !a.stored(n) && !IMAGE_RE.test(n) && !/\.gui$/i.test(n)), 4, async (n) => void (await urlOf(n)));
   const title = titleOf(guiXml, entry.split('/').pop()!.replace(/\.gui$/i, ''));
   return {
-    url: id, title, guiXml, imageMap, scriptMap, missingScripts, problems: missingScripts.map((n) => `${n}: not in the archive`), atlas,
+    url: id, title, guiXml, imageMap, scriptMap: ordered, missingScripts, problems: missingScripts.map((n) => `${n}: not in the archive`), atlas,
     // a project file (CF.loadAsset, a web view's page): in the image folder, else beside the .gui
     fileUrl: (name) => {
       const n = name.replace(/\\/g, '/');
       const found = [imageRoot + n, dir + n].map((f) => lower.get(f.toLowerCase())).find(Boolean);
       return found ? urlNow(found) : undefined;
     },
-    unpack: async () => {
-      const files: Record<string, Blob> = {};
-      await each(names.filter((n) => !/\.gui$/i.test(n)), 8, async (n) => {
-        files[n] = new Blob([a.stored(n) ?? (await a.read(n))], { type: mimeOf(n) });
-      });
-      return {
-        title, guiXml, scriptMap, missingScripts, dir, imageRoot, images, files,
-        atlas: mapped && { files: mapped.sheets, frames: mapped.frames },
-      };
+    adapt: () => {
+      // the PNGs to pack, by the group atlasGroups puts each in: the groups in their sheets' order
+      const { groups, pages } = atlasGroups(guiXml, Object.values(ordered));
+      const pack: [string, string, string][] = [];
+      for (const [n, group] of groups) {
+        const file = fileOf(n);
+        if (file && /\.png$/i.test(file)) pack.push([file, n, group]);
+      }
+      pack.sort((x, y) => groupRank(x[2], pages) - groupRank(y[2], pages) || x[2].localeCompare(y[2]));
+      // sheets of its own (an archive the app made them in): the app's go in their place
+      const sheets = `${dir}${ATLAS_DIR}`.toLowerCase();
+      return { files: names.filter((n) => !n.toLowerCase().startsWith(sheets)), atlas: `${dir}${ATLAS_DIR}`.replace(/\/$/, ''), images: pack, bytes: a.bytes };
     },
   };
 }
 
-/** A GUI from its files unpacked on the device (unpacked from its archive by a start before): nothing to unzip. */
-export function unpackedManifest(u: Unpacked): Manifest {
-  const urls = new Map<string, string>();
-  const urlOf = (path: string) => {
-    let x = urls.get(path);
-    if (!x) {
-      const b = u.files[path];
-      if (!b) return undefined;
-      x = URL.createObjectURL(b);
-      urls.set(path, x);
-    }
-    return x;
-  };
-  const imageMap: Record<string, string> = {};
-  for (const [n, where] of Object.entries(u.images)) {
-    const url = where.startsWith('#') ? ATLAS_DIR + where.slice(1) : urlOf(where);
-    if (url) imageMap[n] = url;
-  }
-  const sheets = u.atlas?.files.map(urlOf);
-  const atlas = u.atlas && sheets?.every(Boolean)
-    ? { sheets: sheets as string[], files: u.atlas.files.map((p) => p.split('/').pop()!), frames: u.atlas.frames }
-    : undefined;
-  const lower = new Map(Object.keys(u.files).map((p) => [p.toLowerCase(), p]));
-  return {
-    url: u.url, title: u.title, guiXml: u.guiXml, imageMap, scriptMap: u.scriptMap, missingScripts: u.missingScripts,
-    problems: u.missingScripts.map((n) => `${n}: not in the archive`), atlas,
-    fileUrl: (name) => {
-      const n = name.replace(/\\/g, '/');
-      const found = [u.imageRoot + n, u.dir + n].map((f) => lower.get(f.toLowerCase())).find(Boolean);
-      return found ? urlOf(found) : undefined;
+/**
+ * A GUI from its files unpacked on the device - by the app, from its archive,
+ * a start before (src-tauri/src/unpack.rs) - each file by its URL in the
+ * folder (the asset protocol): nothing to unzip, no Blob made; its images in
+ * sheets, once the app packed them.
+ */
+export function folderManifest(u: { root: string; files: string[] }, id: string): Promise<Manifest> {
+  const sep = u.root.includes('\\') && !u.root.includes('/') ? '\\' : '/';
+  const url = (name: string) => convertFileSrc(`${u.root}${sep}${sep === '\\' ? name.replace(/\//g, '\\') : name}`);
+  return zipManifest({
+    names: u.files,
+    stored: () => undefined,
+    url,
+    async read(name) {
+      const res = await fetch(url(name));
+      if (!res.ok) throw new Error(`${name}: HTTP ${res.status}`);
+      return new Uint8Array(await res.arrayBuffer());
     },
-  };
+  }, id);
 }

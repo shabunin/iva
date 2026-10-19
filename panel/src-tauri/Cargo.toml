@@ -19,7 +19,8 @@ serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 # devtools: the web inspector in release builds too (chrome://inspect over adb)
-tauri = { version = "2", features = ["devtools"] }
+# protocol-asset: a GUI unpacked on the device, its files by URL (src/unpack.rs)
+tauri = { version = "2", features = ["devtools", "protocol-asset"] }
 tauri-plugin-log = "2"
 tauri-plugin-http = { version = "2", features = ["dangerous-settings", "unsafe-headers", "rustls-tls-webpki-roots"] }
 tauri-plugin-websocket = "2"
@@ -39,6 +40,10 @@ rustls-pki-types = "1"
 # CF.device and the network variables (plugins/net/device.rs)
 if-addrs = "0.15"
 hostname = "0.4"
+# a GUI's archive unpacked, its images packed into sheets (src/unpack.rs, src/atlas.rs)
+flate2 = "1"
+png = "0.18"
+base64 = "0.22"
 
 [target.'cfg(target_os = "android")'.dependencies]
 libc = "0.2"

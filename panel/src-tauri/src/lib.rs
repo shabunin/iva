@@ -1,7 +1,9 @@
 // iva panel: iViewer (.gui) projects on iva's own runtime (../../src/runtime).
 // The page runs the GUI; this side gives it real sockets - the commands the
 // runtime's host classes invoke (agapi's, by the same names and payloads).
+mod atlas;
 mod plugins;
+mod unpack;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -9,6 +11,7 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_websocket::init())
         .plugin(tauri_plugin_opener::init())
+        .manage(unpack::Guis::default())
         .invoke_handler(tauri::generate_handler![
             plugins::net::tcp::tcp_connect,
             plugins::net::tcp::tcp_write,
@@ -45,6 +48,11 @@ pub fn run() {
             plugins::http::server::http_server_respond,
             plugins::http::server::ws_send_message,
             plugins::http::server::ws_close_connection,
+            unpack::gui_upload_begin,
+            unpack::gui_upload,
+            unpack::gui_unpack,
+            unpack::gui_unpacked,
+            unpack::gui_forget,
         ])
         .setup(|app| {
             plugins::net::init_state(app.handle());
