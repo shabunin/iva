@@ -61,6 +61,11 @@ test("a GUI's images in sheets (iva build's iva-atlas/ beside the .gui): each sh
   const enc = (b: Buffer) => new Uint8Array(b) as Uint8Array<ArrayBuffer>;
   const kept = await savedManifest({ url: 'http://10.0.0.2/gui/app.gui', files: Object.fromEntries(files.map(([n, d]) => [n, enc(d)])), gui, savedAt: 0, bytes: 0 });
   assert.deepEqual(kept.atlas?.frames['icons/a.png'], [0, 2, 2, 10, 10]);
+  // the panel's archive (iva build's .iva.zip): an image only in a sheet, known by its names all the same
+  const only = await savedManifest({ url: 'http://10.0.0.2/app.iva.zip', zip: new Uint8Array(writeZip(files.filter(([n]) => n !== 'images/icons/a.png'))), savedAt: 0, bytes: 0 });
+  assert.ok(only.imageMap['icons/a.png']);
+  assert.equal(only.imageMap['a.png'], only.imageMap['icons/a.png']);
+  assert.deepEqual(only.atlas?.frames['icons/a.png'], [0, 2, 2, 10, 10]);
   // a sheet missing, or no map: the images one by one
   const noSheet = new Uint8Array(writeZip(files.filter(([n]) => n !== 'iva-atlas/sheet-0.png')));
   assert.equal((await savedManifest({ url: 'http://10.0.0.2/app.gui.zip', zip: noSheet, savedAt: 0, bytes: 0 })).atlas, undefined);

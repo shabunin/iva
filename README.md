@@ -59,7 +59,7 @@ iva create my-panel --template demo   # or blank; --device "iPhone X"; --from Ol
 cd my-panel
 iva dev        # live preview, rebuilds on save; real TCP/UDP/HTTP to the devices
 iva check      # what the editor underlines + a test build
-iva build      # -> dist/: the .gui, images, scripts, joins.json (--zip: also one .gui.zip)
+iva build      # -> dist/: the .gui, images, scripts, joins.json (--zip: also .gui.zip and .iva.zip)
 iva serve      # to iViewer on a real device (GUI File URL http://<this machine>:8019)
 iva designer   # build and open it in CommandFusion GUI Designer
 ```
@@ -185,7 +185,9 @@ labels are transliterated: `Термостат` makes `knobs/termostat/`.
 `<Project folders={false}>` puts everything beside the .gui instead (a
 decompiled .gui keeps its own layout this way). `iva build --zip` also writes
 `dist/my-panel.gui.zip`: the same files in one archive, a zipped GUI iViewer
-loads from a URL.
+loads from a URL - and `dist/my-panel.iva.zip` for the iva panel, its images
+packed into a few sheets per page (`iva-atlas/`, which the .gui doesn't name):
+a slow phone loads a page's handful of sheets instead of hundreds of images.
 
 ### Several screens
 

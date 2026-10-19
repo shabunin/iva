@@ -260,18 +260,50 @@ export function writeBuilds(results: CompileResult[], outDir: string): string[] 
   return guis;
 }
 
+/**
+ * Who an archive is for: iViewer - every image a file of its own, no atlas
+ * (<name>.gui.zip); or the iva panel - the images in sheets (iva-atlas/), and
+ * only those not in a sheet as files of their own (<name>.iva.zip): a few
+ * hundred files to unzip and load instead of thousands.
+ */
+export type ZipFor = 'iviewer' | 'panel';
+
 /** Every size's files as one archive's: the first build's .gui first (iViewer falls back to the first it finds), the others in their size's folder. */
-export function buildFilesAll(results: CompileResult[]): [string, Buffer][] {
-  return results.flatMap((r, i) => buildFiles(r).map(([p, d]): [string, Buffer] => [i ? `${sizeFolder(r.size)}/${p}` : p, d]));
+export function buildFilesAll(results: CompileResult[], forWhom: ZipFor = 'iviewer'): [string, Buffer][] {
+  return results.flatMap((r, i) => buildFiles(r, forWhom).map(([p, d]): [string, Buffer] => [i ? `${sizeFolder(r.size)}/${p}` : p, d]));
 }
 
-/** The build's files as one archive's: the .gui, images/... (scripts in images/scripts/) - a zipped GUI, as iViewer loads one from a URL. */
-export function buildFiles(result: CompileResult): [string, Buffer][] {
+/**
+ * The build's files as one archive's: the .gui, images/... (scripts in
+ * images/scripts/) - a zipped GUI, as iViewer loads one from a URL; for the
+ * iva panel, its images in sheets instead (panelLeavesOut).
+ */
+export function buildFiles(result: CompileResult, forWhom: ZipFor = 'iviewer'): [string, Buffer][] {
   const at = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
+  const atlas = forWhom === 'panel' ? buildAtlas(result) : [];
+  const out = forWhom === 'panel' ? panelLeavesOut(result, atlas) : new Set<string>();
   return [
-    [`${slug(result.name)}.gui`, Buffer.from('\ufeff' + result.xml, 'utf8')],
-    ...result.assets.map((a): [string, Buffer] => [at(result.layout.images, a.name), a.data ?? fs.readFileSync(a.file!)]),
+    [`${slug(result.name)}.gui`, Buffer.from('﻿' + result.xml, 'utf8')],
+    ...result.assets.filter((a) => !out.has(a.name.toLowerCase())).map((a): [string, Buffer] => [at(result.layout.images, a.name), a.data ?? fs.readFileSync(a.file!)]),
     ...result.scripts.map((s): [string, Buffer] => [at(scriptsDir(result.layout), s.name), s.code !== undefined ? Buffer.from(s.code) : fs.readFileSync(s.file!)]),
-    ...buildAtlas(result),
+    ...atlas,
   ];
+}
+
+/**
+ * The images (asset names, lower case) the iva panel's archive leaves out:
+ * those in its sheets - but for any a web page of the build names (a web view
+ * loads it as a file) - and the @2x ones only iViewer's retina screens take.
+ */
+export function panelLeavesOut(result: CompileResult, atlas: [string, Buffer][]): Set<string> {
+  const map = atlas.find(([p]) => p.endsWith('/atlas.json'));
+  const packed: string[] = map ? Object.keys(JSON.parse(map[1].toString('utf8')).frames) : [];
+  const pages = result.assets
+    .filter((a) => /\.(html?|css|js|svg)$/i.test(a.name))
+    .map((a) => (a.data ?? (a.file && fs.existsSync(a.file) ? fs.readFileSync(a.file) : Buffer.alloc(0))).toString('utf8').toLowerCase())
+    .join('\n');
+  const out = new Set<string>();
+  for (const name of packed) if (!pages.includes(name.split('/').pop()!.toLowerCase())) out.add(name.toLowerCase());
+  for (const a of result.assets) if (/@2x\.(png|jpe?g|gif)$/i.test(a.name)) out.add(a.name.toLowerCase());
+  return out;
 }

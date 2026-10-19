@@ -334,13 +334,25 @@ function zipManifest(files: Map<string, Uint8Array<ArrayBuffer>>, id: string): M
     const leaf = n.split('/').pop()!.toLowerCase();
     if (IMAGE_RE.test(n) && !byLeaf.has(leaf)) byLeaf.set(leaf, n);
   }
+  // its images in sheets, beside its .gui (iva build's)
+  const inAtlas = (file: string) => lower.get((dir + ATLAS_DIR + file).toLowerCase());
+  const mapFile = inAtlas('atlas.json');
+  const atlas = mapFile
+    ? atlasOf(decodeXml(files.get(mapFile)!), (file) => {
+        const n = inAtlas(file);
+        return n ? blobUrl(n) : undefined;
+      })
+    : undefined;
+  const framed = new Set(Object.keys(atlas?.frames ?? {}).map((n) => n.toLowerCase()));
   const imageMap: Record<string, string> = {};
   for (const named of imageNames(guiXml)) {
     const n = named.replace(/\\/g, '/');
     const file = lower.get((imageRoot + n).toLowerCase()) ?? lower.get((dir + n).toLowerCase()) ?? byLeaf.get(n.split('/').pop()!.toLowerCase());
-    if (!file) continue;
-    imageMap[n] ??= blobUrl(file);
-    imageMap[n.split('/').pop()!] ??= blobUrl(file);
+    // only in a sheet (the panel's archive, iva build's .iva.zip): known by its name all the same
+    const url = file ? blobUrl(file) : framed.has(n.toLowerCase()) ? `${ATLAS_DIR}${n}` : undefined;
+    if (!url) continue;
+    imageMap[n] ??= url;
+    imageMap[n.split('/').pop()!] ??= url;
   }
   const scriptMap: Record<string, string> = {};
   const missingScripts: string[] = [];
@@ -354,15 +366,6 @@ function zipManifest(files: Map<string, Uint8Array<ArrayBuffer>>, id: string): M
     else missingScripts.push(name);
   }
   const title = titleOf(guiXml, entry.split('/').pop()!.replace(/\.gui$/i, ''));
-  // its images in sheets, beside its .gui (iva build's)
-  const inAtlas = (file: string) => lower.get((dir + ATLAS_DIR + file).toLowerCase());
-  const mapFile = inAtlas('atlas.json');
-  const atlas = mapFile
-    ? atlasOf(decodeXml(files.get(mapFile)!), (file) => {
-        const n = inAtlas(file);
-        return n ? blobUrl(n) : undefined;
-      })
-    : undefined;
   return {
     url: id, title, guiXml, imageMap, scriptMap, missingScripts, problems: missingScripts.map((n) => `${n}: not in the archive`), atlas,
     // a project file (CF.loadAsset, a web view's page): in the image folder, else beside the .gui

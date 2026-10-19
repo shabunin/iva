@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { buildAtlas, compile, IvaError, scriptsDir, slug, type CompileResult } from '../compiler/index.js';
+import { buildAtlas, compile, IvaError, panelLeavesOut, scriptsDir, slug, type CompileResult } from '../compiler/index.js';
 import { watchInputs, watchTree } from './watch.js';
 import { writeZip } from './zip.js';
 
@@ -53,6 +53,8 @@ interface Served {
    * rebuilds without waiting for it.
    */
   atlas?: () => Map<string, Buffer>;
+  /** the files (paths, lower case) the panel's copy leaves out: images in the sheets, iViewer's @2x */
+  panelLeavesOut?: () => Set<string>;
   version: string;
   modified: Date;
 }
@@ -280,7 +282,9 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
       files.set('joins.json', { name: 'joins.json', path: 'joins.json', data: Buffer.from(JSON.stringify(r.joins, null, 2) + '\n') });
       let atlas: Map<string, Buffer> | undefined;
       const lazyAtlas = () => (atlas ??= new Map(buildAtlas(r).map(([p, d]) => [p.toLowerCase(), d])));
-      next = { name: `${slug(r.name)}.gui`, gui: Buffer.from('﻿' + r.xml), files, atlas: lazyAtlas };
+      let leftOut: Set<string> | undefined;
+      const lazyLeftOut = () => (leftOut ??= new Set([...panelLeavesOut(r, buildAtlas(r))].map((n) => at(r.layout.images, n).toLowerCase())));
+      next = { name: `${slug(r.name)}.gui`, gui: Buffer.from('﻿' + r.xml), files, atlas: lazyAtlas, panelLeavesOut: lazyLeftOut };
       log(`built ${path.basename(target)} in ${Date.now() - t0} ms`);
     }
     state.error = null;
@@ -303,7 +307,10 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
     const key = `${s.version} ${host}`;
     if (zipped?.key === key) return zipped.data;
     const entries: [string, Buffer][] = [[s.name, s.gui]];
+    // the panel keeps it: its images in sheets, not one by one
+    const leftOut = s.panelLeavesOut?.() ?? new Set<string>();
     for (const f of s.files.values()) {
+      if (leftOut.has(f.path.toLowerCase())) continue;
       const data = f.data ?? (f.file && fs.existsSync(f.file) ? fs.readFileSync(f.file) : undefined);
       if (data) entries.push([f.path, data]);
     }
