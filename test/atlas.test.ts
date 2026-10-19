@@ -1,15 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import pngjs from 'pngjs';
-import { atlasGroups, encodePng, packAtlas } from '../src/compiler/atlas.ts';
-
-/** a w x h PNG of one colour, its top-left pixel another (to see edges and padding) */
-function png(w: number, h: number, rgba: [number, number, number, number], corner?: [number, number, number, number]): Buffer {
-  const data = Buffer.alloc(w * h * 4);
-  for (let i = 0; i < w * h; i++) data.set(rgba, i * 4);
-  if (corner) data.set(corner, 0);
-  return encodePng(data, w, h);
-}
+import { atlasGroups, groupRank } from '../src/runtime/cf/atlas.ts';
 
 const GUI = `<gui>
   <themes>
@@ -74,35 +65,9 @@ test("images go in sheets with the page that shows them - its themes' every stat
   assert.deepEqual([...tiled], ['tile-dots.png']);
 });
 
-test('packed: each image a frame of its sheet, pixel for pixel, its own edge around it; the map names it as the .gui does', () => {
-  const red: [number, number, number, number] = [255, 0, 0, 255];
-  const blue: [number, number, number, number] = [0, 0, 255, 255];
-  const images = [
-    { name: 'icons/home.png', data: png(30, 20, red, blue) },
-    { name: 'buttons/a.png', data: png(50, 40, blue) },
-    { name: 'buttons/a-down.png', data: png(50, 40, red) },
-    { name: 'icons/menu.png', data: png(16, 16, blue) },
-    // too big for a sheet, and tiled: files of their own
-    { name: 'icons/popup.png', data: png(1500, 10, red) },
-    { name: 'tile-dots.png', data: png(8, 8, blue) },
-  ];
-  const packed = packAtlas(GUI, images, [LOOKS])!;
-  assert.ok(packed);
-  const { map, sheets } = packed;
-  assert.deepEqual(Object.keys(map.frames).sort(), ['buttons/a-down.png', 'buttons/a.png', 'icons/home.png', 'icons/menu.png']);
-  // the shared sheet first, then the page's
-  assert.deepEqual(map.sheets.map((s) => s.group), ['shared', 'page:Home']);
-  const decoded = sheets.map((b) => pngjs.PNG.sync.read(b));
-  const at = (sheet: number, x: number, y: number) => [...decoded[sheet].data.subarray((y * decoded[sheet].width + x) * 4, (y * decoded[sheet].width + x) * 4 + 4)];
-  const [s, x, y, w, h] = map.frames['icons/home.png'];
-  assert.deepEqual([w, h], [30, 20]);
-  assert.deepEqual(at(s, x, y), blue, 'its top-left pixel');
-  assert.deepEqual(at(s, x + 1, y + 1), red);
-  // the edge repeated outside it: left of the corner, above it, and diagonally
-  assert.deepEqual(at(s, x - 1, y), blue);
-  assert.deepEqual(at(s, x, y - 2), blue);
-  assert.deepEqual(at(s, x - 2, y - 2), blue);
-  assert.deepEqual(at(s, x + w, y + h), red, 'past the bottom-right corner: that corner');
-  // the same images again: the same sheets, packed once
-  assert.equal(packAtlas(GUI, images, [LOOKS]), packed);
+test("the sheets in order: the shared ones, the pages' as the .gui has them, the subpages' and the rest", () => {
+  const { groups, pages } = atlasGroups(GUI, [LOOKS]);
+  assert.deepEqual(pages, ['Home', 'Other']);
+  const order = [...new Set(groups.values())].sort((a, b) => groupRank(a, pages) - groupRank(b, pages) || a.localeCompare(b));
+  assert.deepEqual(order, ['shared', 'page:Home', 'page:Other', 'sub:popup']);
 });

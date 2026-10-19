@@ -147,11 +147,7 @@ test('the whole build in one zip for the panel to keep, and 304 for the build it
     const files = readZip(Buffer.from(await res.arrayBuffer()));
     // the .gui and every file at the path it's served from (its case kept), the live script too
     assert.match(files.get('Hello-iva.gui')!.toString('utf8'), /<imagefolder>assets<\/imagefolder>/);
-    // its images in sheets (the panel keeps it): a slider's track a frame of one, not a file of its own
-    const atlas = JSON.parse(files.get('iva-atlas/atlas.json')!.toString('utf8'));
-    assert.ok(Object.keys(atlas.frames).some((n) => /^sliders\/[\w-]+-track\.png$/.test(n)));
-    assert.ok(files.has(`iva-atlas/${atlas.sheets[0].file}`));
-    assert.ok(![...files.keys()].some((n) => /^assets\/sliders\/[\w-]+-track\.png$/.test(n)));
+    assert.ok([...files.keys()].some((n) => /^assets\/sliders\/[\w-]+-track\.png$/.test(n)));
     assert.match(files.get('assets/scripts/iva-joins.js')!.toString('utf8'), /var Joins/);
     assert.match(files.get('iva-live.js')!.toString('utf8'), /__iva\/wait/);
     // the same build again: not modified

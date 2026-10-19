@@ -5,7 +5,7 @@ import { parseArgs } from 'node:util';
 import fs from 'node:fs';
 import path from 'node:path';
 import { startDev } from '../server/dev.js';
-import { buildFilesAll, compile, IvaError, slug, writeBuild, writeBuilds, type CompileResult, type ZipFor } from '../compiler/index.js';
+import { buildFilesAll, compile, IvaError, slug, writeBuild, writeBuilds, type CompileResult } from '../compiler/index.js';
 import { writeZip } from '../server/zip.js';
 import { decompile } from '../decompiler/index.js';
 import { create, templates, VERSION, writeDocs } from '../create.js';
@@ -45,9 +45,7 @@ Usage:
 Options (build):
   -o, --out <dir>      output folder (default: dist/ next to the entry)
       --zip            also <name>.gui.zip: the build in one file (a zipped GUI;
-                       every size in it - iViewer loads the one for its screen),
-                       and <name>.iva.zip: the same for the iva panel, its
-                       images packed in sheets (far fewer files to load)
+                       every size in it - iViewer loads the one for its screen)
 
 Options (build, dev, serve, designer):
       --size <WxH>     build it for that screen (1400x1400) instead of the
@@ -182,13 +180,10 @@ async function main(argv: string[]) {
         process.stdout.write(`${path.relative(process.cwd(), guis[i])} (${counts}) in ${times[i]} ms\n`);
       });
       if (values.zip) {
-        // the same files in one archive: iViewer loads it from a URL (GUI File URL .../name.gui.zip); the iva
-        // panel's, its images in sheets (name.iva.zip)
-        const zips: [string, ZipFor][] = [[`${guis[0]}.zip`, 'iviewer'], [guis[0].replace(/\.gui$/i, '') + '.iva.zip', 'panel']];
-        for (const [zip, forWhom] of zips) {
-          fs.writeFileSync(zip, writeZip(buildFilesAll(results, forWhom)));
-          process.stdout.write(`${path.relative(process.cwd(), zip)} (${Math.round(fs.statSync(zip).size / 1024)} KiB, ${forWhom === 'panel' ? 'the iva panel' : 'iViewer'})\n`);
-        }
+        // the same files in one archive: iViewer loads it from a URL (GUI File URL .../name.gui.zip)
+        const zip = `${guis[0]}.zip`;
+        fs.writeFileSync(zip, writeZip(buildFilesAll(results)));
+        process.stdout.write(`${path.relative(process.cwd(), zip)} (${Math.round(fs.statSync(zip).size / 1024)} KiB)\n`);
       }
     } catch (e) {
       if (e instanceof IvaError) {

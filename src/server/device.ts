@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { buildAtlas, compile, IvaError, panelLeavesOut, scriptsDir, slug, type CompileResult } from '../compiler/index.js';
+import { compile, IvaError, scriptsDir, slug, type CompileResult } from '../compiler/index.js';
 import { watchInputs, watchTree } from './watch.js';
 import { writeZip } from './zip.js';
 
@@ -33,7 +33,7 @@ export interface DeviceServerOptions {
 /** What GUI Designer's Upload Service answers with (v2.7.10.918). */
 const CF_SERVER = 'v2.7.10.918;debug=launchmonitor;complete=cachecomplete';
 const TYPES: Record<string, string> = {
-  '.gui': 'text/xml', '.xml': 'text/xml', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+  '.gui': 'text/xml', '.xml': 'text/xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
   // GUI Designer sends scripts as text/html; iViewer takes them so
   '.js': 'text/html', '.html': 'text/html', '.htm': 'text/html',
 };
@@ -47,14 +47,6 @@ interface Served {
   html?: boolean;
   /** other files by lower-cased path: `path` as served (images/x.png) */
   files: Map<string, { name: string; path: string; data?: Buffer; file?: string }>;
-  /**
-   * The build's images in sheets for the iva panel (iva-atlas/, beside the
-   * .gui): packed when first asked for - iViewer never asks, and a save
-   * rebuilds without waiting for it.
-   */
-  atlas?: () => Map<string, Buffer>;
-  /** the files (paths, lower case) the panel's copy leaves out: images in the sheets, iViewer's @2x */
-  panelLeavesOut?: () => Set<string>;
   version: string;
   modified: Date;
 }
@@ -280,11 +272,7 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
         files.set(where.toLowerCase(), { name: s.name, path: where, file: s.file, data: s.code !== undefined ? Buffer.from(s.code) : undefined });
       }
       files.set('joins.json', { name: 'joins.json', path: 'joins.json', data: Buffer.from(JSON.stringify(r.joins, null, 2) + '\n') });
-      let atlas: Map<string, Buffer> | undefined;
-      const lazyAtlas = () => (atlas ??= new Map(buildAtlas(r).map(([p, d]) => [p.toLowerCase(), d])));
-      let leftOut: Set<string> | undefined;
-      const lazyLeftOut = () => (leftOut ??= new Set([...panelLeavesOut(r, buildAtlas(r))].map((n) => at(r.layout.images, n).toLowerCase())));
-      next = { name: `${slug(r.name)}.gui`, gui: Buffer.from('﻿' + r.xml), files, atlas: lazyAtlas, panelLeavesOut: lazyLeftOut };
+      next = { name: `${slug(r.name)}.gui`, gui: Buffer.from('﻿' + r.xml), files };
       log(`built ${path.basename(target)} in ${Date.now() - t0} ms`);
     }
     state.error = null;
@@ -307,14 +295,10 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
     const key = `${s.version} ${host}`;
     if (zipped?.key === key) return zipped.data;
     const entries: [string, Buffer][] = [[s.name, s.gui]];
-    // the panel keeps it: its images in sheets, not one by one
-    const leftOut = s.panelLeavesOut?.() ?? new Set<string>();
     for (const f of s.files.values()) {
-      if (leftOut.has(f.path.toLowerCase())) continue;
       const data = f.data ?? (f.file && fs.existsSync(f.file) ? fs.readFileSync(f.file) : undefined);
       if (data) entries.push([f.path, data]);
     }
-    for (const [p, d] of s.atlas?.() ?? []) entries.push([p, d]);
     if (opts.live) {
       const xml = s.gui.toString('utf8');
       entries.push([LIVE_SCRIPT, Buffer.from(liveScript(`http://${host}`, s.version, panelServers(xml), systemNames(xml)))]);
@@ -406,8 +390,6 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
       const data = f.data ?? (f.file && fs.existsSync(f.file) ? fs.readFileSync(f.file) : undefined);
       if (data) return send(200, data, TYPES[path.extname(f.name).toLowerCase()] ?? 'application/unknown');
     }
-    const sheet = s.atlas && name.toLowerCase().startsWith('iva-atlas/') ? s.atlas().get(name.toLowerCase()) : undefined;
-    if (sheet) return send(200, sheet, TYPES[path.extname(name).toLowerCase()] ?? 'application/unknown');
     // not a file: logged in full - iViewer's callbacks (cache complete, debugger) aren't documented
     log(`unknown request: ${req.method} ${req.url} ${JSON.stringify(req.headers)}`);
     send(404, '<H2>404 Error! File Does Not Exist...</H2>', 'text/html');
