@@ -53,7 +53,7 @@ interface Served {
    * rebuilds without waiting for it.
    */
   atlas?: () => Map<string, Buffer>;
-  /** the files (paths, lower case) the panel's copy leaves out: iViewer's @2x */
+  /** the files (paths, lower case) the panel's copy leaves out: images in the sheets, iViewer's @2x */
   panelLeavesOut?: () => Set<string>;
   version: string;
   modified: Date;
@@ -283,7 +283,7 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
       let atlas: Map<string, Buffer> | undefined;
       const lazyAtlas = () => (atlas ??= new Map(buildAtlas(r).map(([p, d]) => [p.toLowerCase(), d])));
       let leftOut: Set<string> | undefined;
-      const lazyLeftOut = () => (leftOut ??= new Set([...panelLeavesOut(r)].map((n) => at(r.layout.images, n).toLowerCase())));
+      const lazyLeftOut = () => (leftOut ??= new Set([...panelLeavesOut(r, buildAtlas(r))].map((n) => at(r.layout.images, n).toLowerCase())));
       next = { name: `${slug(r.name)}.gui`, gui: Buffer.from('﻿' + r.xml), files, atlas: lazyAtlas, panelLeavesOut: lazyLeftOut };
       log(`built ${path.basename(target)} in ${Date.now() - t0} ms`);
     }

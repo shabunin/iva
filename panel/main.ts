@@ -20,8 +20,8 @@ import { createIvaHost } from '../src/runtime/host';
 import { closeHostSockets } from '../src/runtime/host/net/provider';
 import { installFonts } from '../src/preview/fonts';
 import { formatLocation, History, isGuiUrl, parseLocation, type GuiLocation } from '../src/runtime/location';
-import { loadManifest, newerVersion, ownFile, savedManifest, toSave, type Download, type Manifest } from './loader';
-import { forgetAllGuis, forgetGui, keptGuis, saveGui, savedGui, usedGui, type Kept, type SavedGui } from './store';
+import { loadManifest, newerVersion, ownFile, savedManifest, toSave, unpackedManifest, type Download, type Manifest } from './loader';
+import { forgetAllGuis, forgetAllUnpacked, forgetGui, forgetUnpacked, keptGui, keptGuis, saveGui, savedGui, saveUnpacked, unpackedGui, usedGui, type Kept, type SavedGui } from './store';
 import { androidDevice } from './device';
 
 // ── what the panel keeps: between starts (localStorage), across a GUI change (sessionStorage) ──
@@ -402,6 +402,51 @@ async function savedCopy(url: string): Promise<SavedGui | undefined> {
   return undefined;
 }
 
+// ── the files unpacked: a start doesn't unzip what one before did ──────
+
+/** a start's stages, timed from the page's start (in the log; a slow phone's start told apart) */
+const mark = (what: string) => console.info(`[panel] ${what}: ${Math.round(performance.now())} ms`);
+
+/** this screen's shape, for the files unpacked: another (a size shaped otherwise) unpacks again */
+const screenKey = () => (typeof screen === 'undefined' ? '' : `${Math.min(screen.width, screen.height)}x${Math.max(screen.width, screen.height)}`);
+
+/** the copy kept's version, as the files unpacked from it know it */
+const keptKey = (k: { savedAt: number; bytes: number }) => `kept ${k.savedAt} ${k.bytes} ${screenKey()}`;
+
+/**
+ * The version of the archive a GUI runs from, as its files unpacked know it:
+ * the app's own file (the built-in demo) by its size and this build of the
+ * panel; a copy kept by when it was kept. None: nothing unpacked to go by.
+ */
+async function unpackKey(url: string): Promise<string | undefined> {
+  if (ownFile(url)) {
+    try {
+      const res = await fetch(url, { method: 'HEAD', cache: 'no-store' });
+      const len = res.ok ? res.headers.get('content-length') : null;
+      return len ? `own ${len} ${new URL(import.meta.url).pathname} ${screenKey()}` : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  for (const u of spellings(url)) {
+    const k = await keptGui(u).catch(() => undefined);
+    if (k) return keptKey(k);
+  }
+  return undefined;
+}
+
+/** A GUI's files, unpacked from the archive it ran from, kept for the next start (behind the GUI running). */
+async function cacheUnpacked(url: string, key: string | undefined, m: Manifest) {
+  if (!key || !m.unpack) return;
+  try {
+    const u = await m.unpack();
+    await saveUnpacked({ ...u, url, key, savedAt: Date.now() });
+    mark(`unpacked for the next start: ${Object.keys(u.files).length} files`);
+  } catch (e) {
+    noteError(`unpacking ${url} for the next start: ${message(e)}`);
+  }
+}
+
 /**
  * The GUI: its copy on the device at once, if it has one - its server asked
  * for a newer one behind it - else from its server (then kept on the device).
@@ -418,7 +463,9 @@ async function start() {
     // seen in the settings' error list: a page that left these behind is a bug to look at
     noteError(`left on the host by the page before, closed now: ${what}`);
   }
+  mark('starting');
   await installFonts();
+  mark('fonts in');
   applyBar();
   const stored = sessionStorage.getItem(ONCE) ?? localStorage.getItem(GUI);
   // the first start: the built-in demo, as iViewer starts with one (the settings: a gesture away, as the notice says)
@@ -429,6 +476,24 @@ async function start() {
   sessionStorage.removeItem(FRESH);
   // the app's own files: from the app, always (a copy kept by an older version of it: let go)
   if (ownFile(url)) void forgetGui(url).catch(() => {});
+  // its files unpacked by a start before, from this version: nothing to read or unzip
+  const key = fresh ? undefined : await unpackKey(url);
+  const unpacked = key ? await unpackedGui(url, key).catch((e) => void noteError(`the files unpacked: ${message(e)}`)) : undefined;
+  if (unpacked && !unpacked.missingScripts.length) {
+    mark(`unpacked files found: ${Object.keys(unpacked.files).length}`);
+    await show(unpackedManifest(unpacked));
+    mark('shown');
+    // the copy kept, for its server's newer version (behind the GUI running)
+    if (!ownFile(url)) {
+      void savedCopy(url).then((s) => {
+        if (!s) return;
+        kept = s;
+        void usedGui(url).catch(() => {});
+        void checkServer();
+      }).catch(() => {});
+    }
+    return;
+  }
   const saved = ownFile(url) ? undefined : await savedCopy(url).catch((e) => void noteError(`the copy kept: ${message(e)}`));
   if (saved && !fresh) {
     try {
@@ -444,8 +509,11 @@ async function start() {
           noteError(`${message(e)} - the copy kept runs, ${m.missingScripts.length} script(s) missing`);
         }
       }
+      mark('the copy kept read');
       await show(m);
+      mark('shown');
       kept = saved;
+      void cacheUnpacked(url, keptKey(saved), m);
       void usedGui(url).catch(() => {});
       void checkServer();
       return;
@@ -470,8 +538,11 @@ async function start() {
         noteError(`the copy kept of ${url}: ${message(e)}`);
       }
     }
+    mark('read');
     await show(manifest);
-    void keep(got, manifest);
+    mark('shown');
+    if (ownFile(url)) void unpackKey(url).then((k) => cacheUnpacked(url, k, manifest));
+    else void keep(got, manifest);
   } catch (e) {
     const why = message(e);
     noteError(why);
@@ -522,6 +593,7 @@ async function keep(got: Download, m: Manifest) {
     const s = await toSave(got, m);
     await saveGui(s);
     kept = s;
+    void cacheUnpacked(got.url, keptKey(s), m);
   } catch (e) {
     noteError(`keeping ${got.url} on the device: ${message(e)}`);
   }
@@ -614,7 +686,7 @@ async function showCopies() {
 }
 
 /** a copy forgotten under every spelling of its URL */
-const forgetCopy = (url: string) => Promise.all(spellings(url).map((u) => forgetGui(u)));
+const forgetCopy = (url: string) => Promise.all(spellings(url).flatMap((u) => [forgetGui(u), forgetUnpacked(u)]));
 
 function copyRow(url: string, k: Kept | undefined): HTMLElement {
   const row = document.createElement('div');
@@ -668,7 +740,7 @@ async function saveNow(url: string) {
   }
   void showCopies();
 }
-$('clear-all').addEventListener('click', () => void forgetAllGuis().catch((e) => noteError(message(e))).then(showCopies));
+$('clear-all').addEventListener('click', () => void Promise.all([forgetAllGuis(), forgetAllUnpacked()]).catch((e) => noteError(message(e))).then(showCopies));
 
 form.addEventListener('submit', (e) => {
   e.preventDefault();

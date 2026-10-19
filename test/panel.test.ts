@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeZip } from '../src/server/zip.ts';
-import { loadManifest, savedManifest, toSave, unzip, useFetch } from '../panel/loader.ts';
+import { loadManifest, savedManifest, toSave, unpackedManifest, unzip, useFetch } from '../panel/loader.ts';
 
 const GUI = '<gui><properties><project>Kept</project><imagefolder>images</imagefolder></properties><scripts><script name="scripts/main.js" /></scripts></gui>';
 const MAIN = 'var answer = 42;\n'.repeat(40);
@@ -82,6 +82,41 @@ test("a GUI's images in sheets (iva build's iva-atlas/ beside the .gui): each sh
     g.screen = { width: 1440, height: 1440 };
     const square = await savedManifest({ url: 'http://10.0.0.2/app.gui.zip', zip: both, savedAt: 0, bytes: 0 });
     assert.deepEqual(square.atlas?.frames['icons/a.png'], [0, 2, 2, 30, 30]);
+  } finally {
+    delete g.screen;
+  }
+});
+
+test("a zipped GUI's size run, unpacked for the next start - not another size's files, not the @2x ones; the next start from those files, nothing to unzip", async () => {
+  const sized = (w: number, h: number) => GUI.replace('<imagefolder>', `<size><portrait width="${h}" height="${w}" /><landscape width="${w}" height="${h}" /></size><imagefolder>`)
+    .replace('</scripts>', '</scripts><pages><page name="P"><img>icons/a.png</img><img>icons/b.png</img></page></pages><web url="page.html" />');
+  const map = JSON.stringify({ version: 1, sheets: [{ file: 'sheet-0.png', w: 8, h: 8, group: 'page:P' }], frames: { 'icons/b.png': [0, 2, 2, 4, 4] } });
+  const zip = new Uint8Array(writeZip([
+    ['app.gui', Buffer.from(sized(1280, 800))], ['images/scripts/main.js', Buffer.from(MAIN)], ['images/icons/a.png', Buffer.from('png a')],
+    ['images/icons/a@2x.png', Buffer.from('retina')], ['images/page.html', Buffer.from('<p>hi</p>'.repeat(20))],
+    ['iva-atlas/atlas.json', Buffer.from(map)], ['iva-atlas/sheet-0.png', Buffer.from('sheet')],
+    ['1400w1400h/app.gui', Buffer.from(sized(467, 467))], ['1400w1400h/images/scripts/main.js', Buffer.from(MAIN)], ['1400w1400h/images/icons/a.png', Buffer.from('square a')],
+  ]));
+  const g = globalThis as { screen?: { width: number; height: number } };
+  g.screen = { width: 1920, height: 1080 };
+  try {
+    const m = await savedManifest({ url: 'http://10.0.0.2/app.gui.zip', zip, savedAt: 0, bytes: zip.length });
+    assert.ok(m.unpack);
+    const u = await m.unpack!();
+    assert.deepEqual(Object.keys(u.files).sort(), ['images/icons/a.png', 'images/page.html', 'images/scripts/main.js', 'iva-atlas/atlas.json', 'iva-atlas/sheet-0.png']);
+    assert.equal(await u.files['images/icons/a.png'].text(), 'png a');
+    assert.deepEqual(u.images, { 'icons/a.png': 'images/icons/a.png', 'a.png': 'images/icons/a.png', 'icons/b.png': '#icons/b.png', 'b.png': '#icons/b.png' });
+    // the next start: from those files
+    const next = unpackedManifest({ ...u, url: 'http://10.0.0.2/app.gui.zip', key: 'k', savedAt: 0 });
+    assert.equal(next.title, 'Kept');
+    assert.equal(next.scriptMap['scripts/main.js'], MAIN);
+    assert.match(next.imageMap['icons/a.png'], /^blob:/);
+    assert.equal(next.imageMap['a.png'], next.imageMap['icons/a.png']);
+    assert.equal(next.imageMap['icons/b.png'], 'iva-atlas/icons/b.png', 'only in a sheet');
+    assert.deepEqual(next.atlas?.frames['icons/b.png'], [0, 2, 2, 4, 4]);
+    assert.match(next.atlas?.sheets[0] ?? '', /^blob:/);
+    assert.match(next.fileUrl('page.html') ?? '', /^blob:/);
+    assert.equal(await (await fetch(next.fileUrl('page.html')!)).text(), '<p>hi</p>'.repeat(20));
   } finally {
     delete g.screen;
   }

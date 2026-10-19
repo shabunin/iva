@@ -83,7 +83,12 @@ function zipNames(zip: Buffer): string[] {
   return names;
 }
 
-/** An archive of these files (path in it -> bytes): deflated, unless that's no smaller. */
+/**
+ * An archive of these files (path in it -> bytes): deflated, unless that
+ * saves under 5% - a PNG, a JPEG, an MP3 (compressed already) is stored, so
+ * a reader takes it as it lies in the archive instead of inflating it (the
+ * iva panel on a slow phone: hundreds of images).
+ */
 export function writeZip(files: Iterable<[string, Buffer]>): Buffer {
   const parts: Buffer[] = [];
   const central: Buffer[] = [];
@@ -93,7 +98,7 @@ export function writeZip(files: Iterable<[string, Buffer]>): Buffer {
   const [time, date] = [0, (0 << 9) | (1 << 5) | 1];
   for (const [name, data] of files) {
     const packed = deflateRawSync(data);
-    const store = packed.length >= data.length;
+    const store = packed.length >= data.length * 0.95;
     const body = store ? data : packed;
     const nameBytes = Buffer.from(name, 'utf8');
     const head = Buffer.alloc(30);

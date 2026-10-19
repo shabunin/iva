@@ -26,17 +26,43 @@ export interface Kept {
   bytes: number;
 }
 
+/**
+ * A GUI's files unpacked from its archive - the size this screen runs, as
+ * Blobs - so the next start doesn't unzip it again: none of the archive in
+ * the page's memory, each file read when something asks for it.
+ */
+export interface Unpacked {
+  url: string;
+  /** what it was unpacked from (the archive's version) and for which screen: another, unpacked again */
+  key: string;
+  title: string;
+  guiXml: string;
+  scriptMap: Record<string, string>;
+  missingScripts: string[];
+  /** where the .gui and its image folder are in the archive */
+  dir: string;
+  imageRoot: string;
+  /** the images the .gui names: the file each is (a path in files) - '' for one only in a sheet */
+  images: Record<string, string>;
+  /** its images in sheets (iva-atlas/): the sheets' paths in files, each image's frame */
+  atlas?: { files: string[]; frames: Record<string, [number, number, number, number, number]> };
+  /** the size's files by their path in the archive */
+  files: Record<string, Blob>;
+  savedAt: number;
+}
+
 const DB = 'iva-panel';
 const GUIS = 'guis';
 const KEPT = 'kept';
+const UNPACKED = 'unpacked';
 const KEEP = 4;
 
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB, 1);
+    const req = indexedDB.open(DB, 2);
     req.onupgradeneeded = () => {
-      req.result.createObjectStore(GUIS, { keyPath: 'url' });
-      req.result.createObjectStore(KEPT, { keyPath: 'url' });
+      const have = req.result.objectStoreNames;
+      for (const name of [GUIS, KEPT, UNPACKED]) if (!have.contains(name)) req.result.createObjectStore(name, { keyPath: 'url' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -88,3 +114,32 @@ export const keptGuis = async () => (await run<Kept[]>('readonly', (_, kept) => 
 export const forgetGui = (url: string) => run('readwrite', (guis, kept) => void (guis.delete(url), kept.delete(url)));
 
 export const forgetAllGuis = () => run('readwrite', (guis, kept) => void (guis.clear(), kept.clear()));
+
+/** one transaction over the unpacked files */
+async function unpackedStore<T>(mode: IDBTransactionMode, work: (store: IDBObjectStore) => IDBRequest<T> | void): Promise<T> {
+  const db = await open();
+  try {
+    return await new Promise<T>((resolve, reject) => {
+      const tx = db.transaction(UNPACKED, mode);
+      const req = work(tx.objectStore(UNPACKED));
+      tx.oncomplete = () => resolve(req ? req.result : (undefined as T));
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error ?? new Error('aborted'));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+/** a GUI's files unpacked, if they're the ones `key` names (that archive, this screen) */
+export async function unpackedGui(url: string, key: string): Promise<Unpacked | undefined> {
+  const u = await unpackedStore<Unpacked | undefined>('readonly', (s) => s.get(url));
+  return u?.key === key ? u : undefined;
+}
+
+/** keep a GUI's files unpacked (the ones before for its URL go) */
+export const saveUnpacked = (u: Unpacked) => unpackedStore('readwrite', (s) => void s.put(u));
+
+export const forgetUnpacked = (url: string) => unpackedStore('readwrite', (s) => void s.delete(url));
+
+export const forgetAllUnpacked = () => unpackedStore('readwrite', (s) => void s.clear());
