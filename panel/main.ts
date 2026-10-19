@@ -23,6 +23,7 @@ import { formatLocation, History, isGuiUrl, parseLocation, type GuiLocation } fr
 import { loadManifest, newerVersion, ownFile, savedManifest, toSave, unpackedManifest, type Download, type Manifest } from './loader';
 import { forgetAllGuis, forgetAllUnpacked, forgetGui, forgetUnpacked, keptGui, keptGuis, saveGui, savedGui, saveUnpacked, unpackedGui, usedGui, type Kept, type SavedGui } from './store';
 import { androidDevice } from './device';
+import { packSheets } from './pack';
 
 // ── what the panel keeps: between starts (localStorage), across a GUI change (sessionStorage) ──
 /** the GUI shown last: what the next start runs (it follows GUI links) */
@@ -447,8 +448,41 @@ async function cacheUnpacked(url: string, key: string | undefined, m: Manifest) 
     const u = await m.unpack();
     await saveUnpacked({ ...u, url, key, savedAt: Date.now() });
     mark(`unpacked for the next start: ${Object.keys(u.files).length} files`);
+    if (!u.atlas) void packLater(url, key);
   } catch (e) {
     noteError(`unpacking ${url} for the next start: ${message(e)}`);
+  }
+}
+
+/** the GUI whose sheets are being packed (one at a time) */
+let packing: string | null = null;
+
+/**
+ * A GUI that came without sheets (GUI Designer's, iViewer's archive): its
+ * images packed into sheets on the device, behind it running - a while after
+ * it's up, a moment's pause between two images - and kept with its files: the
+ * next start loads a page's sheets, not its images one by one.
+ */
+async function packLater(url: string, key: string) {
+  if (packing) return;
+  packing = url;
+  try {
+    await new Promise((r) => setTimeout(r, 5000));
+    const u = await unpackedGui(url, key);
+    if (!u || u.atlas || shown?.gui !== url) return;
+    const t0 = performance.now();
+    mark('packing sheets');
+    const packed = await packSheets(u, () => shown?.gui === url);
+    if (!packed) return;
+    // the files as they are now (unpacked again meanwhile: those)
+    const now = await unpackedGui(url, key);
+    if (!now || now.atlas) return;
+    await saveUnpacked({ ...now, files: { ...now.files, ...packed.files }, atlas: packed.atlas });
+    mark(`sheets packed for the next start: ${packed.atlas.files.length}, ${Object.keys(packed.atlas.frames).length} images, in ${Math.round(performance.now() - t0)} ms`);
+  } catch (e) {
+    noteError(`packing sheets for ${url}: ${message(e)}`);
+  } finally {
+    packing = null;
   }
 }
 
@@ -488,6 +522,7 @@ async function start() {
     mark(`unpacked files found: ${Object.keys(unpacked.files).length}`);
     await show(unpackedManifest(unpacked));
     mark('shown');
+    if (!unpacked.atlas && key) void packLater(url, key);
     // the copy kept, for its server's newer version (behind the GUI running)
     if (!ownFile(url)) {
       void savedCopy(url).then((s) => {
