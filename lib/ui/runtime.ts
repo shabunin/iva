@@ -219,16 +219,31 @@ var IvaUI = (function () {
       CF.setJoin(g.value, i);
       for (var k = 0; k < g.joins.length; k++) CF.setJoin(g.joins[k], k == i ? 1 : 0);
     },
-    /** a side menu: each page's item lit while it's shown (a section's other screens, 'Page / Tab': its item) */
-    menu: function (pages) {
+    /**
+     * a side menu: each page's item lit while it's shown (a section's other screens, 'Page / Tab': its item);
+     * opened, its list scrolled to put the lit item in the middle (as far as the list's ends let it)
+     */
+    menu: function (pages, o) {
+      var lit = -1;
       function show(page) {
         var on = pages[page];
         for (var p in pages) if (on === undefined && String(page).indexOf(p + ' / ') === 0) on = pages[p];
-        for (var q in pages) CF.setJoin(pages[q], pages[q] === on ? 1 : 0);
+        var k = 0;
+        lit = -1;
+        for (var q in pages) {
+          if (pages[q] === on) lit = k;
+          CF.setJoin(pages[q], pages[q] === on ? 1 : 0);
+          k++;
+        }
       }
       // iViewer passes (from, to, orientation); some runtimes just (to)
       CF.watch(CF.PageFlipEvent, function (a, b) { show(typeof b === 'string' ? b : a); });
       if (CF.currentPage) show(CF.currentPage);
+      if (o) {
+        CF.watch(CF.JoinChangeEvent, o.open, function (j, v) {
+          if (Number(v) && lit >= 0) CF.listScroll(o.list, Math.max(0, lit * o.rowH + o.rowH / 2 - o.h / 2), CF.PixelPosition, false);
+        });
+      }
     },
     /**
      * a section's tabs (ui.Screens, one page): the shown screen's tab lit and

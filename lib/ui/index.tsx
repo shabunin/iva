@@ -1805,6 +1805,9 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     const close = `IvaUI.off(${join})`;
     const itemJoin = (page: string): JoinRef => d(`ui_menu_${page.replace(/[^\w]/g, '_')}`);
     const top = title ? 100 : 16;
+    // the items' list: scrolled to the lit one as the menu opens
+    const list: JoinRef = l('ui_menu_list');
+    const listH = H - top - 8;
     /** a swipe to the right opens it (from the edge), one to the left closes it */
     const swiped = (open: boolean) => swipe && (
       <Gesture type="swipe" direction={open ? 'right' : 'left'} onBegin={open ? `CF.setJoin(${join}, 1)` : close} />
@@ -1827,7 +1830,7 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
           {subtitle && <Text x={26} y={56} w={w - 52} h={24} text={subtitle} color={t.muted} font={font} fontSize={16} />}
           {title && <Box x={20} y={88} w={w - 40} h={1} bg={t.raised} />}
           {/* the items scroll when there are more than fit (a tap acts on release: a drag scrolls) */}
-          <ScrollBox y={top} w={w} h={H - top - 8} contentH={items.length * 60}>
+          <ScrollBox join={list} y={top} w={w} h={listH} contentH={items.length * 60}>
             {items.map((it, i) => (
               <Button x={8} y={i * 60} w={w - 16} h={52} page={it.page} onRelease={[jsAction(close)]} join={itemJoin(it.page)} feedback="none"
                       icon={fa(it.icon, { size: 24, color: t.accent })} iconAlign="left" text={it.text}
@@ -1837,7 +1840,8 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
           {swiped(false)}
         </Subpage>
         {runtime}
-        <OnStart js={`IvaUI.menu({ ${items.map((it) => `${JSON.stringify(it.page)}: ${jsJoin('d', itemJoin(it.page))}`).join(', ')} });`} />
+        <OnStart js={`IvaUI.menu({ ${items.map((it) => `${JSON.stringify(it.page)}: ${jsJoin('d', itemJoin(it.page))}`).join(', ')} }, ` +
+          `{ open: ${join}, list: ${jsJoin('l', list)}, rowH: 60, h: ${listH} });`} />
       </Group>
     );
   }

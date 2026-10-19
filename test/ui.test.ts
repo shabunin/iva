@@ -242,7 +242,7 @@ export default (
   const start = r.scripts.find((x) => x.name === 'iva-start.js')!.code!;
   assert.doesNotMatch(start, /IvaUI\.fill\(/);
   // the menu's items in a ScrollBox: lit by their own joins
-  assert.match(start, /IvaUI\.menu\(\{ "P": Joins\.d\["ui_menu_P"\] \}\);/);
+  assert.match(start, /IvaUI\.menu\(\{ "P": Joins\.d\["ui_menu_P"\] \}, \{ open: Joins\.d\["menu"\], list: Joins\.l\["ui_menu_list"\], rowH: 60, h: \d+ \}\);/);
   // the page that goes further down than the panel: a list below the header, its content as on the page, the sheet on the page
   assert.match(r.xml, /<list j="0" x="0" y="72" w="1280" h="728" headerSub="(ui_scroll_\w+)"/);
   const area = /<list j="0" x="0" y="72" w="1280" h="728" headerSub="(ui_scroll_\w+)"/.exec(r.xml)![1];
