@@ -8,8 +8,10 @@ export const sections = [
   { page: 'Control', icon: 'lightbulb', text: 'Control' },
 ];
 
-/** How the pages come: a section pushes in from the right, a tab fades in. */
+// How the pages come: a section pushes in from the right, a tab fades in.
+/** @type {import('iva').Transition} */
 export const enter = { type: 'push', from: 'right', time: 0.3, ease: 'easeInOut' };
+/** @type {import('iva').Transition} */
 export const tab = { type: 'fade', time: 0.15 };
 
 /** What every page has: the header, and the side menu it opens. */

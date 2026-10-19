@@ -20,9 +20,12 @@ export const sections = [
   { page: 'Network', icon: 'network-wired', text: 'Network', sub: 'CF.request, systems, Bonjour' },
 ];
 
-/** How the pages come: a section pushes in from the right, the overview back from the left, a tab fades in. */
+// How the pages come: a section pushes in from the right, the overview back from the left, a tab fades in.
+/** @type {import('iva').Transition} */
 export const enter = { type: 'push', from: 'right', time: 0.3, ease: 'easeInOut' };
+/** @type {import('iva').Transition} */
 export const home = { type: 'push', from: 'left', time: 0.3, ease: 'easeInOut' };
+/** @type {import('iva').Transition} */
 export const tab = { type: 'fade', time: 0.15 };
 
 /** What every page has: the header, and the side menu it opens. */

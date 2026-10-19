@@ -496,11 +496,11 @@ export default (
 
 test('<Project licenses>: the devices licensed to run it, in <properties> as GUI Designer writes them', async () => {
   const r = await build(`export default (
-  <Project name="T" width={1024} height={768} licenses={{ 'Kitchen iPad': '8437f51dccd3f92ea6898a980aca0259', 'Phone': 'B61C91A1867233DEC98FE9605E2AA91B' }}>
+  <Project name="T" width={1024} height={768} licenses={{ 'Kitchen iPad': '0123456789abcdef0123456789abcdef', 'Phone': 'FEDCBA9876543210FEDCBA9876543210' }}>
     <Page name="Main" />
   </Project>
 );`);
-  assert.match(r.xml, /<debug [^>]*\/>\s*<devices>\s*<device name="Kitchen iPad">8437F51DCCD3F92EA6898A980ACA0259<\/device>\s*<device name="Phone">B61C91A1867233DEC98FE9605E2AA91B<\/device>\s*<\/devices>\s*<\/properties>/);
+  assert.match(r.xml, /<debug [^>]*\/>\s*<devices>\s*<device name="Kitchen iPad">0123456789ABCDEF0123456789ABCDEF<\/device>\s*<device name="Phone">FEDCBA9876543210FEDCBA9876543210<\/device>\s*<\/devices>\s*<\/properties>/);
   await fails(`export default (<Project name="T" width={1024} height={768} licenses={{ 'Phone': '12345' }}><Page name="P" /></Project>);`, /licenses: "Phone": "12345" isn't a device code/);
 });
 

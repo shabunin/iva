@@ -715,7 +715,7 @@ for (const type of ['pointerup', 'pointercancel'] as const) {
     rearm();
   }, true);
 }
-// a keyboard (the Titan's, a desktop's): Ctrl+S / F1 the settings, Ctrl+R the GUI again from its server, Ctrl+L the address bar, Escape closes
+// a keyboard (a phone's own, a desktop's): Ctrl+S / F1 the settings, Ctrl+R the GUI again from its server, Ctrl+L the address bar, Escape closes
 addEventListener('keydown', (e) => {
   const ctrl = e.ctrlKey || e.metaKey;
   const key = e.key.toLowerCase();

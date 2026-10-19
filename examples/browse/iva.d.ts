@@ -426,7 +426,7 @@ declare module 'iva' {
       /**
        * the devices licensed to run it: iViewer's registration data, a name and
        * the code iViewer shows in its unlicensed-mode message for that device:
-       * licenses={{ 'Living room iPad': '8437F51DCCD3F92EA6898A980ACA0259' }}
+       * licenses={{ 'Living room iPad': '0123456789ABCDEF0123456789ABCDEF' }}
        */
       licenses?: Record<string, string>;
       /**

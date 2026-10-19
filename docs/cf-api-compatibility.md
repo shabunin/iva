@@ -143,12 +143,12 @@ Anything only a device shows: exactly when iViewer delivers JoinChangeEvent
 iViewer is known to do it), the CCITT CRC variant, `listInfo` units on a
 scaled GUI, when iViewer's `interceptHardwareKey` callback runs, and the
 sound and sensor calls. The panel app's device side is tested against a fake device
-(`test/cf-device.test.ts`) and was run on the Titan 2 (Android 16) on
+(`test/cf-device.test.ts`) and was run on an Android 16 phone (Unihertz Titan 2) on
 18 October 2026: CF.device's values, the window brightness, the status bar
 shown (the GUI fitting under it) and hidden, the battery's and the system
 brightness's DevicePropertyChangedEvent, intercepted and observed volume keys,
 a long-press-only watch, Back kept or not, the auto-lock letting go after a
 minute. Not seen there: a media volume change from outside the app (the
 phone's volume keys move the ringer, and the shell's volume commands did
-nothing), and a navigation bar (the Titan 2 has none: asking for one is
+nothing), and a navigation bar (that phone has none: asking for one is
 answered NAVIGATION_BAR_HIDDEN).

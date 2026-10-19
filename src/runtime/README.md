@@ -1,6 +1,6 @@
 # src/runtime
 
-The CommandFusion runtime iva's preview runs: the .gui parser, Pixi
+The CommandFusion runtime iva's preview and the panel app run: the .gui parser, Pixi
 rendering, the `CF.*` JavaScript API, systems (TCP / UDP / HTTP, feedback,
 macros), and the sockets underneath. iva's own code; nothing outside iva is
 needed.

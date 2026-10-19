@@ -61,6 +61,7 @@ const tapsCard = (c, compact) => {
   const logY = area.y + area.h + (compact ? 6 : 16);
   const logH = compact ? 78 : 120;
   const strip = { x: m, y: logY + logH + (compact ? 4 : 16), w: c.w - 2 * m, h: compact ? 40 : 64 };
+  /** @param {string} page @param {'left' | 'right'} from @returns {import('iva').GestureAction} */
   const flip = (page, from) => ({ page, transition: { type: 'push', from, time: 0.35, ease: 'easeInOut' } });
   return (
     <ui.Card title={compact ? undefined : 'Tap, press, swipe'} {...c}>
@@ -74,7 +75,7 @@ const tapsCard = (c, compact) => {
           <Gesture type="tap" taps={2} onBegin={say(`'double tap'`)} />
           <Gesture type="tap" touches={2} onBegin={say(`'two-finger tap'`)} />
           <Gesture type="press" onBegin={say(`'press: a finger down'`)} />
-          {['left', 'right', 'up', 'down'].map((dir) => (
+          {/** @type {const} */ (['left', 'right', 'up', 'down']).map((dir) => (
             <Gesture type="swipe" direction={dir} onBegin={say(`'swipe ${dir}, ' + Math.round(Math.abs(gesture.${dir === 'left' || dir === 'right' ? 'deltax' : 'deltay'})) + ' pt'`)} />
           ))}
         </>

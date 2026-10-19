@@ -300,7 +300,7 @@ export class Builder {
     // the devices licensed to run it (<properties><devices>, as GUI Designer writes them)
     if (p.licenses !== undefined) {
       if (!p.licenses || typeof p.licenses !== 'object' || Array.isArray(p.licenses)) {
-        throw this.err(project, "licenses: { 'a name': 'the device code' } (licenses={{ 'Kitchen iPad': '8437F51DCCD3F92EA6898A980ACA0259' }})");
+        throw this.err(project, "licenses: { 'a name': 'the device code' } (licenses={{ 'Kitchen iPad': '0123456789ABCDEF0123456789ABCDEF' }})");
       }
       let devices = properties.find((x) => x.tag === 'devices');
       if (!devices) properties.push((devices = el('devices', {}, [])));

@@ -18,8 +18,7 @@ import Network from './pages/Network.jsx';
 export default (
   // built at 1280x800, and for a phone with a 1400x1400 screen: laid out at 467x467 and scaled up 3x by
   // iViewer (as big as on a tablet); the pages lay themselves out from the size (ui.grid) and scroll (ScrollArea)
-  <Project name="iva-ui gallery" width={1280} height={800} sizes={['1400x1400@3x']} themes={['dark', 'light']}
-           licenses={{ 'phone 1400x1400': '8437F51DCCD3F92EA6898A980ACA0259' }}>
+  <Project name="iva-ui gallery" width={1280} height={800} sizes={['1400x1400@3x']} themes={['dark', 'light']}>
     {Overview}
     {Buttons}
     {Controls}

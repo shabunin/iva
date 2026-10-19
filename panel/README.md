@@ -5,7 +5,7 @@ An app for the panel itself: a GUI (`.gui`) runs on iva's own runtime
 in iViewer - and it browses GUIs the way a browser browses pages. Built with
 Tauri 2 for Android (and the desktop); the systems' sockets - TCP clients and
 servers, UDP, TLS, DNS, the HTTP server - are real, from the app's Rust side
-(`src-tauri/src/plugins`: agapi's host, its mDNS and device plugins left out).
+(`src-tauri/src/plugins`: [agapi](https://github.com/shabunin/agapi)'s host, its mDNS and device plugins left out).
 
 Why: iViewer for Android isn't maintained any more, and 5.0.7 crashes on
 Android 16 once a page whose gestures were touched goes away - its
@@ -33,7 +33,7 @@ From `iva serve` it reloads on every rebuild, and its log (`CF.log`, errors,
 page flips) goes to iva serve's console, as with iViewer.
 
 The main window is the GUI and nothing else. Settings: three fingers on the
-screen (held a moment), Ctrl+S or F1 on a keyboard (the Titan 2's), or a
+screen (held a moment), Ctrl+S or F1 on a keyboard (a phone's own, a desktop's), or a
 finger held in the top-left corner for 3 s. Ctrl+R loads the GUI again from
 its server, past the copy kept. The last errors are listed in the settings.
 
@@ -112,7 +112,7 @@ page's side is [device.ts](device.ts), the app's
   its text white or black) and the navigation bar. A bar shown takes its
   room: the GUI fits beside it. A script's own change raises no event.
 - `CF.interceptHardwareKey(keyCode, pressTime, mode, callback)`: Back, the
-  volume keys or any other key (Android's key code; the Titan 2's keyboard
+  volume keys or any other key (Android's key code; a phone's own keyboard
   too) let go after being held at least `pressTime` ms calls
   `callback(keyCode, held)`. `CF.KEYPRESS_INTERCEPT` keeps such a press from
   the system - a shorter one it gets after all - and `CF.KEYPRESS_OBSERVE`

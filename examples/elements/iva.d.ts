@@ -426,7 +426,7 @@ declare module 'iva' {
       /**
        * the devices licensed to run it: iViewer's registration data, a name and
        * the code iViewer shows in its unlicensed-mode message for that device:
-       * licenses={{ 'Living room iPad': '8437F51DCCD3F92EA6898A980ACA0259' }}
+       * licenses={{ 'Living room iPad': '0123456789ABCDEF0123456789ABCDEF' }}
        */
       licenses?: Record<string, string>;
       /**
@@ -1937,7 +1937,7 @@ declare module 'iva/drivers/matter' {
    * iva/drivers/matter - Matter devices from the panel, with matter.js over a
    * pool of UDP systems. Works in official iViewer as well as in iva's own
    * runtime: a <System protocol="udp"> a peer (Matter sessions are per peer,
-   * and a node answers to the address and port a request came from),
+   * and a node answers from the address and port a request went to),
    * retargeted with CF.setSystemProperties before any session exists;
    * CF.send with a byte a char; a catch-all <Feedback> for what comes;
    * CF.startLookup for DNS-SD; persisted tokens for what the controller
@@ -1975,11 +1975,12 @@ declare module 'iva/drivers/matter' {
       port?: number;
       /** the devices, by name */
       devices?: Record<string, MatterDevice>;
-      /** commissioning: the setup code (serial), Go (digital, momentary), what the controller says (serial) */
+      /** commissioning: the setup code (serial), Go (digital, momentary), what the controller says (serial); `address` (serial): where the device is, when Bonjour can't find it */
       commission?: {
           code: Join;
           go: Join;
           status?: Join;
+          address?: Join;
       };
       /** serial join: the devices Bonjour finds, as JSON rows { name, kind, where, info, slot } for a DataTable */
       found?: Join;
@@ -2077,6 +2078,133 @@ declare module 'iva/drivers/mqtt' {
   }
   export declare function Mqtt(props: MqttProps): VNode;
   export default Mqtt;
+}
+
+declare module 'iva/drivers/upnp' {
+  /**
+   * iva/drivers/upnp - a UPnP AV control point for iViewer panels.
+   *
+   *   import { Upnp } from 'iva/drivers/upnp';
+   *   <Upnp servers={{ list: l('servers') }} renderers={{ list: l('renderers') }}
+   *         browse={{ list: l('browse'), path: s('path'), up: d('up') }}
+   *         transport={{ play: d('play'), pause: d('pause'), stop: d('stop'), state: s('state'), title: s('title') }}
+   *         volume={{ level: a('volume'), mute: d('mute') }} status={s('upnpStatus')} />
+   *
+   * The component brings what it needs: a UDP <System> for SSDP (M-SEARCH
+   * out, replies and NOTIFYs in through one catch-all <Feedback>), a second
+   * one listening on port 1900 for the NOTIFYs devices multicast, the panel
+   * script (iva-upnp.js, once) and its <OnStart> line. Media servers and
+   * renderers found go into the two lists; a tap on a server browses its
+   * root into the browse list (folders and tracks), a tap on a folder goes
+   * in, a tap on a track plays it on the selected renderer (and queues the
+   * next one). Descriptions and SOAP actions go over CF.request. The
+   * renderer's state is polled while one is selected. A modern take on
+   * cf-upnp-cp (2013, iViewer 4).
+   */
+  import { type Join, type VNode } from 'iva';
+  /** A list of devices (servers or renderers). Row joins: s1 name, s2 model, s3 icon URL, d1 selected. */
+  export interface UpnpDeviceList {
+      /** list join */
+      list: Join;
+      /** serial join: the selected device's name */
+      selected?: Join;
+      /** the row subpage CF.listAdd names (default: the list's own item subpage) */
+      row?: string;
+  }
+  /** The browse list. Row joins: s1 title, s2 subtitle (items: artist - album, or the duration; folders: the count), s3 art or icon, d1 the item playing. */
+  export interface UpnpBrowse {
+      /** list join */
+      list: Join;
+      /** serial join: where we are ("Server / Music / Albums") */
+      path?: Join;
+      /** digital join: a level up */
+      up?: Join;
+      /** digital join: the folder browsed again */
+      refresh?: Join;
+      /** row subpages: one for folders, one for items (default: the list's own item subpage) */
+      rows?: {
+          container?: string;
+          item?: string;
+      };
+      /** what s3 shows for an item without album art, by kind: an image file (in assets) or URL */
+      icons?: {
+          container?: string;
+          audio?: string;
+          video?: string;
+          image?: string;
+          other?: string;
+      };
+      /** items a Browse asks for at a time (default 100; the rest follow) */
+      pageSize?: number;
+  }
+  /** The transport: digital joins for the buttons, serial / analog joins the driver fills. */
+  export interface UpnpTransport {
+      play?: Join;
+      pause?: Join;
+      stop?: Join;
+      next?: Join;
+      previous?: Join;
+      /** serial: Playing, Paused, Stopped, Loading, No media, No renderer, Unreachable */
+      state?: Join;
+      title?: Join;
+      artist?: Join;
+      album?: Join;
+      /** serial: the album art's URL (an <Image join>) */
+      art?: Join;
+      /** analog: 0..65535 over the track (a slider: dragged, it seeks) */
+      position?: Join;
+      /** serial: m:ss */
+      elapsed?: Join;
+      duration?: Join;
+  }
+  export interface UpnpVolume {
+      /** analog: 0..65535 for 0..100 (a slider: dragged, SetVolume) */
+      level?: Join;
+      /** digital: a toggle, SetMute */
+      mute?: Join;
+  }
+  export interface UpnpProps {
+      /** names the driver's systems (default 'upnp': upnp_ssdp, upnp_notify) */
+      name?: string;
+      /** devices given by their description URL, for networks where multicast fails */
+      devices?: string[];
+      /**
+       * SSDP: the multicast address and port (239.255.255.250:1900), the search
+       * socket's own port (localPort, default 4023, as cf-upnp-cp had it: M-SEARCH
+       * replies come back to it) and whether a second system listens on 1900 for
+       * NOTIFYs (default true; iva's runtime joins the group there), mx seconds.
+       */
+      ssdp?: {
+          host?: string;
+          port?: number;
+          localPort?: number;
+          notify?: boolean;
+          mx?: number;
+      };
+      /** M-SEARCH ssdp:all (everything on the network, filtered here) instead of MediaServer:1 and MediaRenderer:1 */
+      searchAll?: boolean;
+      /** seconds between searches (default 300; 0: at the start only, and on the search join) */
+      searchEvery?: number;
+      /** digital join: search again */
+      search?: Join;
+      /** ms between polls of the renderer's state while one is selected (default 1000) */
+      pollEvery?: number;
+      servers?: UpnpDeviceList;
+      renderers?: UpnpDeviceList;
+      browse?: UpnpBrowse;
+      transport?: UpnpTransport;
+      volume?: UpnpVolume;
+      /** serial join: what's going on (how many devices, errors) */
+      status?: Join;
+  }
+  export declare const SSDP_HOST = "239.255.255.250";
+  export declare const SSDP_PORT = 1900;
+  /** the search socket's own port, as the old project had it */
+  export declare const SEARCH_PORT = 4023;
+  /** the UPnP driver's script, as a <Script> (once in a build) */
+  export declare const runtime: VNode;
+  export declare function Upnp(p: UpnpProps): VNode;
+  export default Upnp;
 }
 
 declare const Project: typeof import('iva').Project;

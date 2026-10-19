@@ -94,9 +94,10 @@ in official iViewer as well as in iva's runtime and the iva panel):
 
 What `examples/matter` checks first on the panel it runs on, each a line on
 the page and in `iva serve`'s console (`iva serve examples/matter/app.jsx`).
-Run on 2026-10-17/18 on the user's Unihertz Titan 2 (Android 16): official
-iViewer 5.0.7 and the iva panel app (its APK of 2026-10-17 19:21, so with
-the runtime before this driver's codec fix), and iva's preview in a browser.
+Measured on an Android 16 phone (Unihertz Titan 2) with official iViewer
+5.0.7 and the iva panel app, and in iva's preview in a browser. The panel
+app's column is from a build before the runtime's encoding and IPv6 fixes
+(marked *): the runtime has them now, as the preview's column shows.
 
 | Check | iViewer 5.0.7 Android | iva panel app, Android | iva runtime (preview) |
 |---|---|---|---|
@@ -104,18 +105,18 @@ the runtime before this driver's codec fix), and iva's preview in a browser.
 | SHA-256, ECDH P-256 (one agreement), ECDSA, AES-CTR, AES-CBC, HKDF, HMAC | Yes; ECDH 1 ms | Yes; ECDH 1-2 ms | Yes; ECDH 5 ms |
 | PBKDF2, 1000 rounds (a PASE: up to 100000) | 5 ms (about 0.4 s) | 21-23 ms (about 2.2 s) | 41 ms (about 4 s) |
 | UDP: bytes 0x00-0xFF through an echo peer, in order | Yes | Yes | Yes |
-| UDP: bytes that read as UTF-8, no encoding set | Yes | No: read as text (the fix is in the runtime since, the APK not yet) | No: read as text |
+| UDP: bytes that read as UTF-8, no encoding set | Yes | No: read as text | No: read as text |
 | UDP: 1232 bytes in one packet | Yes | Yes | Yes |
 | UDP: four packets at once, four frames | Yes | Yes | Yes |
-| UDP: `textEncoding="iso-8859-1"`, a byte a char | Yes | No: windows-1252 (fixed in the runtime since) | Yes (since the fix) |
-| UDP: a system to `::1` (IPv6) | Yes | No (a v6 socket for a v6 address in the runtime since; the APK not yet) | Yes (since 2026-10-18) |
+| UDP: `textEncoding="iso-8859-1"`, a byte a char | Yes | No: windows-1252 * | Yes |
+| UDP: a system to `::1` (IPv6) | Yes | No * | Yes |
 | UDP: retarget with `CF.setSystemProperties({ address, port })` alone | No: keeps sending to the old address | Yes (after its connection event; 300 ms was too soon) | Yes |
 | UDP: rebind (`localPort` too) | Yes | Yes | Yes |
 | Tokens: 4, 16, 64 KB written and read back | Yes | Yes | Yes |
-| Tokens: kept to the next load | Not seen in two loads a minute apart (open: were they app restarts?) | pending (the card was hidden) | Yes |
+| Tokens: kept to the next load | Not seen in two loads a minute apart | not measured | Yes |
 | Tokens: a JSON value verbatim | No: `{{1+1}}` and `[@s1]` substituted | No (the same) | No (the same) |
 | A 1.5 MB script | Yes | Yes | Yes |
-| Bonjour (`_matter._tcp.`) | not exercised (VPN on) | not exercised | works (the gallery's page) |
+| Bonjour (`_matter._tcp.`) | not measured (a VPN was on) | not measured | works (the gallery's Network page) |
 
 What the driver does with it: the pool retargets a slot as iViewer takes
 it - the system off, `address`, `port` and its own `localPort` set, on
@@ -126,25 +127,23 @@ JSON line). One more thing both runtimes do: a text join's value with
 "Token names seen" line showed 64 KB of token (a black texture on the
 panel, seven garbled lines on iViewer); names in text go without brackets.
 
-The panel app needs a new APK (CI, on push) for the two encoding lines and
-IPv6; on the current one the driver's bytes would be read as text. The
-runtime's text fitting (a value too long for a texture, cut to its box) and
-bracket-less token names came the same day. On official
-iViewer the driver's needs are all met, if persisted tokens turn out to be
-kept across app restarts (the probe's "At start" line tells).
+The runtime's text fitting (a value too long for a texture, cut to its box)
+and bracket-less token names came out of the same run. On official iViewer
+the driver's needs are all met, if persisted tokens are kept across app
+restarts (the probe's "At start" line tells).
 
-## The first real device (2026-10-18)
+## A real device: a Nanoleaf light
 
-A Nanoleaf light (Matter over Wi-Fi, already in agapi's fabric; agapi's
-"Enhanced (new code)" opened a commissioning window with a fresh code), the
-iva panel app on the Titan 2 with ZeroTier on, this machine's `iva serve`
-over ZeroTier for the GUI and the console:
+A Nanoleaf light (Matter over Wi-Fi, already in another controller's fabric,
+which opened a commissioning window with a fresh code), the iva panel app on
+an Android phone with a VPN on, and `iva serve` on a computer reached over
+the VPN for the GUI and the console:
 
 - The Devices page listed it within seconds: commissionable (CM=2, its
-  discriminator) at 192.168.2.2 - and four operational names at the same
-  address (the fabrics it is in), plus the virtual light on this machine
-  over ZeroTier. The panel app's own mDNS engine found all of it with the
-  VPN on.
+  discriminator) at the light's address - and four operational names at the
+  same address (the fabrics it is in), plus the virtual light
+  (`examples/matter/virtual-light.mjs`) on the computer. The panel app's own
+  mDNS engine found all of it with the VPN on.
 - The code and the address typed, Go: PASE, attestation, certificates, the
   CASE reconnect and CommissioningComplete in 2.6 s; "Commissioned: node 1 -
   connecting lamp, level, colour", the subscription up a second later, the
@@ -160,19 +159,19 @@ over ZeroTier for the GUI and the console:
 - Official iViewer 5.0.7 (Android), same phone, same GUI: the controller
   starts, its Bonjour reported nothing with the VPN on, and no commissioning
   attempt got a packet onto the network. matter.js's debug log, with the
-  virtual light on this machine as the peer (reached over ZeroTier): on a
-  slot retargeted at runtime the PASE request came back 25 ms later as the
+  virtual light on the computer as the peer (over the VPN): on a slot
+  retargeted at runtime the PASE request came back 25 ms later as the
   slot's own frame, byte for byte, and the controller refused itself; on a
   slot targeted at the light in the GUI itself (no retarget) the request was
   answered in 29 ms with a StatusReport InvalidParam by a Matter node that
-  was not the light - the only one on the phone is agapi's controller on
+  was not the light - the only one on the phone was another controller on
   port 5540 - so iViewer sends a UDP system's datagrams to the phone's own
   address rather than the configured host, at least for a host over the VPN.
   The same with or without `accept`, broadcasts, the offline queue or
   `localPort` set again; no `ConnectionStatusChangeEvent` for a UDP system
-  either; persisted tokens empty at each load that night (each a new build).
-  iViewer for Android is not the reference (the user's ruling: "full of
-  bugs"); Matter on official iViewer waits for an iPad.
+  either; persisted tokens empty at each load (each a new build).
+  iViewer for Android isn't maintained any more, so it isn't the reference
+  here; Matter on official iViewer is left to iOS.
 
 ## Matter: `<Matter>` (iva/drivers/matter)
 
