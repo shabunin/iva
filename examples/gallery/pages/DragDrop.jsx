@@ -32,7 +32,10 @@ const L = ui.grid({
 const A = ui.screenArea;
 // a phone: the sources in a row, small; the rooms two by two
 const pw = A.w - 40;
-const ph = 262;
+// as tall as ui.DragDrop lays them out: the sources in as many rows as the width takes (one on a square
+// phone, two on a narrower one), the rooms two by two
+const itemCols = Math.max(1, Math.floor((pw + 10) / (68 + 10)));
+const ph = Math.ceil(sources.length / itemCols) * (64 + 10) - 10 + 28 + Math.ceil(rooms.length / 2) * (80 + 10) - 10;
 
 // a phone: a screen each - a gesture in a list (a ScrollArea) doesn't fire on the device
 export default narrow ? (
