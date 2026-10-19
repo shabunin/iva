@@ -300,7 +300,16 @@ pub fn gui_unpacked<R: Runtime>(app: AppHandle<R>, id: String, version: String) 
     }
     let dir = ver.join("gui");
     let packed = safe(&a.atlas).is_some_and(|p| dir.join(p).join("atlas.json").exists());
-    let files = a.files.iter().filter(|f| safe(f).is_some_and(|p| dir.join(p).is_file())).cloned().collect();
+    let mut files: Vec<String> = a.files.iter().filter(|f| safe(f).is_some_and(|p| dir.join(p).is_file())).cloned().collect();
+    // and the sheets and their map
+    if packed {
+        for e in fs::read_dir(dir.join(&a.atlas)).into_iter().flatten().flatten() {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if name == "atlas.json" || name.ends_with(".png") {
+                files.push(format!("{}/{name}", a.atlas));
+            }
+        }
+    }
     if !packed {
         work(app, a, false)?;
     }

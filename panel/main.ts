@@ -420,13 +420,18 @@ const screenKey = () => (typeof screen === 'undefined' ? '' : `${Math.min(screen
 /** the copy kept's version, as the files unpacked from it know it */
 const keptKey = (k: { savedAt: number; bytes: number }) => `kept ${k.savedAt} ${k.bytes} ${screenKey()}`;
 
+/** the built-in demo's version: its archive's hash, as the panel's build saw it (vite.config.ts) */
+declare const __IVA_DEMO__: string;
+
 /**
  * The version of the archive a GUI runs from, as its files unpacked know it:
- * the app's own file (the built-in demo) by its size and this build of the
- * panel; a copy kept by when it was kept. None: nothing unpacked to go by.
+ * the app's own file (the built-in demo) by its hash, else by its size - as
+ * the app answers (an answer without a size: none); a copy kept by when it
+ * was kept. None: nothing unpacked to go by.
  */
 async function unpackKey(url: string): Promise<string | undefined> {
   if (ownFile(url)) {
+    if (typeof __IVA_DEMO__ === 'string' && __IVA_DEMO__ && url === DEMO) return `own ${__IVA_DEMO__} ${screenKey()}`;
     try {
       const res = await fetch(url, { method: 'HEAD', cache: 'no-store' });
       const len = res.ok ? res.headers.get('content-length') : null;
