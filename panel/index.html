@@ -20,9 +20,10 @@
       <h1>iva panel</h1>
       <label for="url">GUI</label>
       <input id="url" type="text" inputmode="url" placeholder="http://192.168.1.10:8019/panel.gui?page=Home" autocomplete="off" autocapitalize="off" spellcheck="false" />
-      <p class="hint">A .gui or a zipped GUI on a web server (http://, cf://), or <code>iva serve</code>'s address; <code>?page=Name</code> the page to start on. This is the panel's default GUI: what it starts with, where <code>CF.loadGUI(null)</code> goes.</p>
+      <p class="hint">A .gui or a zipped GUI on a web server (http://, cf://), or <code>iva serve</code>'s address; <code>?page=Name</code> the page to start on. This is the panel's default GUI: what it starts with, where <code>CF.loadGUI(null)</code> goes. Demo: the iva/ui gallery, built into the app - no server needed.</p>
       <div class="row">
         <button type="submit">Load</button>
+        <button type="button" id="demo">Demo</button>
         <button type="button" id="cancel">Back</button>
       </div>
       <h2>View</h2>

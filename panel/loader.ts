@@ -52,12 +52,19 @@ export const useFetch = (f: typeof hostFetch) => {
   fetching = f;
 };
 
+/** the app's own files (the built-in demo): the page's fetch has them, no server does */
+const ownFile = (url: string) => {
+  if (typeof location === 'undefined') return false;
+  const u = new URL(url);
+  return u.protocol === location.protocol && u.host === location.host;
+};
+
 /** GET url - with `known` (a saved copy's ETag, Last-Modified): null when the server says it's the same */
 async function download(url: string, known?: { etag?: string; lastModified?: string }): Promise<Download | null> {
   const headers: Record<string, string> = {};
   if (known?.etag) headers['If-None-Match'] = known.etag;
   if (known?.lastModified) headers['If-Modified-Since'] = known.lastModified;
-  const res = await fetching(url, { method: 'GET', headers, connectTimeout: 15000 });
+  const res = ownFile(url) ? await fetch(url, { headers }) : await fetching(url, { method: 'GET', headers, connectTimeout: 15000 });
   if (res.status === 304) return null;
   if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
   const header = (name: string) => res.headers.get(name) ?? undefined;
@@ -229,18 +236,36 @@ async function remoteManifest(at: string, guiXml: string): Promise<Manifest> {
   return { url: at, title, guiXml, imageMap, scriptMap, missingScripts, problems, fileUrl: (name) => new URL(name.replace(/\\/g, '/'), files).href };
 }
 
+/** of one GUI's sizes, the one shaped most like the screen (turned either way) */
+function shapedLike(sizes: string[], files: Map<string, Uint8Array<ArrayBuffer>>, w: number, h: number): string {
+  const long = (a: number, b: number) => Math.max(a, b) / Math.min(a, b);
+  const want = long(w, h);
+  const off = sizes.map((n) => {
+    const tag = /<landscape\b[^>]*>/.exec(decodeXml(files.get(n)!.subarray(0, 4096)))?.[0] ?? '';
+    const gw = Number(/width="(\d+)"/.exec(tag)?.[1]);
+    const gh = Number(/height="(\d+)"/.exec(tag)?.[1]);
+    return gw && gh ? Math.abs(Math.log(long(gw, gh) / want)) : Infinity;
+  });
+  return sizes[off.indexOf(Math.min(...off))];
+}
+
 /**
  * A zipped GUI's files: its .gui - the one named after the archive
- * (clock.gui.zip: clock.gui), else the shallowest - and its images and
- * scripts from the archive (as src/server/project.ts zipManifest).
+ * (clock.gui.zip: clock.gui), else the shallowest; one in several sizes
+ * (iva build's <Project sizes>: 1400w1400h/x.gui beside x.gui) the one
+ * shaped like the screen - and its images and scripts from the archive (as
+ * src/server/project.ts zipManifest).
  */
 function zipManifest(files: Map<string, Uint8Array<ArrayBuffer>>, id: string): Manifest {
   const guis = [...files.keys()].filter((n) => /\.gui$/i.test(n));
   if (!guis.length) throw new Error(`${id}: no .gui in the archive`);
   const own = decodeURIComponent(new URL(id).pathname.split('/').filter(Boolean).pop() ?? '').replace(/\.zip$/i, '').toLowerCase();
-  const entry = guis.find((n) => n.split('/').pop()!.toLowerCase() === own)
-    ?? guis.find((n) => n.split('/').pop()!.toLowerCase().replace(/\.gui$/, '') === own)
+  const leaf = (n: string) => n.split('/').pop()!.toLowerCase();
+  let entry = guis.find((n) => leaf(n) === own)
+    ?? guis.find((n) => leaf(n).replace(/\.gui$/, '') === own)
     ?? [...guis].sort((a, b) => a.split('/').length - b.split('/').length || a.localeCompare(b))[0];
+  const sizes = guis.filter((n) => leaf(n) === leaf(entry));
+  if (sizes.length > 1 && typeof screen !== 'undefined') entry = shapedLike(sizes, files, screen.width, screen.height);
   const guiXml = decodeXml(files.get(entry)!);
   const dir = entry.includes('/') ? entry.slice(0, entry.lastIndexOf('/') + 1) : '';
   const folder = folderOf(guiXml);

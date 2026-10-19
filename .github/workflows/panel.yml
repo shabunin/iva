@@ -10,6 +10,9 @@ on:
       - 'src/runtime/**'
       - 'src/preview/fonts.ts'
       - 'src/compiler/fonts.json'
+      # the built-in demo (scripts/demo.mjs): the gallery and iva/ui
+      - 'examples/gallery/**'
+      - 'lib/**'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/panel.yml'

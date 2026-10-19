@@ -37,6 +37,21 @@ test('a GUI runs from its copy on the device: an archive, or a .gui and the file
   }
 });
 
+test("a zipped GUI in several sizes (iva build's <Project sizes>): the one shaped like the screen", async () => {
+  const sized = (w: number, h: number) => Buffer.from(`<gui><properties><project>${w}x${h}</project><size><portrait width="${h}" height="${w}" /><landscape width="${w}" height="${h}" /></size></properties></gui>`);
+  const zip = new Uint8Array(writeZip([['app.gui', sized(1280, 800)], ['1400w1400h/app.gui', sized(467, 467)]]));
+  const g = globalThis as { screen?: { width: number; height: number } };
+  try {
+    for (const [w, h, title] of [[1440, 1440, '467x467'], [1080, 1920, '1280x800'], [2560, 1600, '1280x800']] as const) {
+      g.screen = { width: w, height: h };
+      const m = await savedManifest({ url: 'http://10.0.0.2/app.gui.zip', zip, savedAt: 0, bytes: zip.length });
+      assert.equal(m.title, title, `a ${w}x${h} screen`);
+    }
+  } finally {
+    delete g.screen;
+  }
+});
+
 test("a GUI from its server: its scripts fetched a few at a time, a failed one asked for again, then in rounds; one that never comes is missing, with why", async () => {
   const names = ['a.js', 'b.js', 'c.js', 'd.js', 'e.js', 'flaky.js', 'slow.js', 'gone.js'];
   const gui = `<gui><properties><project>Live</project><imagefolder>assets</imagefolder></properties><scripts>${names.map((n) => `<script name="scripts/${n}" />`).join('')}</scripts></gui>`;

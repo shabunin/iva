@@ -13,8 +13,8 @@
     "lint": "node scripts/lint.mjs",
     "test": "node --test --import tsx test/*.test.ts",
     "tauri": "tauri",
-    "panel:dev": "vite --config panel/vite.config.ts",
-    "panel:build": "vite build --config panel/vite.config.ts",
+    "panel:dev": "node panel/scripts/demo.mjs && vite --config panel/vite.config.ts",
+    "panel:build": "node panel/scripts/demo.mjs && vite build --config panel/vite.config.ts",
     "panel:android": "cd panel && tauri android build --apk"
   },
   "dependencies": {

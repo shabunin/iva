@@ -2,5 +2,6 @@ node_modules/
 dist/
 fixtures/DemoUserInterfaces/
 panel/src-tauri/target/
+panel/public/demo/
 panel/src-tauri/gen/schemas/
 examples/matter/.virtual-light/

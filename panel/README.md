@@ -23,9 +23,11 @@ panel/
 
 ## Using it
 
-On first start it asks for the GUI: `iva serve`'s address
+On first start it runs the demo (below); the settings ask for the GUI: `iva serve`'s address
 (`http://192.168.1.10:8019`), a `.gui` on a web server, or a zipped GUI
-(`.gui.zip`); `?page=Name` after it is the page to start on. That is the
+(`.gui.zip`); `?page=Name` after it is the page to start on. Or **Demo**:
+the iva/ui gallery, built into the app (`scripts/demo.mjs`, a zipped GUI
+with every size: the one shaped like the screen runs) - no server needed. That is the
 panel's default GUI: what it starts with, where `CF.loadGUI(null)` goes.
 From `iva serve` it reloads on every rebuild, and its log (`CF.log`, errors,
 page flips) goes to iva serve's console, as with iViewer.

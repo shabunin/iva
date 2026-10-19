@@ -7,7 +7,7 @@
  * runtime's host commands); the GUI comes from a web server - a .gui, a
  * zipped GUI, iva serve's address (live reload and all).
  *
- * Settings: on first start; then three fingers on the screen, Ctrl+S or F1
+ * First start: the built-in demo (the iva/ui gallery). Settings: three fingers on the screen, Ctrl+S or F1
  * on a keyboard, or a finger held in the top-left corner. Ctrl+R: the GUI
  * again from its server.
  */
@@ -95,6 +95,8 @@ const notice = (text: string, ms = 12000) => {
     if (status.textContent === text) status.textContent = '';
   }, ms);
 };
+/** the built-in demo: the iva/ui gallery, a zipped GUI among the app's own files (scripts/demo.mjs) */
+const DEMO = new URL('demo/iva-ui-gallery.gui.zip', location.href).href;
 /** one spelling of a GUI's URL (http://host:8019 and http://host:8019/ are one GUI): the location's */
 const canonical = (url: string) => parseLocation(url)?.gui ?? url;
 /** the spellings a copy may be kept under: this one, and the other with or without the trailing slash (older panels kept the bare host) */
@@ -347,6 +349,8 @@ async function show(m: Manifest) {
   if (m.missingScripts.length) {
     noteError(`missing scripts: ${m.missingScripts.join(', ')}`);
     notice(`${m.missingScripts.length} script(s) missing: ${m.missingScripts.map((s) => s.split('/').pop()).join(', ')} - Ctrl+R loads again (details: three fingers, Ctrl+S)`);
+  } else if (m.url === DEMO) {
+    notice('The demo built into the panel - your own GUI: settings (three fingers on the screen, Ctrl+S or F1)');
   }
 }
 
@@ -378,10 +382,8 @@ async function start() {
   await installFonts();
   applyBar();
   const stored = sessionStorage.getItem(ONCE) ?? localStorage.getItem(GUI);
-  if (!stored) {
-    openSettings();
-    return;
-  }
+  // the first start: the built-in demo, as iViewer starts with one (the settings: a gesture away, as the notice says)
+  if (!stored) return goTo({ gui: DEMO });
   const url = canonical(stored);
   if (url !== stored && !sessionStorage.getItem(ONCE)) localStorage.setItem(GUI, url);
   const fresh = sessionStorage.getItem(FRESH) === '1';
@@ -630,6 +632,10 @@ form.addEventListener('submit', (e) => {
   if (!loc) return;
   localStorage.setItem(DEFAULT_GUI, loc.gui);
   goTo(loc);
+});
+$('demo').addEventListener('click', () => {
+  input.value = DEMO;
+  form.requestSubmit();
 });
 $('cancel').addEventListener('click', closeSettings);
 options.bar.addEventListener('change', () => {
