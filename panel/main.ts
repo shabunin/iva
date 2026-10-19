@@ -342,6 +342,7 @@ async function show(m: Manifest) {
   current = await loadProject({
     guiXml: m.guiXml,
     imageMap: m.imageMap,
+    atlas: m.atlas,
     scriptMap: m.scriptMap,
     canvas,
     fileUrl: m.fileUrl,

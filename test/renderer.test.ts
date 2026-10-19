@@ -95,6 +95,84 @@ test("the other pages' images are fetched ahead, the pages after the one shown f
   assert.deepEqual(loaded, [['c.png', 's.png']]);
 });
 
+test("an image in a sheet (iva build's atlas) comes with its sheet: the sheet loaded once, its every image a frame of it under its own name; the sheet let go, its images go", async () => {
+  const { Container, Sprite, TextureSource } = await import('pixi.js');
+  const r = Object.assign(Object.create(CFRenderer.prototype), {
+    imageMap: { 'icons/a.png': 'blob:a', 'a.png': 'blob:a', 'icons/b.png': 'blob:b', 'icons/c.png': 'blob:c', 'big.png': 'blob:big' },
+    atlas: { sheets: ['blob:sheet0', 'blob:sheet1'], frames: { 'icons/a.png': [0, 2, 2, 10, 20], 'icons/b.png': [0, 16, 2, 30, 30], 'icons/c.png': [1, 2, 2, 8, 8] } },
+    loading: new Map(),
+    lastUsed: new Map(),
+    textureBudget: 0,
+    app: { stage: new Container() },
+  }) as any;
+  const loads: string[] = [];
+  // what Pixi's loader would do: the file, decoded, in its cache under its key
+  r.loadOne = async (key: string) => {
+    loads.push(key);
+    await new Promise((res) => setTimeout(res, 1));
+    Assets.cache.set(key, new Texture({ source: new TextureSource({ width: 64, height: 64 }) }));
+    r.lastUsed.set(key, performance.now());
+  };
+  // a and b asked for at once, by any of their names: one sheet, once; big.png isn't in one - on its own
+  await r.ensureLoaded([r.aliasOf('a.png'), 'icons/b.png', 'big.png']);
+  assert.deepEqual(loads.sort(), ['big.png', 'iva-atlas:blob:sheet0']);
+  const sheet = Assets.get('iva-atlas:blob:sheet0') as Texture;
+  const a = r.texture('a.png') as Texture;
+  assert.equal(a.source, sheet.source);
+  assert.deepEqual([a.frame.x, a.frame.y, a.frame.width, a.frame.height], [2, 2, 10, 20]);
+  assert.equal((r.texture('icons/b.png') as Texture).frame.width, 30);
+  assert.equal(r.texture('icons/c.png'), undefined, "the other sheet's: not loaded");
+  // again: nothing to load; the sheet is what's tracked, not its images
+  await r.ensureLoaded(['icons/a.png']);
+  assert.equal(loads.length, 2);
+  assert.ok(r.lastUsed.has('iva-atlas:blob:sheet0') && !r.lastUsed.has('icons/a.png'));
+  assert.equal(r.filesFor(['icons/a.png', 'icons/b.png', 'icons/c.png', 'big.png']), 3);
+  // b on the stage: the sheet stays; then nothing on it, and old - the sheet goes, and its images with it
+  const shown = new Sprite(r.texture('icons/b.png'));
+  r.app.stage.addChild(shown);
+  const unload = Assets.unload;
+  const unloaded: string[] = [];
+  (Assets as any).unload = async (keys: string[]) => void unloaded.push(...keys);
+  try {
+    for (const k of r.lastUsed.keys()) r.lastUsed.set(k, performance.now() - 60000);
+    r.collect();
+    assert.deepEqual(unloaded, ['big.png']);
+    r.app.stage.removeChild(shown);
+    for (const k of r.lastUsed.keys()) r.lastUsed.set(k, performance.now() - 60000);
+    r.collect();
+    await new Promise((res) => setTimeout(res, 0));
+  } finally {
+    (Assets as any).unload = unload;
+  }
+  assert.deepEqual(unloaded, ['big.png', 'iva-atlas:blob:sheet0']);
+  assert.ok(!Assets.cache.has('icons/a.png') && !Assets.cache.has('icons/b.png'), "the sheet's images forgotten with it");
+  assert.ok(a.destroyed);
+  // asked for again: the sheet again
+  Assets.cache.remove('iva-atlas:blob:sheet0');
+  await r.ensureLoaded(['icons/a.png']);
+  assert.equal(loads.filter((k) => k === 'iva-atlas:blob:sheet0').length, 2);
+  for (const k of ['iva-atlas:blob:sheet0', 'icons/a.png', 'icons/b.png', 'big.png']) if (Assets.cache.has(k)) Assets.cache.remove(k);
+});
+
+test("a sheet that doesn't come: its images on their own", async () => {
+  const r = Object.assign(Object.create(CFRenderer.prototype), {
+    imageMap: { 'icons/x.png': 'blob:x' },
+    atlas: { sheets: ['blob:gone'], frames: { 'icons/x.png': [0, 2, 2, 4, 4] } },
+    loading: new Map(),
+    lastUsed: new Map(),
+  }) as any;
+  const loads: string[] = [];
+  r.loadOne = async (key: string) => {
+    loads.push(key);
+    if (key.startsWith('iva-atlas:')) return; // failed, after its tries
+    Assets.cache.set(key, Texture.WHITE);
+  };
+  await r.ensureLoaded(['icons/x.png']);
+  assert.deepEqual(loads, ['iva-atlas:blob:gone', 'icons/x.png']);
+  assert.equal(r.texture('icons/x.png'), Texture.WHITE);
+  Assets.cache.remove('icons/x.png');
+});
+
 test('images nothing shows are let go, but for the latest used (up to the budget) and any used a moment ago', async () => {
   const { Container, Sprite, TextureSource } = await import('pixi.js');
   const tex = (px: number) => new Texture({ source: new TextureSource({ width: px, height: px }) });

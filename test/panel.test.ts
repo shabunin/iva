@@ -42,6 +42,46 @@ test('a GUI runs from its copy on the device: an archive, or a .gui and the file
   }
 });
 
+test("a GUI's images in sheets (iva build's iva-atlas/ beside the .gui): each sheet a file of the archive, each image's frame - the size run's own; none without", async () => {
+  const gui = GUI.replace('</scripts>', '</scripts><pages><page name="P"><img>icons/a.png</img></page></pages>');
+  const map = (n: number) => Buffer.from(JSON.stringify({ version: 1, sheets: [{ file: 'sheet-0.png', w: 64, h: 64, group: 'page:P' }], frames: { 'icons/a.png': [0, 2, 2, n, n] } }));
+  const files: [string, Buffer][] = [
+    ['app.gui', Buffer.from(gui)], ['images/scripts/main.js', Buffer.from(MAIN)], ['images/icons/a.png', Buffer.from('png')],
+    ['iva-atlas/atlas.json', map(10)], ['iva-atlas/sheet-0.png', Buffer.from('sheet')],
+  ];
+  const zip = new Uint8Array(writeZip(files));
+  const m = await savedManifest({ url: 'http://10.0.0.2/app.gui.zip', zip, savedAt: 0, bytes: zip.length });
+  assert.ok(m.atlas);
+  assert.match(m.atlas.sheets[0], /^blob:/);
+  assert.deepEqual(m.atlas.files, ['sheet-0.png']);
+  assert.deepEqual(m.atlas.frames['icons/a.png'], [0, 2, 2, 10, 10]);
+  // the image on its own still there (iViewer's; the panel's if a sheet doesn't come)
+  assert.match(m.imageMap['icons/a.png'], /^blob:/);
+  // a copy kept as files beside the .gui: the same
+  const enc = (b: Buffer) => new Uint8Array(b) as Uint8Array<ArrayBuffer>;
+  const kept = await savedManifest({ url: 'http://10.0.0.2/gui/app.gui', files: Object.fromEntries(files.map(([n, d]) => [n, enc(d)])), gui, savedAt: 0, bytes: 0 });
+  assert.deepEqual(kept.atlas?.frames['icons/a.png'], [0, 2, 2, 10, 10]);
+  // a sheet missing, or no map: the images one by one
+  const noSheet = new Uint8Array(writeZip(files.filter(([n]) => n !== 'iva-atlas/sheet-0.png')));
+  assert.equal((await savedManifest({ url: 'http://10.0.0.2/app.gui.zip', zip: noSheet, savedAt: 0, bytes: 0 })).atlas, undefined);
+  const noMap = new Uint8Array(writeZip(files.filter(([n]) => !n.startsWith('iva-atlas/'))));
+  assert.equal((await savedManifest({ url: 'http://10.0.0.2/app.gui.zip', zip: noMap, savedAt: 0, bytes: 0 })).atlas, undefined);
+  // in several sizes: the map beside the .gui run
+  const sized = (w: number, h: number) => Buffer.from(gui.replace('<imagefolder>', `<size><portrait width="${h}" height="${w}" /><landscape width="${w}" height="${h}" /></size><imagefolder>`));
+  const both = new Uint8Array(writeZip([
+    ['app.gui', sized(1280, 800)], ['iva-atlas/atlas.json', map(10)], ['iva-atlas/sheet-0.png', Buffer.from('a')],
+    ['1400w1400h/app.gui', sized(467, 467)], ['1400w1400h/iva-atlas/atlas.json', map(30)], ['1400w1400h/iva-atlas/sheet-0.png', Buffer.from('b')],
+  ]));
+  const g = globalThis as { screen?: { width: number; height: number } };
+  try {
+    g.screen = { width: 1440, height: 1440 };
+    const square = await savedManifest({ url: 'http://10.0.0.2/app.gui.zip', zip: both, savedAt: 0, bytes: 0 });
+    assert.deepEqual(square.atlas?.frames['icons/a.png'], [0, 2, 2, 30, 30]);
+  } finally {
+    delete g.screen;
+  }
+});
+
 test("a zipped GUI in several sizes (iva build's <Project sizes>): the one shaped like the screen", async () => {
   const sized = (w: number, h: number) => Buffer.from(`<gui><properties><project>${w}x${h}</project><size><portrait width="${h}" height="${w}" /><landscape width="${w}" height="${h}" /></size></properties></gui>`);
   const zip = new Uint8Array(writeZip([['app.gui', sized(1280, 800)], ['1400w1400h/app.gui', sized(467, 467)]]));

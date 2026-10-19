@@ -21,6 +21,36 @@ export interface Manifest {
   problems: string[];
   /** a file of the GUI by its name (a web view's url="page.html") */
   fileUrl: (name: string) => string | undefined;
+  /** its images packed in sheets (iva build's iva-atlas/ beside the .gui), when it has them */
+  atlas?: Atlas;
+}
+
+/**
+ * A GUI's images packed in sheets for the panel (iva build: iva-atlas/
+ * beside the .gui, which the .gui doesn't name - iViewer loads the images one
+ * by one): each sheet's URL and file, each image's frame by its name in the
+ * .gui - [sheet, x, y, w, h].
+ */
+export interface Atlas {
+  sheets: string[];
+  files: string[];
+  frames: Record<string, [number, number, number, number, number]>;
+}
+
+export const ATLAS_DIR = 'iva-atlas/';
+
+/** The map an atlas.json is, its sheets where `url` has them - none if it isn't one, or a sheet is missing. */
+function atlasOf(json: string, url: (file: string) => string | undefined): Atlas | undefined {
+  try {
+    const m = JSON.parse(json);
+    if (m?.version !== 1 || !Array.isArray(m.sheets) || !m.frames || typeof m.frames !== 'object') return undefined;
+    const files: string[] = m.sheets.map((sh: { file?: unknown }) => String(sh?.file ?? ''));
+    const sheets = files.map((file) => (/^[\w.-]+\.png$/i.test(file) ? url(file) : undefined));
+    if (sheets.some((u) => !u)) return undefined;
+    return { sheets: sheets as string[], files, frames: m.frames };
+  } catch {
+    return undefined;
+  }
 }
 
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|svg|bmp)$/i;
@@ -163,6 +193,16 @@ export async function toSave(got: Download, m: Manifest): Promise<SavedGui> {
     }
   });
   for (const [name, code] of Object.entries(m.scriptMap)) files[inFolder(name)] = new TextEncoder().encode(code);
+  // its images in sheets, beside the .gui as they came (one missing: the copy loads the images one by one)
+  if (m.atlas) {
+    try {
+      const sheets = await Promise.all(m.atlas.sheets.map((u) => get(u)));
+      files[ATLAS_DIR + 'atlas.json'] = await get(new URL(ATLAS_DIR + 'atlas.json', got.url).href);
+      m.atlas.files.forEach((file, i) => (files[ATLAS_DIR + file] = sheets[i]));
+    } catch {
+      // without them
+    }
+  }
   // the scripts the load lost: once more, for the copy
   const lost: string[] = [];
   await each(m.missingScripts, 2, async (name) => {
@@ -233,8 +273,12 @@ async function remoteManifest(at: string, guiXml: string): Promise<Manifest> {
   }
   const path = new URL(at).pathname;
   const title = titleOf(guiXml, decodeURIComponent(path.split('/').pop() || new URL(at).host));
+  // its images in sheets, if it has them (an older build, GUI Designer's: no - the images one by one); after
+  // the scripts, not beside them - a flaky link takes a few requests at a time
+  const atlasAt = (file: string) => new URL(ATLAS_DIR + file, base).href;
+  const atlas = await get(atlasAt('atlas.json')).then((b) => atlasOf(new TextDecoder().decode(b), atlasAt), () => undefined);
   // a project file (CF.loadAsset, a web view's page): in the image folder, where iViewer keeps them
-  return { url: at, title, guiXml, imageMap, scriptMap, missingScripts, problems, fileUrl: (name) => new URL(name.replace(/\\/g, '/'), files).href };
+  return { url: at, title, guiXml, imageMap, scriptMap, missingScripts, problems, fileUrl: (name) => new URL(name.replace(/\\/g, '/'), files).href, atlas };
 }
 
 /** of one GUI's sizes, the one shaped most like the screen (turned either way) */
@@ -310,8 +354,17 @@ function zipManifest(files: Map<string, Uint8Array<ArrayBuffer>>, id: string): M
     else missingScripts.push(name);
   }
   const title = titleOf(guiXml, entry.split('/').pop()!.replace(/\.gui$/i, ''));
+  // its images in sheets, beside its .gui (iva build's)
+  const inAtlas = (file: string) => lower.get((dir + ATLAS_DIR + file).toLowerCase());
+  const mapFile = inAtlas('atlas.json');
+  const atlas = mapFile
+    ? atlasOf(decodeXml(files.get(mapFile)!), (file) => {
+        const n = inAtlas(file);
+        return n ? blobUrl(n) : undefined;
+      })
+    : undefined;
   return {
-    url: id, title, guiXml, imageMap, scriptMap, missingScripts, problems: missingScripts.map((n) => `${n}: not in the archive`),
+    url: id, title, guiXml, imageMap, scriptMap, missingScripts, problems: missingScripts.map((n) => `${n}: not in the archive`), atlas,
     // a project file (CF.loadAsset, a web view's page): in the image folder, else beside the .gui
     fileUrl: (name) => {
       const n = name.replace(/\\/g, '/');

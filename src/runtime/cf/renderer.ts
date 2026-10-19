@@ -1,4 +1,4 @@
-import { Application, Container, Sprite, Text, Graphics, Assets, TextStyle, Color, NineSliceSprite, Rectangle, TilingSprite, type Texture } from 'pixi.js';
+import { Application, Container, Sprite, Text, Graphics, Assets, TextStyle, Color, NineSliceSprite, Rectangle, TilingSprite, Texture } from 'pixi.js';
 import { ownJoin } from './guiIndex';
 import { Slider, FancyButton, ScrollBox } from '@pixi/ui';
 import { animate, type AnimationPlaybackControlsWithThen } from 'motion';
@@ -133,6 +133,15 @@ export function killTweensOf(target: object) {
 export function stopAllAnimations() {
   activeAnimations.forEach((a) => a.stop());
   activeAnimations.clear();
+}
+
+/**
+ * A GUI's images packed in sheets (iva build's iva-atlas/): each sheet's
+ * URL, and each image's frame by its name in the .gui - [sheet, x, y, w, h].
+ */
+export interface ImageAtlas {
+  sheets: string[];
+  frames: Record<string, [number, number, number, number, number]>;
 }
 
 export class CFRenderer {
@@ -359,7 +368,7 @@ export class CFRenderer {
   /** a page waiting for its images: the latest navigate's number */
   private navToken = 0;
   /** the page a navigate waits for: since when, how many files, when they were in */
-  private navTiming?: { page: string; at: number; files: number; loaded: number };
+  private navTiming?: { page: string; at: number; images: number; files: number; loaded: number };
   private collectTimer?: ReturnType<typeof setTimeout>;
   private prefetchTimer?: ReturnType<typeof setTimeout>;
   private prefetching = false;
@@ -367,11 +376,55 @@ export class CFRenderer {
   /** each name an image is known by: the one it's loaded under (a file named by path and by bare name: one texture) */
   private canon?: Map<string, string>;
 
-  /** Every image known by its name - none loaded yet (ensureLoaded does that). */
+  /**
+   * The GUI's images packed in sheets (iva build's): an image in one comes
+   * with its sheet - the sheet loaded, its every image is in, each a frame of
+   * it under the image's own name - and goes with it. A slow phone spends
+   * ~30 ms a file whatever its size: a page's few sheets, not its hundreds
+   * of images. The images not in a sheet load one by one, as ever.
+   */
+  atlas?: ImageAtlas;
+  private sheets?: { frameOf: Map<string, [number, number, number, number, number]>; names: [string, number[]][][]; key: Map<string, number> };
+
+  /** The sheets' index: each image's frame by its name (lower case), each sheet's images, each sheet's key. */
+  private sheetIndex() {
+    if (this.sheets || !this.atlas) return this.sheets;
+    const frameOf = new Map<string, [number, number, number, number, number]>();
+    const names: [string, number[]][][] = this.atlas.sheets.map(() => []);
+    for (const [name, f] of Object.entries(this.atlas.frames)) {
+      if (!Array.isArray(f) || f.length < 5 || !names[f[0]]) continue;
+      frameOf.set(name.replace(/\\/g, '/').toLowerCase(), f);
+      names[f[0]].push([name, f]);
+    }
+    const key = new Map(this.atlas.sheets.map((url, i) => [`iva-atlas:${url}`, i]));
+    return (this.sheets = { frameOf, names, key });
+  }
+
+  /** The sheet an image (alias) comes with - its key - if it's in one. */
+  private sheetOf(alias: string): string | undefined {
+    const f = this.sheetIndex()?.frameOf.get(alias.toLowerCase());
+    return f && this.atlas ? `iva-atlas:${this.atlas.sheets[f[0]]}` : undefined;
+  }
+
+  /** The images a sheet (its key) holds, by the names they're loaded under. */
+  private imagesIn(sheet: string): string[] {
+    const s = this.sheetIndex();
+    const i = s?.key.get(sheet);
+    if (i === undefined) return [];
+    return s!.names[i].flatMap(([name]) => this.aliasOf(name) ?? []);
+  }
+
+  /** How many files these images are: the sheets they come with, and the ones on their own. */
+  filesFor(aliases: Iterable<string>): number {
+    return new Set([...aliases].map((a) => this.sheetOf(a) ?? a)).size;
+  }
+
+  /** Every image known by its name, every sheet by its URL - none loaded yet (ensureLoaded does that). */
   async loadAssets() {
     for (const [filename, url] of Object.entries(this.imageMap)) {
       Assets.add({ alias: filename, src: url, parser: 'loadTextures' });
     }
+    for (const url of this.atlas?.sheets ?? []) Assets.add({ alias: `iva-atlas:${url}`, src: url, parser: 'loadTextures' });
   }
 
   /**
@@ -405,22 +458,45 @@ export class CFRenderer {
     return this.project.themes[name] ?? this.project.themes['.' + name];
   }
 
-  /** These images (aliases) loaded - a few tries each (a link that drops a file now and then: ZeroTier does). */
+  /**
+   * These images (aliases) loaded - an image in a sheet with its sheet, the
+   * others on their own; a few tries each (a link that drops a file now and
+   * then: ZeroTier does). A sheet that doesn't come: its images on their own.
+   */
   ensureLoaded(aliases: Iterable<string>): Promise<void> {
     const waits: Promise<void>[] = [];
+    const once = (key: string, load: () => Promise<void>) => {
+      let p = this.loading.get(key);
+      if (!p) {
+        p = load().finally(() => this.loading.delete(key));
+        this.loading.set(key, p);
+      }
+      return p;
+    };
+    const alone = (alias: string) => (Assets.cache.has(alias) ? Promise.resolve() : once(alias, () => this.loadOne(alias)));
     for (const alias of aliases) {
+      const sheet = this.sheetOf(alias);
       if (Assets.cache.has(alias)) {
-        this.lastUsed.set(alias, performance.now());
+        this.lastUsed.set(sheet && Assets.cache.has(sheet) ? sheet : alias, performance.now());
         continue;
       }
-      let p = this.loading.get(alias);
-      if (!p) {
-        p = this.loadOne(alias).finally(() => this.loading.delete(alias));
-        this.loading.set(alias, p);
-      }
-      waits.push(p);
+      waits.push(sheet ? once(sheet, () => this.loadSheet(sheet)).then(() => alone(alias)) : alone(alias));
     }
     return Promise.all(waits).then(() => undefined);
+  }
+
+  /** A sheet loaded, and its every image in - a frame of it, under the image's own name. */
+  private async loadSheet(sheet: string) {
+    await this.loadOne(sheet);
+    const t = Assets.cache.has(sheet) ? (Assets.get(sheet) as Texture) : undefined;
+    const s = this.sheetIndex();
+    const i = s?.key.get(sheet);
+    if (!t?.source || i === undefined) return;
+    for (const [name, [, x, y, w, h]] of s!.names[i]) {
+      const alias = this.aliasOf(name);
+      if (!alias || Assets.cache.has(alias)) continue;
+      Assets.cache.set(alias, new Texture({ source: t.source, frame: new Rectangle(x, y, w, h), label: alias }));
+    }
   }
 
   private async loadOne(alias: string) {
@@ -598,6 +674,15 @@ export class CFRenderer {
     if (!drop.length) return;
     for (const a of drop) this.lastUsed.delete(a);
     const bitmaps = drop.map((a) => (Assets.get(a) as Texture | undefined)?.source?.resource as { close?: () => void } | undefined);
+    // a sheet's images go with it: frames of it, forgotten (the sheet itself is what's unloaded)
+    for (const sheet of drop) {
+      for (const alias of this.imagesIn(sheet)) {
+        if (!Assets.cache.has(alias)) continue;
+        const frame = Assets.get(alias) as Texture;
+        Assets.cache.remove(alias);
+        frame.destroy(false);
+      }
+    }
     Assets.unload(drop)
       .then(() => {
         for (const b of bitmaps) if (typeof b?.close === 'function') b.close();
@@ -1289,7 +1374,7 @@ export class CFRenderer {
     const need = this.missing(this.pageImages(pageName));
     if (need.length) {
       const since = this.navTiming?.page === pageName ? this.navTiming.at : performance.now();
-      this.navTiming = { page: pageName, at: since, files: need.length, loaded: 0 };
+      this.navTiming = { page: pageName, at: since, images: need.length, files: this.filesFor(need), loaded: 0 };
       void this.ensureLoaded(need).then(() => {
         if (token !== this.navToken) return;
         if (this.navTiming?.page === pageName) this.navTiming.loaded = performance.now();
@@ -1410,7 +1495,7 @@ export class CFRenderer {
     // textures uploaded) - a slow device's trouble told apart
     const made = performance.now();
     const report = (shown: number) =>
-      console.info(`[cf navigate] ${pageName}: images ${waited ? Math.round(waited.loaded - waited.at) : 0} ms (${waited?.files ?? 0} loaded), made ${Math.round(made - making)} ms, shown ${Math.round(shown - making)} ms`);
+      console.info(`[cf navigate] ${pageName}: images ${waited ? Math.round(waited.loaded - waited.at) : 0} ms (${waited?.images ?? 0} in ${waited?.files ?? 0} files), made ${Math.round(made - making)} ms, shown ${Math.round(shown - making)} ms`);
     if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => report(performance.now()));
     else report(made);
   }

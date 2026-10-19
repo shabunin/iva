@@ -414,8 +414,10 @@ test('the build: the .gui, assets/ (its image folder: drawings in a folder per c
   assert.match(r.xml, /<sound name="beep" [^>]*>sounds\/beep\.mp3<\/sound>/);
   const out = tmpDir('iva-dist-');
   writeBuild(r, out);
+  // iva-atlas/: its images in sheets for the iva panel, beside the .gui (which doesn't name them: iViewer's are the files)
   assert.deepEqual(tree(out), ['T.gui', 'assets/boxes/100x50-r8-123456.png', 'assets/boxes/100x50-r8-123456@2x.png', 'assets/icons/lightbulb.png',
-    'assets/icons/lightbulb@2x.png', 'assets/scripts/main.js', 'assets/sounds/beep.mp3', 'joins.json'].sort());
+    'assets/icons/lightbulb@2x.png', 'assets/scripts/main.js', 'assets/sounds/beep.mp3', 'iva-atlas/atlas.json', 'iva-atlas/sheet-0.png', 'joins.json'].sort());
+  assert.doesNotMatch(r.xml, /iva-atlas/);
   // as before: everything beside the .gui (a decompiled project keeps its own layout)
   const flat = await build(jsx(' folders={false}'), files);
   assert.match(flat.xml, /<imagefolder \/>/);

@@ -13,6 +13,7 @@ import { JsxError, type Child, type VNode } from './runtime.js';
 import { mergeThemes } from './themes.js';
 import { dropNames, newNames } from './names.js';
 import { serialize } from './xml.js';
+import { atlasFiles } from './atlas.js';
 
 const COMPILER_DIR = path.dirname(fileURLToPath(import.meta.url));
 
@@ -233,8 +234,18 @@ export function writeBuild(result: CompileResult, outDir: string): string {
     if (s.file) fs.copyFileSync(s.file, dest);
     else fs.writeFileSync(dest, s.code ?? '');
   }
+  for (const [name, data] of buildAtlas(result)) fs.writeFileSync(place('', name), data);
   fs.writeFileSync(path.join(outDir, 'joins.json'), JSON.stringify(result.joins, null, 2) + '\n');
   return gui;
+}
+
+/**
+ * The build's images packed into sheets for the iva panel (atlas.ts):
+ * iva-atlas/ beside the .gui, which the .gui doesn't name - iViewer goes on
+ * loading the images one by one.
+ */
+export function buildAtlas(result: CompileResult): [string, Buffer][] {
+  return atlasFiles(result.xml, result.assets, result.scripts.flatMap((s) => (s.code !== undefined ? [s.code] : [])));
 }
 
 /**
@@ -261,5 +272,6 @@ export function buildFiles(result: CompileResult): [string, Buffer][] {
     [`${slug(result.name)}.gui`, Buffer.from('\ufeff' + result.xml, 'utf8')],
     ...result.assets.map((a): [string, Buffer] => [at(result.layout.images, a.name), a.data ?? fs.readFileSync(a.file!)]),
     ...result.scripts.map((s): [string, Buffer] => [at(scriptsDir(result.layout), s.name), s.code !== undefined ? Buffer.from(s.code) : fs.readFileSync(s.file!)]),
+    ...buildAtlas(result),
   ];
 }

@@ -1,6 +1,6 @@
 import { Application } from 'pixi.js';
 import { parseGUI, type CFProject } from './parser';
-import { CFRenderer, stopAllAnimations } from './renderer';
+import { CFRenderer, stopAllAnimations, type ImageAtlas } from './renderer';
 import { DomLayer } from './domLayer';
 import { CFAPI } from './cf';
 import { joinStore } from './joinStore';
@@ -34,6 +34,12 @@ export interface LoadProjectMenuOptions {
 export interface LoadProjectOptions {
   guiXml: string;
   imageMap: Record<string, string>;
+  /**
+   * Its images packed in sheets (iva build's iva-atlas/): each sheet's URL,
+   * each image's frame by its name - a page loads its sheets, not its images
+   * one by one. The images not in a sheet: from `imageMap`, as ever.
+   */
+  atlas?: ImageAtlas;
   scriptMap: Record<string, string>;
   canvas: HTMLCanvasElement;
   /** Reuse an existing Pixi Application (avoids WebGL context loss on reload). */
@@ -168,6 +174,7 @@ export async function loadProject(options: LoadProjectOptions): Promise<LoadProj
   }
 
   const renderer = new CFRenderer(app, project, imageMap);
+  renderer.atlas = options.atlas;
   renderer.fileUrl = options.fileUrl;
   renderer.webUrl = options.webUrl;
   renderer.loadGui = options.loadGui;
