@@ -2,9 +2,10 @@
 //   node panel/scripts/icons.mjs
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Resvg } from '@resvg/resvg-js';
 
-const here = path.dirname(new URL(import.meta.url).pathname);
+const here = path.dirname(fileURLToPath(import.meta.url));
 const tauri = path.resolve(here, '../src-tauri');
 const res = path.join(tauri, 'gen/android/app/src/main/res');
 
@@ -34,6 +35,22 @@ const write = (file, data) => {
 for (const [name, size] of [['32x32.png', 32], ['128x128.png', 128], ['128x128@2x.png', 256], ['icon.png', 512]]) {
   write(path.join(tauri, 'icons', name), png(svg.square, size));
 }
+// Windows' icon (the .exe's, the installers'): an .ico of PNGs, one a size
+const sizes = [16, 24, 32, 48, 64, 256].map((n) => [n, png(svg.square, n)]);
+const ico = [Buffer.from([0, 0, 1, 0, sizes.length, 0])];
+let offset = 6 + 16 * sizes.length;
+for (const [n, data] of sizes) {
+  const entry = Buffer.alloc(16);
+  entry.writeUInt8(n % 256, 0); // 0: 256
+  entry.writeUInt8(n % 256, 1);
+  entry.writeUInt16LE(1, 4); // planes
+  entry.writeUInt16LE(32, 6); // bits a pixel
+  entry.writeUInt32LE(data.length, 8);
+  entry.writeUInt32LE(offset, 12);
+  ico.push(entry);
+  offset += data.length;
+}
+write(path.join(tauri, 'icons', 'icon.ico'), Buffer.concat([...ico, ...sizes.map(([, data]) => data)]));
 for (const [dpi, n] of [['mdpi', 48], ['hdpi', 72], ['xhdpi', 96], ['xxhdpi', 144], ['xxxhdpi', 192]]) {
   write(path.join(res, `mipmap-${dpi}/ic_launcher.png`), png(svg.square, n));
   write(path.join(res, `mipmap-${dpi}/ic_launcher_round.png`), png(svg.round, n));

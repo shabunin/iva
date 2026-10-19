@@ -2,9 +2,10 @@
 // of the stand-ins its host classes import (the preview's link to iva dev).
 //   npm run panel:build    -> panel/dist (what the app ships)
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 
-const here = path.dirname(new URL(import.meta.url).pathname);
+const here = path.dirname(fileURLToPath(import.meta.url));
 const bridge = path.resolve(here, '../src/runtime/host/bridge');
 const real: Record<string, string> = {
   'tauri-core': '@tauri-apps/api/core',
