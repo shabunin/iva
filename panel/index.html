@@ -41,6 +41,15 @@
           <option value="30">for 30 minutes</option>
         </select>
         without a touch, then the device may lock (iViewer's Auto Lock Delay)</label>
+      <label class="pick">Graphics
+        <select id="opt-renderer">
+          <option value="auto">automatic (WebGL)</option>
+          <option value="webgl2">WebGL 2</option>
+          <option value="webgl1">WebGL 1</option>
+          <option value="webgpu">WebGPU</option>
+          <option value="canvas">Canvas 2D</option>
+        </select>
+        <span id="opt-renderer-now"></span> - another one reloads the panel; one the device lacks falls back to the next</label>
       <h2>Copies on this device</h2>
       <p class="hint">A GUI loaded from its server is kept here and starts without the server next time (the server is asked for a newer one behind it). Per GUI: whether a copy is kept, one saved now, one cleared.</p>
       <div id="copies"></div>

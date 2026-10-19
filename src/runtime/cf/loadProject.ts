@@ -31,8 +31,43 @@ export interface LoadProjectMenuOptions {
   placement?: RuntimeMenuPlacement;
 }
 
+/**
+ * What draws the GUI: Pixi's WebGL (auto: WebGL 2 where there is, else 1),
+ * WebGL 2 or 1 asked for, WebGPU, or the canvas' 2D drawing. One the device
+ * doesn't have: the next it has (WebGL, WebGPU, canvas). A canvas element
+ * takes one kind of drawing for good - another needs a new one (a reload).
+ */
+export type RendererChoice = 'auto' | 'webgl2' | 'webgl1' | 'webgpu' | 'canvas';
+
+/** Pixi's init options for a choice. */
+export function rendererOptions(choice: RendererChoice = 'auto'): { preference: 'webgl' | 'webgpu' | 'canvas'; webgl?: { preferWebGLVersion: 1 | 2 } } {
+  switch (choice) {
+    case 'webgl2':
+      return { preference: 'webgl', webgl: { preferWebGLVersion: 2 } };
+    case 'webgl1':
+      return { preference: 'webgl', webgl: { preferWebGLVersion: 1 } };
+    case 'webgpu':
+      return { preference: 'webgpu' };
+    case 'canvas':
+      return { preference: 'canvas' };
+    default:
+      return { preference: 'webgl' };
+  }
+}
+
+/** What an app draws with, as a person would say it: 'WebGL 2', 'WebGL 1', 'WebGPU', 'Canvas 2D'. */
+export function rendererLabel(app: Application): string {
+  const r = app.renderer as unknown as { name?: string; context?: { webGLVersion?: number } };
+  if (r.name === 'webgl') return `WebGL ${r.context?.webGLVersion ?? ''}`.trim();
+  if (r.name === 'webgpu') return 'WebGPU';
+  if (r.name === 'canvas') return 'Canvas 2D';
+  return r.name ?? 'unknown';
+}
+
 export interface LoadProjectOptions {
   guiXml: string;
+  /** what draws it (a new app only: one passed in `app` keeps its own) */
+  renderer?: RendererChoice;
   imageMap: Record<string, string>;
   /**
    * Its images packed in sheets (iva build's iva-atlas/): each sheet's URL,
@@ -167,8 +202,9 @@ export async function loadProject(options: LoadProjectOptions): Promise<LoadProj
       resolution: window.devicePixelRatio || 1,
       autoDensity: true,
       antialias: true,
-      preference: 'webgl',
+      ...rendererOptions(options.renderer),
     });
+    console.info(`[iva] drawing with ${rendererLabel(app)}${options.renderer && options.renderer !== 'auto' ? ` (${options.renderer} asked for)` : ''}`);
   } else {
     app.renderer.resize(width, height);
   }

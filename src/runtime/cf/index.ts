@@ -22,7 +22,7 @@ export { TokenEngine } from './tokenEngine';
 export type { TokenContext } from './tokenEngine';
 export { ControlSystem, runMacroByName, stopMacroByName } from './systemManager';
 
-export { loadProject } from './loadProject';
+export { loadProject, rendererLabel, rendererOptions, type RendererChoice } from './loadProject';
 export type {
   LoadProjectOptions,
   LoadProjectResult,

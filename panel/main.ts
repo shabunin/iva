@@ -15,7 +15,7 @@ import { getVersion } from '@tauri-apps/api/app';
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import { openUrl as openOutside } from '@tauri-apps/plugin-opener';
 import { installHost } from '../src/runtime/stdlib';
-import { loadProject, type LoadProjectResult, type Orientation } from '../src/runtime/cf';
+import { loadProject, rendererLabel, type LoadProjectResult, type Orientation, type RendererChoice } from '../src/runtime/cf';
 import { createIvaHost } from '../src/runtime/host';
 import { closeHostSockets } from '../src/runtime/host/net/provider';
 import { installFonts } from '../src/preview/fonts';
@@ -44,6 +44,13 @@ const QUIET = 'iva-panel:quiet';
 /** the view's options */
 const OUTLINE = 'iva-panel:outline';
 const FPS = 'iva-panel:fps';
+/** what draws the GUI (the settings' Graphics): auto, webgl2, webgl1, webgpu, canvas */
+const RENDERER = 'iva-panel:renderer';
+const RENDERERS: RendererChoice[] = ['auto', 'webgl2', 'webgl1', 'webgpu', 'canvas'];
+const rendererChoice = (): RendererChoice => {
+  const v = localStorage.getItem(RENDERER) as RendererChoice | null;
+  return v && RENDERERS.includes(v) ? v : 'auto';
+};
 const BAR = 'iva-panel:addressbar';
 /** the GUIs no copy is kept of (JSON: their URLs) */
 const NO_COPY = 'iva-panel:no-copy';
@@ -69,6 +76,7 @@ const options = {
   fps: $<HTMLInputElement>('opt-fps'),
   disconnect: $<HTMLInputElement>('opt-disconnect'),
   autoLock: $<HTMLSelectElement>('opt-autolock'),
+  renderer: $<HTMLSelectElement>('opt-renderer'),
 };
 
 /** where the panel has been (back, forward), across the page reloads a GUI change takes */
@@ -341,6 +349,7 @@ async function show(m: Manifest) {
   sessionStorage.removeItem(PAGE);
   current = await loadProject({
     guiXml: m.guiXml,
+    renderer: rendererChoice(),
     imageMap: m.imageMap,
     atlas: m.atlas,
     scriptMap: m.scriptMap,
@@ -577,6 +586,8 @@ function openSettings() {
   options.fps.checked = flag(FPS);
   options.disconnect.checked = localStorage.getItem(DISCONNECT) !== '0';
   showAutoLock();
+  options.renderer.value = rendererChoice();
+  $('opt-renderer-now').textContent = current ? `(now: ${rendererLabel(current.app)})` : '';
   $('errors').textContent = errors.slice().reverse().join('\n');
   $('cancel').hidden = !current && !failed;
   void showCopies();
@@ -692,6 +703,11 @@ function showAutoLock() {
   list.disabled = !device;
 }
 options.autoLock.addEventListener('change', () => setAutoLockDelay(Number(options.autoLock.value)));
+// another kind of drawing: a canvas takes one for good - the panel again, with a new one
+options.renderer.addEventListener('change', () => {
+  localStorage.setItem(RENDERER, options.renderer.value);
+  location.reload();
+});
 options.disconnect.addEventListener('change', () => {
   localStorage.setItem(DISCONNECT, options.disconnect.checked ? '1' : '0');
   if (current?.renderer.cfApi) current.renderer.cfApi.disconnectOnSuspend = options.disconnect.checked;
