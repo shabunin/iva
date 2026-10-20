@@ -48,8 +48,8 @@ import kotlin.math.roundToInt
  * background - the app's icon on black, the splash (res/drawable/splash.xml)
  * - shows instead of an empty black web view, and the page's loading screen,
  * the same icon in the same place, takes over from it. Then (shown, or
- * SPLASH_MS at most) it's opaque again: a see-through web view costs a
- * full-screen blend every frame.
+ * SPLASH_MS at most) it's opaque again, and the view around it black: a
+ * see-through web view costs a full-screen blend every frame.
  */
 class PanelDevice(private val activity: ComponentActivity) {
   private val main = Handler(Looper.getMainLooper())
@@ -81,13 +81,16 @@ class PanelDevice(private val activity: ComponentActivity) {
 
   /** the web view, see-through till the page has drawn */
   private var view: WebView? = null
-  private val opaque = Runnable { view?.setBackgroundColor(Color.BLACK) }
+  /** the page drawn: the web view and what's around it (beside the bars a GUI shows) black, the splash no longer showing through */
+  private val opaque = Runnable {
+    content.setBackgroundColor(Color.BLACK)
+    view?.setBackgroundColor(Color.BLACK)
+  }
 
   fun attach(webView: WebView) {
     if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) return
     view = webView
     webView.setBackgroundColor(Color.TRANSPARENT)
-    main.postDelayed(opaque, SPLASH_MS)
     WebViewCompat.addWebMessageListener(webView, "ivaAndroid", ORIGINS) { _, message, _, isMainFrame, reply ->
       val data = message.data
       if (isMainFrame && data != null) {
@@ -257,7 +260,8 @@ class PanelDevice(private val activity: ComponentActivity) {
     // (the system's own broadcast; whoever sends it, the volume is read anew)
     ContextCompat.registerReceiver(activity, volume, IntentFilter("android.media.VOLUME_CHANGED_ACTION"), ContextCompat.RECEIVER_EXPORTED)
     activity.contentResolver.registerContentObserver(Settings.System.getUriFor(Settings.System.SCREEN_BRIGHTNESS), false, settings)
-    content.setBackgroundColor(Color.BLACK)
+    // black once the page has drawn (opaque); till then the splash, behind it, shows
+    main.postDelayed(opaque, SPLASH_MS)
     ViewCompat.setOnApplyWindowInsetsListener(content) { v, insets ->
       // room for the bars the GUI shows; a hidden one swiped out lies over the GUI
       val status = if (statusBarShown) insets.getInsets(WindowInsetsCompat.Type.statusBars()) else Insets.NONE
