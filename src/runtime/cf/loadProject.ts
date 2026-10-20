@@ -55,6 +55,32 @@ export function rendererOptions(choice: RendererChoice = 'auto'): { preference: 
   }
 }
 
+/**
+ * The Pixi app a GUI draws in, on `canvas` (sized for the GUI by
+ * loadProject): made beforehand, behind the GUI's reading (a slow phone takes
+ * half a second to set up WebGL), and handed to loadProject as `app`. Made
+ * before the GUI's size is known: 1 x 1 at `resolution` 1 - the canvas
+ * resized from that is cheap (a phone's 3x screen at 1024 x 768 is a 3072 x
+ * 2304 drawing buffer, multisampled, made and dropped).
+ */
+export async function createApp(canvas: HTMLCanvasElement, choice?: RendererChoice, width = 1024, height = 768, resolution = window.devicePixelRatio || 1): Promise<Application> {
+  const app = new Application();
+  await app.init({
+    canvas,
+    width,
+    height,
+    backgroundColor: 0x000000,
+    // transparent where web views / input fields are: they show through (see DomLayer)
+    backgroundAlpha: 0,
+    resolution,
+    autoDensity: true,
+    antialias: true,
+    ...rendererOptions(choice),
+  });
+  console.info(`[iva] drawing with ${rendererLabel(app)}${choice && choice !== 'auto' ? ` (${choice} asked for)` : ''}`);
+  return app;
+}
+
 /** What an app draws with, as a person would say it: 'WebGL 2', 'WebGL 1', 'WebGPU', 'Canvas 2D'. */
 export function rendererLabel(app: Application): string {
   const r = app.renderer as unknown as { name?: string; context?: { webGLVersion?: number } };
@@ -96,8 +122,8 @@ export interface LoadProjectOptions {
   atlas?: ImageAtlas;
   scriptMap: Record<string, string>;
   canvas: HTMLCanvasElement;
-  /** Reuse an existing Pixi Application (avoids WebGL context loss on reload). */
-  app?: Application | null;
+  /** Reuse an existing Pixi Application (avoids WebGL context loss on reload) - or one being made (createApp). */
+  app?: Application | Promise<Application> | null;
   orientation?: Orientation;
   debugMode?: boolean;
   onOrientationChange?: (o: Orientation) => void;
@@ -217,9 +243,11 @@ export async function loadProject(options: LoadProjectOptions): Promise<LoadProj
 
   stopAllAnimations();
 
+  progress({ stage: 'graphics' });
+  let app = options.app ? await options.app : null;
   if (options.previousRenderer) {
     DomLayer.of(options.previousRenderer)?.clear();
-    options.app?.stage.removeChildren();
+    app?.stage.removeChildren();
   }
   joinStore.clear();
 
@@ -232,26 +260,8 @@ export async function loadProject(options: LoadProjectOptions): Promise<LoadProj
       ? project.properties.landscape?.height || 768
       : project.properties.portrait?.height || 1024;
 
-  progress({ stage: 'graphics' });
-  let app = options.app ?? null;
-  if (!app) {
-    app = new Application();
-    await app.init({
-      canvas,
-      width,
-      height,
-      backgroundColor: 0x000000,
-      // transparent where web views / input fields are: they show through (see DomLayer)
-      backgroundAlpha: 0,
-      resolution: window.devicePixelRatio || 1,
-      autoDensity: true,
-      antialias: true,
-      ...rendererOptions(options.renderer),
-    });
-    console.info(`[iva] drawing with ${rendererLabel(app)}${options.renderer && options.renderer !== 'auto' ? ` (${options.renderer} asked for)` : ''}`);
-  } else {
-    app.renderer.resize(width, height);
-  }
+  if (!app) app = await createApp(canvas, options.renderer, width, height);
+  else app.renderer.resize(width, height);
 
   const renderer = new CFRenderer(app, project, imageMap);
   renderer.atlas = options.atlas;
@@ -263,6 +273,7 @@ export async function loadProject(options: LoadProjectOptions): Promise<LoadProj
   renderer.startPage = options.startPage;
   renderer.targetOrientation = orientation;
   renderer.setDebugMode(debugMode);
+  renderer.prefetchFirst();
 
   CFAPI.makeGlobal(renderer);
   const globalCF = (window as any).CF;
@@ -286,9 +297,11 @@ export async function loadProject(options: LoadProjectOptions): Promise<LoadProj
     const total = project.scripts.filter((s) => s.name).length;
     let done = 0;
     progress({ stage: 'scripts', done, total });
+    // each in a script element of its own, its text in it: run as it's added, in their order - nothing
+    // to fetch (a blob's URL a slow phone takes a while to answer, one by one)
+    let at = performance.now();
     for (const scriptNode of project.scripts) {
       if (!scriptNode.name) continue;
-      progress({ stage: 'scripts', done: done++, total });
 
       const targetName = scriptNode.name.toLowerCase().replace(/\\/g, '/');
       const targetLeaf = targetName.split('/').pop() || '';
@@ -310,27 +323,20 @@ export async function loadProject(options: LoadProjectOptions): Promise<LoadProj
       if (!scriptContent) continue;
 
       try {
-        const blobContent = `${scriptContent}\n//# sourceURL=cf-script://${scriptNode.name}`;
-        const blob = new Blob([blobContent], { type: 'application/javascript' });
-        const blobUrl = URL.createObjectURL(blob);
-        scriptBlobUrls.push(blobUrl);
         const scriptElement = document.createElement('script');
-        scriptElement.src = blobUrl;
-
-        const ran = performance.now();
-        await new Promise<void>((resolve) => {
-          scriptElement.onload = () => {
-            scriptTimes.push([(scriptNode.name ?? '').split('/').pop() ?? '', Math.round(performance.now() - ran)]);
-            resolve();
-          };
-          scriptElement.onerror = () => resolve();
-          document.head.appendChild(scriptElement);
-        });
-
+        // (an error in it: the page's, as a script file's - window.onerror)
+        scriptElement.text = `${scriptContent}\n//# sourceURL=cf-script://${scriptNode.name}`;
+        document.head.appendChild(scriptElement);
         scriptElements.push(scriptElement);
       } catch (e) {
         console.error(`Error executing project script ${scriptNode.name}:`, e);
       }
+      // what it left for the moment after (a promise's then) before the next, as between script files
+      await null;
+      const now = performance.now();
+      scriptTimes.push([(scriptNode.name ?? '').split('/').pop() ?? '', Math.round(now - at)]);
+      at = now;
+      progress({ stage: 'scripts', done: ++done, total });
     }
   }
 

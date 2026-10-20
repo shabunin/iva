@@ -527,12 +527,24 @@ export class CFRenderer {
     return new Set([...aliases].map((a) => this.sheetOf(a) ?? a)).size;
   }
 
-  /** Every image known by its name, every sheet by its URL - none loaded yet (ensureLoaded does that). */
+  /** the images (aliases) made known to Assets by this renderer: an image as it's first loaded */
+  private added = new Set<string>();
+
+  /**
+   * Every sheet known by its URL - none loaded yet (ensureLoaded does that).
+   * An image is made known as it's first loaded (loadOne): of a GUI's
+   * thousands most come with their sheets, and a slow phone takes 0.4 s to
+   * add them all.
+   */
   async loadAssets() {
-    for (const [filename, url] of Object.entries(this.imageMap)) {
-      Assets.add({ alias: filename, src: url, parser: 'loadTextures' });
-    }
-    for (const url of this.atlas?.sheets ?? []) Assets.add({ alias: `iva-atlas:${url}`, src: url, parser: 'loadTextures' });
+    for (const url of this.atlas?.sheets ?? []) this.addAsset(`iva-atlas:${url}`, url);
+  }
+
+  /** An image (alias) known to Assets by its URL - once by this renderer (a GUI before's of that name: replaced). */
+  private addAsset(alias: string, src: string) {
+    if (this.added.has(alias)) return;
+    this.added.add(alias);
+    Assets.add({ alias, src, parser: 'loadTextures' });
   }
 
   /**
@@ -612,12 +624,28 @@ export class CFRenderer {
     }
   }
 
+  /**
+   * While start() waits for the first page's images: each on the GPU as it
+   * comes (the page idle meanwhile, Pixi's workers decoding the rest) - not
+   * all in the first frame (a slow phone: half a second of uploads).
+   */
+  private uploadOnLoad = false;
+
   private async loadOne(alias: string) {
+    if (!alias.startsWith('iva-atlas:') && this.imageMap[alias]) this.addAsset(alias, this.imageMap[alias]);
     const again = [300, 800];
     for (let attempt = 0; ; attempt++) {
       try {
         await Assets.load(alias);
         this.lastUsed.set(alias, performance.now());
+        if (this.uploadOnLoad) {
+          const source = (Assets.get(alias) as Texture | undefined)?.source;
+          try {
+            if (source) (this.app.renderer as unknown as { texture?: { initSource?: (s: unknown) => void } }).texture?.initSource?.(source);
+          } catch {
+            /* uploaded by the frame that shows it, as ever */
+          }
+        }
         return;
       } catch (e) {
         if (attempt >= again.length) {
@@ -1706,6 +1734,26 @@ export class CFRenderer {
   /** how start() went: ms for the images known (Assets), the first page's in, and made */
   startTimes: { assets: number; images: number; made: number } = { assets: 0, images: 0, made: 0 };
 
+  /** The page start() shows: CF.loadGUI(url, { startPage })'s, if the GUI has it, else the GUI's own. */
+  private firstPage(): string | undefined {
+    return this.startPage && this.project.pages[this.startPage]
+      ? this.startPage
+      : this.project.startPage || Object.keys(this.project.pages)[0];
+  }
+
+  /**
+   * The first page's images on their way in (decoded by Pixi's workers) while
+   * the GUI's scripts run - start() waits for them, and for any a look the
+   * scripts switch to names.
+   */
+  prefetchFirst() {
+    const first = this.firstPage();
+    if (!first) return;
+    this.uploadOnLoad = true;
+    void this.loadAssets();
+    void this.ensureLoaded(this.pageImages(first));
+  }
+
   async start(onImages?: (done: number, total: number) => void) {
     this.pageHistory = [];
     this.initStore();
@@ -1718,13 +1766,12 @@ export class CFRenderer {
     };
     await this.loadAssets();
     this.startTimes.assets = lap();
-    // CF.loadGUI(url, { startPage }): that page, if the GUI has it
-    const first = this.startPage && this.project.pages[this.startPage]
-      ? this.startPage
-      : this.project.startPage || Object.keys(this.project.pages)[0];
+    const first = this.firstPage();
     if (!first) return;
     // the first page's images in before start() is done: the page is there when the scripts run
+    this.uploadOnLoad = true;
     await this.ensureLoaded(this.pageImages(first), onImages);
+    this.uploadOnLoad = false;
     this.startTimes.images = lap();
     this.navigate(first);
     this.startTimes.made = lap();

@@ -120,8 +120,9 @@ export function listAdd(
     const at = position === ctx.TopPosition ? 0
         : typeof position === 'number' && Number.isInteger(n) && n >= 0 && n <= items.length ? n
         : items.length;
+    // the items from `at` on moved down - none, appended
+    if (at < items.length) moveItems(ctx, list, at, array.length);
     items.splice(at, 0, ...array);
-    moveItems(ctx, list, at, array.length);
     array.forEach((info, k) => setItemJoins(ctx, list, at + k, info));
     ctx.dispatchEvent("LIST_UPDATED", list, { op: 'add', at, count: array.length } satisfies ListChange);
 }
