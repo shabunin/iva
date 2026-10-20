@@ -24,6 +24,12 @@ var IvaUI = (function () {
   var pagers = {};
   var drags = {};
   var tabsOf = {};
+  // the clocks going, the menu, the alarm banners: once each - iva-start.js calls a component's setup again with the
+  // other orientation's layout when the panel is turned (<Project orientation="both">): its options swapped, its
+  // state and watchers kept
+  var clocks = {};
+  var theMenu = null;
+  var banners = {};
   // listInfo's scroll position over the GUI's pixels: 1, or the screen's scale where iViewer scales the
   // GUI up (a phone), or whatever it counts in - learnt from a list a script turned (unanimated) to a row
   var listScale = 0;
@@ -148,6 +154,8 @@ var IvaUI = (function () {
   return {
     /** a serial join showing the time (HH:MM) */
     clock: function (join) {
+      if (clocks[join]) return;
+      clocks[join] = true;
       function tick() { var d = new Date(); CF.setJoin(join, pad(d.getHours()) + ':' + pad(d.getMinutes())); }
       tick();
       setInterval(tick, 5000);
@@ -181,19 +189,30 @@ var IvaUI = (function () {
      * starts (its first value, the initial pick), sliding for every change after.
      */
     group: function (id, value, joins, initial, labels, labelJoin, pill) {
-      var g = { value: value, joins: joins, pill: pill, born: Date.now() };
+      var again = groups[id];
+      var g = again || { value: value };
+      g.joins = joins;
+      g.labels = labels;
+      g.labelJoin = labelJoin;
+      g.pill = pill;
+      g.born = Date.now();
+      g.at = undefined;
+      g.dx = undefined;
+      g.want = undefined;
       groups[id] = g;
       function place(i) {
-        if (!pill || pill.xs[i] === undefined || g.at === i) return;
+        var pl = g.pill;
+        if (!pl || pl.xs[i] === undefined || g.at === i) return;
         if (g.dx === undefined) {
           g.want = i; // where the pill is isn't known yet
           return;
         }
-        var to = { join: pill.join, x: g.dx + pill.xs[i] };
-        if (pill.ys) to.y = g.dy + pill.ys[i];
-        CF.setProperties(to, 0, Date.now() - g.born < 500 ? 0 : pill.time, CF.AnimationCurveEaseInOut);
+        var to = { join: pl.join, x: g.dx + pl.xs[i] };
+        if (pl.ys) to.y = g.dy + pl.ys[i];
+        CF.setProperties(to, 0, Date.now() - g.born < 500 ? 0 : pl.time, CF.AnimationCurveEaseInOut);
         g.at = i;
       }
+      g.place = place;
       if (pill) {
         CF.getProperties(pill.join, function (p) {
           g.dx = (p && p.x !== undefined ? Number(p.x) : 0) - pill.xs[pill.at];
@@ -205,11 +224,16 @@ var IvaUI = (function () {
           }
         });
       }
+      if (again) {
+        // turned: the pill under the option picked, in the other layout
+        CF.getJoin(value, function (j, v) { place(Number(v)); });
+        return;
+      }
       CF.watch(CF.JoinChangeEvent, value, function (j, v) {
         var i = Number(v);
-        for (var k = 0; k < joins.length; k++) CF.setJoin(joins[k], k === i ? 1 : 0);
-        if (labels && labelJoin) CF.setJoin(labelJoin, labels[i] === undefined ? '' : labels[i]);
-        place(i);
+        for (var k = 0; k < g.joins.length; k++) CF.setJoin(g.joins[k], k === i ? 1 : 0);
+        if (g.labels && g.labelJoin) CF.setJoin(g.labelJoin, g.labels[i] === undefined ? '' : g.labels[i]);
+        g.place(i);
       }, true);
       if (initial !== undefined) IvaUI.pick(id, initial);
     },
@@ -224,8 +248,16 @@ var IvaUI = (function () {
      * opened, its list scrolled to put the lit item in the middle (as far as the list's ends let it)
      */
     menu: function (pages, o) {
+      if (theMenu) {
+        theMenu.pages = pages;
+        theMenu.o = o;
+        if (CF.currentPage) theMenu.show(CF.currentPage);
+        return;
+      }
       var lit = -1;
+      var m = theMenu = { pages: pages, o: o };
       function show(page) {
+        var pages = m.pages;
         var on = pages[page];
         for (var p in pages) if (on === undefined && String(page).indexOf(p + ' / ') === 0) on = pages[p];
         var k = 0;
@@ -236,12 +268,14 @@ var IvaUI = (function () {
           k++;
         }
       }
+      m.show = show;
       // iViewer passes (from, to, orientation); some runtimes just (to)
       CF.watch(CF.PageFlipEvent, function (a, b) { show(typeof b === 'string' ? b : a); });
       if (CF.currentPage) show(CF.currentPage);
       if (o) {
         CF.watch(CF.JoinChangeEvent, o.open, function (j, v) {
-          if (Number(v) && lit >= 0) CF.listScroll(o.list, Math.max(0, lit * o.rowH + o.rowH / 2 - o.h / 2), CF.PixelPosition, false);
+          var mo = m.o;
+          if (Number(v) && lit >= 0 && mo) CF.listScroll(mo.list, Math.max(0, lit * mo.rowH + mo.rowH / 2 - mo.h / 2), CF.PixelPosition, false);
         });
       }
     },
@@ -254,6 +288,16 @@ var IvaUI = (function () {
      * and its own ANDed here, as iViewer can't. A tap while it slides is ignored.
      */
     tabs: function (id, o) {
+      var had = tabsOf[id];
+      if (had) {
+        // turned: the other layout's bar places, the screen shown kept
+        o.current = had.current;
+        o.mirrors = had.mirrors;
+        tabsOf[id] = o;
+        for (var t = 0; t < o.joins.length; t++) CF.setJoin(o.joins[t], t === o.current ? 1 : 0);
+        CF.setProperties({ join: o.bar, x: o.xs[o.current] }, 0, 0);
+        return;
+      }
       tabsOf[id] = o;
       o.current = 0;
       for (var k = 0; k < o.joins.length; k++) CF.setJoin(o.joins[k], k === 0 ? 1 : 0);
@@ -304,6 +348,15 @@ var IvaUI = (function () {
      * already isn't again (a move or not).
      */
     dial: function (id, o) {
+      var had = dials[id];
+      if (had) {
+        // turned: the other layout's knob - its size, turned to the value again
+        for (var k in o) had[k] = o[k];
+        had.turn = undefined;
+        had.shown = undefined;
+        CF.getJoin(o.join, function (j, v) { IvaUI.dialShow(id, v); });
+        return;
+      }
       dials[id] = o;
       CF.watch(CF.JoinChangeEvent, o.join, function (j, v) { IvaUI.dialShow(id, v); }, true);
     },
@@ -457,6 +510,15 @@ var IvaUI = (function () {
      * own; the slider it sets without an event (a finger moving it makes one).
      */
     color: function (id, o, onChange) {
+      var had = colors[id];
+      if (had) {
+        // turned: the other layout's wheel (its size, its mark's), the colour kept
+        had.o = o;
+        had.onChange = onChange;
+        had.mx = had.my = undefined;
+        IvaUI.colorShow(id, false);
+        return;
+      }
       // rgb: the r / g / b joins as the picker last left them (written, or followed); vj: the slider's
       var c = colors[id] = { o: o, h: 0, s: 0, v: 1, rgb: null, vj: -1, onChange: onChange, sent: '', timer: null, last: 0 };
       function follow() {
@@ -570,6 +632,19 @@ var IvaUI = (function () {
      * count a sliver of the row above as the first shown) turns back to it.
      */
     picker: function (id, o) {
+      var had = pickers[id];
+      if (had) {
+        // turned: the other layout's drums (their row subpages); the values are the joins'
+        had.o = o;
+        for (var d = 0; d < o.drums.length; d++) {
+          var dd = o.drums[d], rows = [{ subpage: dd.row, s1: '' }, { subpage: dd.row, s1: '' }];
+          for (var r = 0; r < dd.values.length; r++) rows.push({ subpage: dd.row, s1: dd.values[r] });
+          rows.push({ subpage: dd.row, s1: '' }, { subpage: dd.row, s1: '' }, { subpage: dd.row, s1: '' });
+          IvaUI.fill(dd.list, rows);
+          drumOf[dd.list] = { id: id, k: d };
+        }
+        return;
+      }
       var p = pickers[id] = { o: o, kind: KINDS[o.kind], rows: [], to: [], turned: [] };
       for (var k = 0; k < o.drums.length; k++) {
         var dr = o.drums[k], items = [{ subpage: dr.row, s1: '' }, { subpage: dr.row, s1: '' }];
@@ -678,6 +753,10 @@ var IvaUI = (function () {
     },
     /** a number field: the value in o.join (min..max as 0..65535), typed on a keypad (shown in o.display) */
     num: function (id, o) {
+      if (nums[id]) {
+        nums[id].o = o;
+        return;
+      }
       nums[id] = { o: o, entry: '', fresh: true };
       CF.watch(CF.JoinChangeEvent, o.join, function (j, v) { CF.setJoin(o.label, fmt(fromJoin(v, o.min, o.max), o.decimals, o.unit)); }, true);
       if (o.value !== undefined && o.value !== null) CF.setJoin(o.join, toJoin(o.value, o.min, o.max));
@@ -734,6 +813,15 @@ var IvaUI = (function () {
      * a tap on one writes its index (among all the options) to o.join
      */
     select: function (id, o) {
+      var was = selects[id];
+      if (was) {
+        // turned: the other layout's list (its rows), the options and the pick kept
+        was.o = o;
+        selectOf[o.list] = id;
+        IvaUI.selectFilter(id, '');
+        if (was.label) was.label();
+        return;
+      }
       var st = selects[id] = { o: o, options: o.options, matches: [] };
       selectOf[o.list] = id;
       rowsOf(o.list);
@@ -790,6 +878,14 @@ var IvaUI = (function () {
      * down, off), each row's tint and badges by its tone, a tap selecting it
      */
     table: function (id, o) {
+      var tbl = tables[id];
+      if (tbl) {
+        // turned: the other layout's list (its row subpages, its columns' places); the rows, sort, search and pick kept
+        tbl.o = o;
+        tableOf[o.list] = id;
+        IvaUI.tableShow(id);
+        return;
+      }
       var tb = tables[id] = { o: o, all: o.data || [], view: [], sort: -1, dir: 0, q: '', sel: null };
       tableOf[o.list] = id;
       rowsOf(o.list);
@@ -979,15 +1075,23 @@ var IvaUI = (function () {
       return { top: top, count: count };
     },
     /** a banner of an AlarmTable's alarms, blinking while any is unacknowledged */
-    alarmBanner: function (name, o) {
+    alarmBanner: function (name, o0) {
+      var key = name + '|' + o0.text;
+      if (banners[key]) {
+        banners[key].o = o0;
+        banners[key].show();
+        return;
+      }
+      var b = banners[key] = { o: o0 };
       var phase = 0, timer = null;
       function show() {
+        var o = b.o;
         var t = IvaUI.alarmTop(name), a = t.top, blink = !!a && !a.acked;
         if (blink && !timer) {
           timer = setInterval(function () {
             phase++;
             var u = IvaUI.alarmTop(name).top;
-            if (u && !u.acked) CF.setJoin(o.bg, file(o.looks[u.severity][phase % 2]));
+            if (u && !u.acked) CF.setJoin(b.o.bg, file(b.o.looks[u.severity][phase % 2]));
           }, 600);
         }
         if (!blink && timer) { clearInterval(timer); timer = null; }
@@ -1003,6 +1107,7 @@ var IvaUI = (function () {
         CF.setJoin(o.more, t.count > 1 ? '+' + (t.count - 1) + ' more' : '');
         CF.setJoin(o.bg, file(o.looks[a.severity][blink ? phase % 2 : 1]));
       }
+      b.show = show;
       // the table may start after the banner
       function attach() {
         var set = alarmSets[name];

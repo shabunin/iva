@@ -442,8 +442,13 @@ export interface ProjectProps extends XmlProp {
   name: string;
   /** a device's panel size (instead of width / height) */
   device?: Device;
-  /** with device: the main orientation (default 'landscape') */
-  orientation?: 'landscape' | 'portrait';
+  /**
+   * with device: the main orientation (default 'landscape'); 'both': laid out
+   * either way - the project evaluated again turned (screen() the other way,
+   * each of <Project sizes> too), each page's other block from that, as
+   * iViewer turns between them (a square screen has one way)
+   */
+  orientation?: 'landscape' | 'portrait' | 'both';
   /** the panel size; width > height makes landscape the main orientation */
   width?: number;
   height?: number;

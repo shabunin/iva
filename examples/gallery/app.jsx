@@ -19,7 +19,7 @@ export default (
   // built at 1280x800, and for phones: a 1400x1400 screen at 3x and a 1080x1920 one (a Nexus 5) at 2.5x, laid
   // out at 467x467 and 432x768 and scaled up by iViewer (as big as on a tablet); the pages lay themselves out from
   // the size (ui.grid) and scroll (ScrollArea)
-  <Project name="iva-ui gallery" width={1280} height={800} sizes={['1400x1400@3x', '1080x1920@2.5x']} themes={['dark', 'light']}>
+  <Project name="iva-ui gallery" width={1280} height={800} orientation="both" sizes={['1400x1400@3x', '1080x1920@2.5x']} themes={['dark', 'light']}>
     {Overview}
     {Buttons}
     {Controls}

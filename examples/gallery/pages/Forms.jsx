@@ -13,8 +13,10 @@ const L = ui.grid({
 }, [['radio', 'select', 'search'], ['checks', 'joins', 'text']]);
 
 const note = (x, y, text) => <Text x={x} y={y} w={360} h={24} text={text} color={t.muted} font={t.font} fontSize={16} />;
-// a phone: what drops down opens as a sheet (the page scrolls; a sheet stays put)
-const drop = narrow ? 'sheet' : 'dropdown';
+// the page scrolling (a phone, a panel turned): what drops down opens as a sheet - a scrolling page is a list in
+// iViewer, and a list holds no subpage (a dropdown is one); a sheet stays put
+const scrolls = Math.max(...Object.values(L).map((c) => c.y + c.h)) > t.panel.height - 16;
+const drop = narrow || scrolls ? 'sheet' : 'dropdown';
 
 /** a line of the joins card: a join's value, live */
 const shows = (y, join, type) => {
@@ -40,14 +42,14 @@ export default (
       <ui.Card title="SelectBox" {...L.select}>
         {note(28, 52, 'as a sheet')}
         <ui.SelectBox x={28} y={80} w={L.select.w - 56} options={['Auto', 'Low', 'Medium', 'High']} join="fan" title="Fan speed" />
-        {note(28, 146, narrow ? 'another, the rooms' : 'as a dropdown under the field')}
+        {note(28, 146, drop === 'sheet' ? 'another, the rooms' : 'as a dropdown under the field')}
         <ui.SelectBox x={28} y={174} w={L.select.w - 56} options={rooms} join="room" value={1} mode={drop} title="Room" />
       </ui.Card>
 
       <ui.Card title="SearchSelect" {...L.search}>
         {note(28, 52, 'sheet, fixed options - type to filter')}
         <ui.SearchSelect x={28} y={80} w={L.search.w - 56} title="City" options={cities} join="city" value={3} />
-        {note(28, 146, narrow ? 'options from a serial join (JSON)' : 'dropdown, options from a serial join (JSON)')}
+        {note(28, 146, drop === 'sheet' ? 'options from a serial join (JSON)' : 'dropdown, options from a serial join (JSON)')}
         <ui.SearchSelect x={28} y={174} w={L.search.w - 56} mode={drop} title="Device" source="devices" join="device" placeholder="Pick a device" />
         <OnStart js={`CF.setJoin(Joins.s.devices, ${JSON.stringify(JSON.stringify(devices))});`} joins={[s('devices')]} />
       </ui.Card>

@@ -16,7 +16,9 @@ test('the iva/ui gallery builds: one runtime script, the shared subpages once', 
   // every script the panel gets is valid JavaScript
   for (const sc of r.scripts) assert.doesNotThrow(() => new Function(sc.code!), sc.name);
   const start = r.scripts.find((s) => s.name === 'iva-start.js')!.code!;
-  assert.equal(start.match(/IvaUI\.menu\(/g)!.length, 1); // the side menu is on every page, set up once
+  // the side menu is on every page, set up once - each way the gallery is laid out (orientation="both": its list as
+  // high as that way's panel; the runtime keeps one menu, iva-start.js gives it the way the panel is turned)
+  assert.equal(start.match(/IvaUI\.menu\(/g)!.length, 2);
   assert.equal(start.match(/IvaUI\.clock\(/g)!.length, 1);
   assert.equal((r.xml.match(/<subpage name="ui_menu" w=/g) ?? []).length, 1);
   // placed on every page
@@ -141,8 +143,11 @@ test('pickers: drum lists with their rows, popups last, a popup each for pickers
   // the drum rows: defined once per width, a tap is a release (a drag isn't a tap)
   assert.equal((r.xml.match(/<subpage name="ui_drum_84_48" w=/g) ?? []).length, 1);
   assert.match(r.xml, /<subpage name="ui_drum_84_48"[\s\S]*?<press [^>]*js="IvaUI.rowDown\(list\)"[\s\S]*?<release [^>]*js="IvaUI.drumTap\(list, listIndex\)"/);
-  // two time pickers on the wake-up joins that look different: two popups
-  assert.equal((pickers.match(/<subpage name="ui_tp_wakeH_\w+" x=/g) ?? []).length, 2);
+  // two time pickers on the wake-up joins that look different: two popups - each way the page is laid out
+  for (const way of ['landscape', 'portrait']) {
+    const block = new RegExp(`<${way}\\b[^>]*>([\\s\\S]*?)</${way}>`).exec(pickers)![1];
+    assert.equal((block.match(/<subpage name="ui_tp_wakeH_\w+" x=/g) ?? []).length, 2, way);
+  }
   const start = r.scripts.find((s) => s.name === 'iva-start.js')!.code!;
   for (const f of ["kind: 'time'", "kind: 'date'", 'IvaUI.num(', 'IvaUI.select(']) assert.ok(start.includes(f), f);
   assert.deepEqual(r.warnings, []);

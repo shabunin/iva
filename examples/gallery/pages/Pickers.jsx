@@ -9,8 +9,10 @@ const L = ui.grid({
 }, [['time', 'date', 'number'], ['bigger', 'joins']]);
 
 const note = (y, text) => <Text x={28} y={y} w={360} h={24} text={text} color={t.muted} font={t.font} fontSize={16} />;
-// a phone: what drops down opens as a sheet (the page scrolls; a sheet stays put)
-const drop = narrow ? 'sheet' : 'dropdown';
+// the page scrolling (a phone, a panel turned): what drops down opens as a sheet - a scrolling page is a list in
+// iViewer, and a list holds no subpage (a dropdown is one); a sheet stays put
+const scrolls = Math.max(...Object.values(L).map((c) => c.y + c.h)) > t.panel.height - 16;
+const drop = narrow || scrolls ? 'sheet' : 'dropdown';
 const stacked = L.bigger.w < 640;
 
 /** a line of the joins card: a join's value, live (analog: min..max as 0..65535) */
@@ -33,7 +35,7 @@ export default (
         <ui.TimePicker x={28} y={80} w={L.time.w - 56} title="Wake up" hour="wakeH" minute="wakeM" value="07:30" />
         {note(148, '12 h, 5-minute steps, a Now button')}
         <ui.TimePicker x={28} y={176} w={L.time.w - 56} title="Sleep" hour="sleepH" minute="sleepM" value="22:45" ampm minuteStep={5} now="Now" />
-        {note(244, narrow ? 'another' : 'dropdown under the field')}
+        {note(244, drop === 'sheet' ? 'another' : 'dropdown under the field')}
         <ui.TimePicker x={28} y={272} w={L.time.w - 56} title="Start" hour="startH" minute="startM" value="18:00" mode={drop} />
       </ui.Card>
 
@@ -42,13 +44,13 @@ export default (
         <ui.DatePicker x={28} y={80} w={L.date.w - 56} title="Due date" day="dueD" month="dueM" year="dueY" value="2026-10-08" />
         {note(148, 'order="mdy", format="MMM D, YYYY"')}
         <ui.DatePicker x={28} y={176} w={L.date.w - 56} title="Party" day="partyD" month="partyM" year="partyY" order="mdy" format="MMM D, YYYY" />
-        {note(244, narrow ? '"ymd", "YYYY-MM-DD", 2020-2030' : '"ymd", "YYYY-MM-DD", 2020-2030, dropdown')}
+        {note(244, drop === 'sheet' ? '"ymd", "YYYY-MM-DD", 2020-2030' : '"ymd", "YYYY-MM-DD", 2020-2030, dropdown')}
         <ui.DatePicker x={28} y={272} w={L.date.w - 56} title="Since" day="sinceD" month="sinceM" year="sinceY" value="2024-03-01" order="ymd" format="YYYY-MM-DD"
                        minYear={2020} maxYear={2030} today={false} mode={drop} />
       </ui.Card>
 
       <ui.Card title="NumberField" {...L.number}>
-        {note(52, narrow ? '0-99, two digits' : '0-99, two digits, dropdown')}
+        {note(52, drop === 'sheet' ? '0-99, two digits' : '0-99, two digits, dropdown')}
         <ui.NumberField x={28} y={80} w={L.number.w - 56} title="Count" join="count" value={7} max={99} digits={2} mode={drop} />
         {note(148, '0-100, whole numbers')}
         <ui.NumberField x={28} y={176} w={L.number.w - 56} title="Volume" join="percent" value={42} unit="%" />

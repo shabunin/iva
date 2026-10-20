@@ -123,7 +123,7 @@ export function projectSize(p: Record<string, any>): ScreenSize | string {
     if (p.width !== undefined || p.height !== undefined) return 'device or width / height, not both';
     return p.orientation === 'portrait' ? { width: size[1], height: size[0] } : { width: size[0], height: size[1] };
   }
-  if (p.orientation !== undefined) return 'orientation goes with device (with width / height, the larger one decides)';
+  if (p.orientation !== undefined && p.orientation !== 'both') return 'orientation goes with device (with width / height, the larger one decides; "both": laid out each way)';
   if (p.width === undefined || p.height === undefined) return `give device="iPad" (${Object.keys(DEVICES).join(', ')}) or width and height`;
   return { width: p.width, height: p.height };
 }
@@ -135,6 +135,42 @@ const ITEMS = new Set(['Button', 'Text', 'Image', 'Slider', 'Gauge', 'List', 'In
 const PLACED = new Set([...ITEMS].filter((t) => t !== 'Gesture'));
 /** go anywhere: lifted to the project */
 const HOISTED = new Set(['Script', 'OnStart']);
+/** a list's cells: the subpages it names */
+const LIST_CELLS = ['headerSub', 'titleSub', 'contentSub', 'footerSub'];
+const attrOf = (x: XNode, k: string) => {
+  const v = x.attrs.find(([a]) => a === k)?.[1];
+  return typeof v === 'string' ? v : undefined;
+};
+const setAttrOf = (x: XNode, k: string, v: string) => {
+  const at = x.attrs.findIndex(([a]) => a === k);
+  if (at >= 0) x.attrs[at] = [k, v];
+};
+
+/**
+ * iva-start.js's pieces laid out one way (<Project orientation="both">): run
+ * for the way the panel is turned, and again once it's turned the other way -
+ * the elements they're for are that way's (a pill's places, a dial's size).
+ * After the page is made turned (OrientationChangeEvent comes first).
+ */
+function turnedRunner(ways: Record<'landscape' | 'portrait', string[]>): string {
+  const fns = (list: string[]) => list.map((c) => `function () { ${c} }`).join(',\n      ');
+  return [
+    '  (function (ways) {',
+    '    var shown;',
+    '    function run(o) {',
+    "      var way = o === CF.PortraitOrientation ? 'portrait' : 'landscape';",
+    '      if (way === shown) return;',
+    '      shown = way;',
+    "      for (var i = 0; i < ways[way].length; i++) try { ways[way][i](); } catch (e) { CF.log('iva OnStart: ' + e); }",
+    '    }',
+    '    run(CF.currentOrientation);',
+    '    CF.watch(CF.OrientationChangeEvent, function (page, o) { setTimeout(function () { run(o); }, 0); });',
+    '  })({',
+    `    landscape: [\n      ${fns(ways.landscape)}\n    ],`,
+    `    portrait: [\n      ${fns(ways.portrait)}\n    ]`,
+    '  });',
+  ].join('\n');
+}
 const FEEDBACK: Record<string, string> = { none: '0', momentary: '1', toggle: '2' };
 
 /**
@@ -214,6 +250,19 @@ export class Builder {
   private trailing: XNode[] = [];
   /** <OnStart> code, in order */
   private start: string[] = [];
+  /**
+   * The other orientation (<Project orientation="both">): the project laid out
+   * turned, built into each page's other block - 'turned' while that's built.
+   * Its <OnStart> code apart (what differs runs the way the panel is turned),
+   * the subpages it made otherwise than the first way under names of their own
+   * (gallery_dots__portrait), and the elements it made, to point at those.
+   */
+  private pass: 'main' | 'turned' = 'main';
+  private turnedStart: string[] | null = null;
+  private turnedNames = new Map<string, string>();
+  private turnedNodes: XNode[] = [];
+  /** start code that runs once whichever way (a server, a web app, the project's own <OnStart>): never turned */
+  private once = new Set<string>();
   /** placements marked topmost */
   private topmost = new Set<XNode>();
   /** web apps by name: their code (one app per name), port, and what gets the port once it's known */
@@ -245,7 +294,7 @@ export class Builder {
    */
   constructor(private baseDir: string, private opts: { themed?: boolean; start?: string; size?: ScreenSize } = {}) {}
 
-  build(tree: Child): BuildResult {
+  build(tree: Child, turned?: Child): BuildResult {
     const top = flat([tree]).filter((c) => typeof c !== 'string' || c.trim());
     if (top.length !== 1 || typeof top[0] === 'string' || top[0].type !== 'Project') {
       throw new CompileError('the entry must `export default` one <Project>');
@@ -330,11 +379,12 @@ export class Builder {
         case 'Script': this.script(c); break;
         case 'Sound': this.sound(c); break;
         case 'Raw': this.trailing.push(this.raw(c)); break;
-        case 'OnStart': this.onStart(c); break;
+        case 'OnStart': this.onStart(c, true); break;
         default: throw this.err(c, `<${c.type}> can't be directly in <Project> (it takes Page, Subpage, System, HttpServer, Macro, Token, Script, Sound, Theme, Raw)`);
       }
     }
     if (!this.pages.length) throw new CompileError('the project has no <Page>');
+    if (turned !== undefined) this.buildTurned(turned);
     this.assignPorts();
     // the look the panel showed last (IvaTheme sets it): kept between runs
     if (this.opts.themed) this.tokens.push(this.E('token', { name: '[iva_theme]', value: this.opts.start ?? '', persist: 1 }));
@@ -346,15 +396,27 @@ export class Builder {
       }
     }
     this.checkListCells();
+    // laid out both ways: the pieces the same either way run once, the others the way the panel is turned
+    const turnedStart = this.turnedStart ?? this.start;
+    const both = this.start.filter((c) => this.once.has(c) || turnedStart.includes(c));
+    const ways: Record<'landscape' | 'portrait', string[]> = { landscape: [], portrait: [] };
+    ways[this.primary] = this.start.filter((c) => !this.once.has(c) && !turnedStart.includes(c));
+    ways[this.other()] = turnedStart.filter((c) => !this.start.includes(c));
+    const pieces = [...both];
     // with iva's start code only: a .gui read back stays as it was
-    if (this.systems.length && this.start.length) this.start.push(restartSystems(this.systems.map((x) => x.attrs.find(([k]) => k === 'name')?.[1] ?? '')));
-    if (this.start.length) {
+    const any = pieces.length + ways.landscape.length + ways.portrait.length > 0;
+    const restart = this.systems.length && any ? [restartSystems(this.systems.map((x) => x.attrs.find(([k]) => k === 'name')?.[1] ?? ''))] : [];
+    if (any) {
+      // each piece on its own: one failing doesn't stop the rest
+      const each = (c: string, pad: string) => `${pad}try { ${c} } catch (e) { CF.log('iva OnStart: ' + e); }`;
+      const turning = ways.landscape.length || ways.portrait.length ? [turnedRunner(ways)] : [];
       this.scripts.push({
         name: 'iva-start.js',
-        // each piece on its own: one failing doesn't stop the rest
-        code: `// Generated by iva: <OnStart> code, run once the panel has started.\nCF.modules.push({ name: 'iva-start', setup: function () {\n${this.start
-          .map((c) => `  try { ${c} } catch (e) { CF.log('iva OnStart: ' + e); }`)
-          .join('\n')}\n} });\n`,
+        code: `// Generated by iva: <OnStart> code, run once the panel has started.\nCF.modules.push({ name: 'iva-start', setup: function () {\n${[
+          ...pieces.map((c) => each(c, '  ')),
+          ...turning,
+          ...restart.map((c) => each(c, '  ')),
+        ].join('\n')}\n} });\n`,
       });
     }
     this.checkActionJoins();
@@ -756,13 +818,19 @@ export class Builder {
   }
 
   /** <OnStart>: its code once (components repeat theirs), its joins numbered. */
-  private onStart(node: VNode) {
-    const code = String(node.props.js);
-    if (!this.start.includes(code)) this.start.push(code);
+  private onStart(node: VNode, once = false) {
+    this.startCode(String(node.props.js), once);
     for (const j of node.props.joins ?? []) {
       const t = this.target(node, 'joins', j);
       if (t instanceof JoinSlot) this.joins.use(t, () => {});
     }
+  }
+
+  /** Start code (iva-start.js), once; the way it's laid out turned apart; `once`: whichever way (never turned). */
+  private startCode(code: string, once = false) {
+    const start = this.pass === 'turned' && this.turnedStart ? this.turnedStart : this.start;
+    if (!start.includes(code)) start.push(code);
+    if (once) this.once.add(code);
   }
 
   /** Items of a page / subpage: <Group>s opened (their x / y added), <Script> / <System> / <Token> / <OnStart> lifted to the project. */
@@ -782,6 +850,8 @@ export class Builder {
   private items(nodes: VNode[], dx = 0, dy = 0, top = true): XNode[] {
     const out: XNode[] = [];
     for (const n of nodes.flatMap((x) => this.textBox(x))) {
+      // laid out turned: the scripts, systems, tokens and servers are the first way's
+      if (this.pass === 'turned' && (n.type === 'Script' || n.type === 'System' || n.type === 'Token' || n.type === 'HttpServer')) continue;
       if (n.type === 'Script') this.script(n);
       else if (n.type === 'System') this.system(n);
       else if (n.type === 'Token') this.token(n);
@@ -850,12 +920,7 @@ export class Builder {
     if (blocks.length && blocks.length !== kids.length) {
       throw this.err(node, 'put every item inside <Landscape> / <Portrait>, or none of them');
     }
-    const orient = (tag: 'landscape' | 'portrait', holder: VNode | undefined, items: VNode[]) => {
-      const drawnBg = holder && this.bgImage(holder, ...this.sizes[tag]);
-      const t = holder && !drawnBg ? this.styleTheme(holder, 'background') : '';
-      const x = this.E(tag, { t: t || undefined }, [...(drawnBg ? [drawnBg] : []), ...this.items(items)]);
-      return holder && holder !== node ? this.withXml(x, holder) : x;
-    };
+    const orient = (tag: 'landscape' | 'portrait', holder: VNode | undefined, items: VNode[]) => this.orientBlock(node, tag, holder, items);
     let orients: XNode[];
     if (blocks.length) {
       // exactly the orientations given, in the order given
@@ -877,8 +942,83 @@ export class Builder {
     this.pageName = '';
   }
 
+  /** A page's block in one orientation: its background (`holder`'s), its items. */
+  private orientBlock(page: VNode, tag: 'landscape' | 'portrait', holder: VNode | undefined, items: VNode[]): XNode {
+    const drawnBg = holder && this.bgImage(holder, ...this.sizes[tag]);
+    const t = holder && !drawnBg ? this.styleTheme(holder, 'background') : '';
+    const x = this.E(tag, { t: t || undefined }, [...(drawnBg ? [drawnBg] : []), ...this.items(items)]);
+    return holder && holder !== page ? this.withXml(x, holder) : x;
+  }
+
+  /** the orientation the project is laid out in second (<Project orientation="both">) */
+  private other(): 'landscape' | 'portrait' {
+    return this.primary === 'landscape' ? 'portrait' : 'landscape';
+  }
+
+  /**
+   * <Project orientation="both">: the project laid out turned (screen() the
+   * other way), into each page's other block - the subpages it defines first
+   * (a page places them), then its pages. A page given both blocks
+   * (<Landscape>, <Portrait>) keeps them. What the project has besides
+   * (systems, scripts, themes...) is the first way's; its <OnStart> code apart.
+   */
+  private buildTurned(tree: Child) {
+    const top = flat([tree]).filter((c) => typeof c !== 'string' || c.trim());
+    const project = top.length === 1 && typeof top[0] !== 'string' ? top[0] : undefined;
+    if (!project || project.type !== 'Project') throw new CompileError('the entry must `export default` one <Project>');
+    const tag = this.other();
+    this.pass = 'turned';
+    this.turnedStart = [];
+    try {
+      const children = this.elements(project);
+      for (const c of children) if (c.type === 'Subpage') this.defineSubpage(c, false);
+      for (const c of children) {
+        if (c.type !== 'Page') continue;
+        const page = this.pages.find((pg) => pg.attrs[0][1] === c.props.name);
+        if (!page) throw this.err(c, `page "${c.props.name}": laid out turned, but not the first way (screen() decides which pages there are?)`);
+        const block = page.children.findIndex((b) => b.tag === tag);
+        // given both (<Landscape> and <Portrait>): as given
+        if (block < 0 || page.children[block].children.length) continue;
+        this.pageName = c.props.name;
+        const all = this.elements(c);
+        this.items(all.filter((k) => HOISTED.has(k.type)));
+        const kids = all.filter((k) => !HOISTED.has(k.type));
+        if (kids.some((k) => k.type === 'Landscape' || k.type === 'Portrait')) continue;
+        const x = this.orientBlock(c, tag, hasStyle(c.props) || c.props.theme !== undefined ? c : undefined, kids);
+        page.children[block] = x;
+        this.turnedNodes.push(x);
+        this.pageName = '';
+      }
+      // a subpage placed before it was made (its name known once all are): the turned one
+      const rename = (x: XNode) => {
+        for (const k of x.children) {
+          if (k.tag === 'subpage') {
+            const n = attrOf(k, 'name');
+            if (n && this.turnedNames.has(n)) setAttrOf(k, 'name', this.turnedNames.get(n)!);
+          }
+          for (const a of LIST_CELLS) {
+            const n = attrOf(k, a);
+            if (n && this.turnedNames.has(n)) setAttrOf(k, a, this.turnedNames.get(n)!);
+          }
+          rename(k);
+        }
+      };
+      this.turnedNodes.forEach(rename);
+      // the start code turned names its subpages so too
+      this.turnedStart = this.turnedStart.map((c) => {
+        let out = c;
+        for (const [from, to] of this.turnedNames) out = out.split(JSON.stringify(from)).join(JSON.stringify(to));
+        return out;
+      });
+    } finally {
+      this.pass = 'main';
+      this.pageName = '';
+    }
+  }
+
   private defineSubpage(node: VNode, inline: boolean): string {
     const p = node.props;
+    if (this.pass === 'turned') return this.defineTurnedSubpage(node, inline);
     if (!inline) {
       const placed = ['x', 'y', 'join', 'visible', 'in', 'out', 'topmost', 'clickthrough', 'tags'].filter((k) => p[k] !== undefined);
       if (placed.length) throw this.err(node, `${placed.join(', ')}: a subpage defined in <Project> isn't placed anywhere (place it with <SubpageRef>, or define it inside a page)`);
@@ -905,6 +1045,41 @@ export class Builder {
       source: node.source,
     });
     return p.name;
+  }
+
+  /**
+   * A subpage the project laid out turned defines: the first way's, if it made
+   * it the same; else one of its own, named for the orientation
+   * (gallery_dots__portrait) - its placements in the turned blocks point at it.
+   */
+  private defineTurnedSubpage(node: VNode, inline: boolean): string {
+    const p = node.props;
+    const mine = this.turnedNames.get(p.name);
+    const drawnBg = this.bgImage(node, p.w, p.h);
+    const t = drawnBg ? '' : this.styleTheme(node, 'background');
+    const items = [...(drawnBg ? [drawnBg] : []), ...this.items(this.elements(node))];
+    const made = (name: string) => this.E('subpage', { name, w: p.w, h: p.h, t: t || undefined, clip: bool(p.clip, true) }, items);
+    const text = (x: XNode) => serialize({ ...x, attrs: x.attrs.filter(([k]) => k !== 'xml') });
+    // placed again turned (a component on several pages): the one it made
+    if (mine !== undefined) {
+      const had = this.subpages.get(mine);
+      if (had && text(had.node) !== text(made(mine))) {
+        throw new CompileError(`<Subpage>: "${p.name}" is defined twice, differently (laid out turned)`, node.source);
+      }
+      return mine;
+    }
+    const first = this.subpages.get(p.name);
+    if (first && first.node.tag === 'subpage' && text(first.node) === text(made(p.name))) {
+      this.turnedNames.set(p.name, p.name);
+      return p.name;
+    }
+    const name = first ? `${p.name}__${this.other()}` : p.name;
+    const x = made(name);
+    this.subpages.set(name, { node: inline ? x : this.withXml(x, node), source: node.source });
+    if (name !== p.name) this.turnedNames.set(p.name, name);
+    else this.turnedNames.set(p.name, p.name);
+    this.turnedNodes.push(x);
+    return name;
   }
 
   /** Themed builds: a page's / subpage's colour background as a drawn image (first in it), not a theme. */
@@ -972,7 +1147,7 @@ export class Builder {
     if (!Number.isInteger(p.port) || p.port < 1 || p.port > 65535) throw this.err(node, `port: a number 1-65535`);
     this.serverSystem(node, p.name, p.port);
     this.httpRuntime(node);
-    this.onStart({ $$iva: 1, type: 'OnStart', props: { js: `IvaHttp.serve(${JSON.stringify(p.name)}, ${p.handler});` }, children: [], source: node.source });
+    this.onStart({ $$iva: 1, type: 'OnStart', props: { js: `IvaHttp.serve(${JSON.stringify(p.name)}, ${p.handler});` }, children: [], source: node.source }, true);
   }
 
   /**
@@ -1039,7 +1214,7 @@ export class Builder {
       this.motionScript = true;
       this.script({ $$iva: 1, type: 'Script', props: { name: 'iva-motion.js', code: MOTION_RUNTIME }, children: [], source: node.source });
     }
-    this.start.push(`IvaMotion.add({ ${parts.join(', ')} });`);
+    this.startCode(`IvaMotion.add({ ${parts.join(', ')} });`);
     return out;
   }
 
@@ -1070,7 +1245,7 @@ export class Builder {
     this.webServer(node);
     const join = attrs.j instanceof JoinSlot ? attrs.j : new JoinSlot('s', `iva_web_${createHash('md5').update(path).digest('hex').slice(0, 8)}`);
     this.carried.add(`s:${join.id}`);
-    this.start.push(`IvaHttp.view(${this.jsJoin(join)}, ${JSON.stringify(path)});`);
+    this.startCode(`IvaHttp.view(${this.jsJoin(join)}, ${JSON.stringify(path)});`);
     return this.E('web', { ...attrs, j: join, url: '' });
   }
 
@@ -1119,7 +1294,7 @@ export class Builder {
       this.assets.set(asset.toLowerCase(), { name: asset, data: code });
       this.apps.set(name, key);
       this.appOptions[name] = { options, bg: p.bg ?? '#000000' };
-      this.onStart({ $$iva: 1, type: 'OnStart', props: { js: setup }, children: [], source: node.source });
+      this.onStart({ $$iva: 1, type: 'OnStart', props: { js: setup }, children: [], source: node.source }, true);
     }
     return this.webView(node, { ...geom, j: 0, title: 0, back: 0, forward: 0, refresh: 0, stop: 0, tags: tagsAttr(p.tags) }, `${name}/`);
   }
@@ -1150,6 +1325,7 @@ export class Builder {
     while (taken.has(port)) port++;
     for (const entry of this.web.system.attrs) if (entry[0] === 'port' || entry[0] === 'origin') entry[1] = String(port);
     this.start.unshift(`IvaHttp.web("IvaWeb", ${port});`);
+    this.once.add(this.start[0]);
   }
 
   private command(node: VNode): XNode {

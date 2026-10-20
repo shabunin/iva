@@ -457,6 +457,75 @@ export default (
   assert.ok(files.includes('1400w1400h/T.gui') && files.includes('768w1024h/assets/bg.png'));
 });
 
+test('orientation="both": each page laid out either way in one .gui - the project evaluated again turned; subpages it makes otherwise renamed; joins as one; start code that differs run the way the panel is turned', async () => {
+  const dir = tmpDir('iva-both-');
+  const entry = path.join(dir, 'app.jsx');
+  fs.writeFileSync(entry, `const { width, height } = screen();
+const tall = height > width;
+export default (
+  <Project name="T" width={1024} height={768} orientation="both" sizes={['1400x1400', '1080x1920@2.5x']}>
+    <Subpage name="bar" w={width} h={40} bg="#336699" />
+    <Subpage name="same" w={100} h={40} bg="#112233" />
+    <Page name="Main">
+      <Box x={16} y={16} w={width - 32} h={100} bg="#336699" radius={8} />
+      <SubpageRef name="bar" x={0} y={height - 40} />
+      <SubpageRef name="same" x={0} y={200} />
+      <Button x={0} y={300} w={100} h={40} join="power" />
+      {tall && <Text x={0} y={400} w={100} h={30} join="onlyTall" />}
+      <OnStart js="CF.log('either way');" />
+      <OnStart js={'CF.log(' + JSON.stringify('wide ' + width) + ');'} />
+    </Page>
+  </Project>
+);`);
+  const r = await compile(entry);
+  // a page's block that way (not <size>'s <portrait width=... />)
+  const blockOf = (xml: string, way: string) => new RegExp(`<${way}(?: [^>/]*)?>([\\s\\S]*?)</${way}>`).exec(/<page name="Main"[\s\S]*?<\/page>/.exec(xml)![0])![1];
+  const block = (way: string) => blockOf(r.xml, way);
+  const [land, port] = [block('landscape'), block('portrait')];
+  // each way laid out from screen() that way
+  assert.match(land, /<img x="16" y="16" w="992" h="100"/);
+  assert.match(port, /<img x="16" y="16" w="736" h="100"/);
+  assert.doesNotMatch(land, new RegExp(`<txt j="${r.joins.serial.onlyTall}"`));
+  assert.match(port, new RegExp(`<txt j="${r.joins.serial.onlyTall}"`));
+  // a subpage made otherwise turned: one of its own, placed turned; one made the same: once, placed either way
+  assert.match(r.xml, /<subpage name="bar" w="1024" h="40"/);
+  assert.match(r.xml, /<subpage name="bar__portrait" w="768" h="40"/);
+  assert.match(land, /<subpage name="bar" x="0" y="728"/);
+  assert.match(port, /<subpage name="bar__portrait" x="0" y="984"/);
+  assert.equal((r.xml.match(/<subpage name="same" w=/g) ?? []).length, 1);
+  assert.ok(land.includes('<subpage name="same" x="0" y="200"') && port.includes('<subpage name="same" x="0" y="200"'));
+  // the joins numbered as one: the button on the same join either way
+  const power = r.joins.digital.power;
+  assert.ok(land.includes(`j="${power}"`) && port.includes(`j="${power}"`));
+  // start code: the same either way once; what differs, the way the panel is turned - again once it's turned
+  const start = r.scripts.find((s) => s.name === 'iva-start.js')!.code!;
+  assert.equal(start.split("CF.log('either way');").length - 1, 1);
+  const logs: string[] = [];
+  const watchers: ((page: string, o: string) => void)[] = [];
+  const CF = {
+    modules: [] as { setup: () => void }[], LandscapeOrientation: 'LANDSCAPE_ORIENTATION', PortraitOrientation: 'PORTRAIT_ORIENTATION',
+    currentOrientation: 'LANDSCAPE_ORIENTATION', OrientationChangeEvent: 'ORIENTATION_CHANGE_EVENT',
+    log: (t: string) => logs.push(t), watch: (_e: string, f: (page: string, o: string) => void) => watchers.push(f),
+  };
+  new Function('CF', 'setTimeout', start)(CF, (f: () => void) => f());
+  CF.modules[0].setup();
+  assert.deepEqual(logs, ['either way', 'wide 1024']);
+  watchers.forEach((w) => w('Main', CF.PortraitOrientation));
+  watchers.forEach((w) => w('Main', CF.PortraitOrientation));
+  watchers.forEach((w) => w('Main', CF.LandscapeOrientation));
+  assert.deepEqual(logs, ['either way', 'wide 1024', 'wide 768', 'wide 1024']);
+  // a square screen: one way
+  const square = await compile(entry, { size: '1400x1400' });
+  assert.match(/<page name="Main"[\s\S]*?<\/page>/.exec(square.xml)![0], /<portrait \/>/);
+  assert.doesNotMatch(square.xml, /__portrait|__landscape/);
+  // a phone: portrait first, landscape turned (its screen turned: 768x432)
+  const phone = await compile(entry, { size: '1080x1920@2.5x' });
+  assert.match(phone.xml, /<portrait width="432" height="768" \/>\s*<landscape width="768" height="432" \/>/);
+  assert.match(blockOf(phone.xml, 'portrait'), /<img x="16" y="16" w="400"/);
+  assert.match(blockOf(phone.xml, 'landscape'), /<img x="16" y="16" w="736"/);
+  assert.match(phone.xml, /<subpage name="bar__landscape" w="768"/);
+});
+
 test('screen sizes: with runtime themes each look is built at the size; sizes are checked', async () => {
   const themed = await build(`const { width } = screen();
 export default (

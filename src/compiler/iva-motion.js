@@ -62,6 +62,13 @@ var IvaMotion = (function () {
   return {
     /** an element's motion: { join, page, enter, press, when } */
     add: function (it) {
+      // again (iva-start.js, the panel turned): the same element's motion, as given now
+      for (var k = 0; k < items.length; k++) {
+        if (items[k].join === it.join) {
+          for (var f in it) items[k][f] = it[f];
+          return;
+        }
+      }
       items.push(it);
       // on the page shown already (the scripts starting after it): in now
       if (it.enter && CF.currentPage === it.page) enter(it);
