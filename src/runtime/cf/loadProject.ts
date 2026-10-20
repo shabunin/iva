@@ -64,8 +64,21 @@ export function rendererLabel(app: Application): string {
   return r.name ?? 'unknown';
 }
 
+/**
+ * How far a GUI's loading got, for a loading screen: reading the .gui, the
+ * graphics set up, its scripts run, the first page's images in (so many of
+ * so many), the page made and the GUI started (its userMain, its systems).
+ */
+export interface LoadProgress {
+  stage: 'gui' | 'graphics' | 'scripts' | 'images' | 'page' | 'started';
+  done?: number;
+  total?: number;
+}
+
 export interface LoadProjectOptions {
   guiXml: string;
+  /** how far it got, as it goes */
+  onProgress?: (p: LoadProgress) => void;
   /** what draws it (a new app only: one passed in `app` keeps its own) */
   renderer?: RendererChoice;
   /** a frame drawn only when something changed (default), or every tick (false) - CFRenderer.setRenderOnDemand */
@@ -172,6 +185,14 @@ export async function loadProject(options: LoadProjectOptions): Promise<LoadProj
     console.warn('[loadProject] previousMenu.destroy failed:', e);
   }
 
+  const progress = (p: LoadProgress) => {
+    try {
+      options.onProgress?.(p);
+    } catch (e) {
+      console.warn('[loadProject] onProgress failed:', e);
+    }
+  };
+  progress({ stage: 'gui' });
   const project = await parseGUI(guiXml);
 
   stopAllAnimations();
@@ -191,6 +212,7 @@ export async function loadProject(options: LoadProjectOptions): Promise<LoadProj
       ? project.properties.landscape?.height || 768
       : project.properties.portrait?.height || 1024;
 
+  progress({ stage: 'graphics' });
   let app = options.app ?? null;
   if (!app) {
     app = new Application();
@@ -238,8 +260,12 @@ export async function loadProject(options: LoadProjectOptions): Promise<LoadProj
   await globalCF.loadDevice?.();
 
   if (project.scripts) {
+    const total = project.scripts.filter((s) => s.name).length;
+    let done = 0;
+    progress({ stage: 'scripts', done, total });
     for (const scriptNode of project.scripts) {
       if (!scriptNode.name) continue;
+      progress({ stage: 'scripts', done: done++, total });
 
       const targetName = scriptNode.name.toLowerCase().replace(/\\/g, '/');
       const targetLeaf = targetName.split('/').pop() || '';
@@ -281,7 +307,8 @@ export async function loadProject(options: LoadProjectOptions): Promise<LoadProj
     }
   }
 
-  await renderer.start();
+  await renderer.start((done, total) => progress({ stage: 'images', done, total }));
+  progress({ stage: 'page' });
 
   if (globalCF && Array.isArray(globalCF.modules)) {
     for (const mod of globalCF.modules) {
@@ -313,6 +340,7 @@ export async function loadProject(options: LoadProjectOptions): Promise<LoadProj
   if (globalCF && typeof globalCF.startSystems === 'function') {
     globalCF.startSystems();
   }
+  progress({ stage: 'started' });
 
   setTimeout(() => {
     if (globalCF && typeof globalCF.dispatchEvent === 'function') {

@@ -571,7 +571,7 @@ export class CFRenderer {
    * others on their own; a few tries each (a link that drops a file now and
    * then: ZeroTier does). A sheet that doesn't come: its images on their own.
    */
-  ensureLoaded(aliases: Iterable<string>): Promise<void> {
+  ensureLoaded(aliases: Iterable<string>, onLoaded?: (done: number, total: number) => void): Promise<void> {
     const waits: Promise<void>[] = [];
     const once = (key: string, load: () => Promise<void>) => {
       let p = this.loading.get(key);
@@ -589,6 +589,11 @@ export class CFRenderer {
         continue;
       }
       waits.push(sheet ? once(sheet, () => this.loadSheet(sheet)).then(() => alone(alias)) : alone(alias));
+    }
+    if (onLoaded) {
+      let done = 0;
+      onLoaded(0, waits.length);
+      waits.forEach((w) => void w.then(() => onLoaded(++done, waits.length)));
     }
     return Promise.all(waits).then(() => undefined);
   }
@@ -1697,7 +1702,8 @@ export class CFRenderer {
     trackAnimation(page, animateFrom(page, { alpha: 1 }, opts)).finished.then(done, done);
   }
 
-  async start() {
+  /** `onImages`: the first page's images in, so many of so many (a loading screen's progress) */
+  async start(onImages?: (done: number, total: number) => void) {
     this.pageHistory = [];
     this.initStore();
     await this.loadAssets();
@@ -1707,7 +1713,7 @@ export class CFRenderer {
       : this.project.startPage || Object.keys(this.project.pages)[0];
     if (!first) return;
     // the first page's images in before start() is done: the page is there when the scripts run
-    await this.ensureLoaded(this.pageImages(first));
+    await this.ensureLoaded(this.pageImages(first), onImages);
     this.navigate(first);
   }
 }

@@ -17,12 +17,12 @@ import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import { openUrl as openOutside } from '@tauri-apps/plugin-opener';
 import { installHost } from '../src/runtime/stdlib';
-import { loadProject, rendererLabel, type LoadProjectResult, type Orientation, type RendererChoice } from '../src/runtime/cf';
+import { loadProject, rendererLabel, type LoadProgress, type LoadProjectResult, type Orientation, type RendererChoice } from '../src/runtime/cf';
 import { createIvaHost } from '../src/runtime/host';
 import { closeHostSockets } from '../src/runtime/host/net/provider';
 import { installFonts } from '../src/preview/fonts';
 import { formatLocation, History, isGuiUrl, parseLocation, type GuiLocation } from '../src/runtime/location';
-import { fetchGui, folderManifest, isZip, loadManifest, manifestOf, newerVersion, ownFile, savedManifest, toSave, unpackPlan, type Download, type Manifest } from './loader';
+import { fetchGui, folderManifest, guiUrl, isZip, loadManifest, manifestOf, newerVersion, ownFile, savedManifest, toSave, unpackPlan, type Download, type Manifest } from './loader';
 import { forgetAllGuis, forgetGui, keptGui, keptGuis, saveGui, savedGui, usedGui, type Kept, type SavedGui } from './store';
 import { androidDevice } from './device';
 
@@ -97,9 +97,9 @@ sessionStorage.removeItem(QUIET);
 const wanted = (now: Orientation): Orientation =>
   innerHeight > innerWidth * 1.15 ? 'portrait' : innerWidth > innerHeight * 1.15 ? 'landscape' : now;
 let orientation: Orientation = wanted('landscape');
-/** a line under the GUI while there is none shown (loading, failing); a GUI shown has the screen to itself */
-const say = (text: string, loading = false) => {
-  status.textContent = current || (loading && quiet) ? '' : text;
+/** a line under the GUI while there is none shown (failing); a GUI shown has the screen to itself */
+const say = (text: string) => {
+  status.textContent = current ? '' : text;
 };
 /** a line worth seeing even with a GUI up (scripts missing, the copy running for the server), for a while */
 let noticeTimer = 0;
@@ -110,6 +110,60 @@ const notice = (text: string, ms = 12000) => {
     if (status.textContent === text) status.textContent = '';
   }, ms);
 };
+// ── the loading screen: the GUI's name, how far it got, what it's doing ──
+
+const loading = $<HTMLDivElement>('loading');
+/**
+ * Where each step of a start begins on the bar, and where the next takes
+ * over (a step counted - scripts, images, an upload - fills its part as it
+ * goes): roughly where a slow phone's time goes.
+ */
+const STEPS = {
+  starting: 0,
+  download: 0.04,
+  unpacking: 0.12,
+  reading: 0.22,
+  gui: 0.27,
+  graphics: 0.3,
+  scripts: 0.34,
+  images: 0.48,
+  page: 0.9,
+  started: 0.96,
+  done: 1,
+};
+type Step = keyof typeof STEPS;
+const ORDER = Object.keys(STEPS) as Step[];
+let shownPart = 0;
+/** how far a start got: its step, what to say, and of a step counted how many of how many - shown unless asked not to (CF.loadGUI's showPreloadStatus: false) */
+function progress(step: Step, what: string, done?: number, total?: number) {
+  if (quiet || loading.hidden) return;
+  const from = STEPS[step];
+  const to = STEPS[ORDER[ORDER.indexOf(step) + 1] ?? 'done'];
+  const part = total ? from + (to - from) * Math.min(1, (done ?? 0) / total) : from;
+  // never back (a step said twice, a copy failing over to the server)
+  shownPart = Math.max(shownPart, part);
+  loading.classList.remove('waiting');
+  (loading.querySelector('#loading-bar > div') as HTMLElement).style.width = `${(shownPart * 100).toFixed(1)}%`;
+  $('loading-what').textContent = what;
+}
+/** the GUI's name over the bar */
+const loadingTitle = (title: string) => void ($('loading-title').textContent = title);
+/** the loading screen gone: once the first page is drawn (the frame after), or at once (a failure says why below it) */
+function loaded(now = false) {
+  if (now) loading.hidden = true;
+  else requestAnimationFrame(() => requestAnimationFrame(() => (loading.hidden = true)));
+}
+if (quiet) loading.hidden = true;
+/** loadProject's steps, as the bar says them */
+const projectProgress = (p: LoadProgress) => {
+  if (p.stage === 'gui') progress('gui', 'Reading its pages');
+  else if (p.stage === 'graphics') progress('graphics', 'Setting up the graphics');
+  else if (p.stage === 'scripts') progress('scripts', `Starting scripts: ${Math.min((p.done ?? 0) + 1, p.total ?? 0)} of ${p.total}`, p.done, p.total);
+  else if (p.stage === 'images') progress('images', `Loading images: ${p.done} of ${p.total}`, p.done, p.total);
+  else if (p.stage === 'page') progress('page', 'Drawing the first page');
+  else progress('started', 'Starting');
+};
+
 /** the built-in demo: the iva/ui gallery, a zipped GUI among the app's own files (scripts/demo.mjs) */
 const DEMO = new URL('demo/iva-ui-gallery.gui.zip', location.href).href;
 /** one spelling of a GUI's URL (http://host:8019 and http://host:8019/ are one GUI): the location's */
@@ -351,10 +405,12 @@ function applyBar() {
 /** Run it. */
 async function show(m: Manifest) {
   document.title = `${m.title} · iva panel`;
+  loadingTitle(m.title);
   const startPage = sessionStorage.getItem(PAGE) ?? undefined;
   sessionStorage.removeItem(PAGE);
   current = await loadProject({
     guiXml: m.guiXml,
+    onProgress: projectProgress,
     renderer: rendererChoice(),
     renderOnDemand: onDemand(),
     imageMap: m.imageMap,
@@ -391,6 +447,8 @@ async function show(m: Manifest) {
   fit();
   void sizeWindow();
   say('');
+  progress('done', '');
+  loaded();
   for (const p of m.problems) noteError(p);
   if (m.missingScripts.length) {
     noteError(`missing scripts: ${m.missingScripts.join(', ')}`);
@@ -497,7 +555,11 @@ const base64 = (bytes: Uint8Array<ArrayBuffer>) =>
 async function upload(bytes: Uint8Array<ArrayBuffer>): Promise<number> {
   const token = await invoke<number>('gui_upload_begin');
   const piece = 2 << 20;
-  for (let at = 0; at < bytes.length; at += piece) await invoke('gui_upload', { token, data: await base64(bytes.subarray(at, at + piece)) });
+  const mb = (n: number) => (n / 1048576).toFixed(1);
+  for (let at = 0; at < bytes.length; at += piece) {
+    progress('unpacking', `Handing the GUI to the app: ${mb(at)} of ${mb(bytes.length)} MB`, at, bytes.length * 2);
+    await invoke('gui_upload', { token, data: await base64(bytes.subarray(at, at + piece)) });
+  }
   return token;
 }
 
@@ -512,10 +574,13 @@ async function upload(bytes: Uint8Array<ArrayBuffer>): Promise<number> {
 async function unpacked(url: string, key: string | undefined, zip: Uint8Array<ArrayBuffer>): Promise<Manifest | null> {
   if (!native || !key) return null;
   try {
+    progress('unpacking', 'Unpacking the GUI');
     const plan = await unpackPlan(zip, url);
     const from = ownFile(url) ? { asset: decodeURIComponent(new URL(url).pathname) } : { upload: await upload(zip) };
+    progress('unpacking', `Unpacking the GUI: ${plan.files.length} files`, 1, 2);
     const u = await invoke<Unpacked>('gui_unpack', { args: { id: url, version: key, files: plan.files, atlas: plan.atlas, ...from } });
     mark(`unpacked by the app: ${u.files.length} files${u.ms === undefined ? ' (before)' : ` in ${u.ms} ms`}`);
+    progress('reading', 'Reading the GUI');
     return await folderManifest(u, url);
   } catch (e) {
     noteError(`unpacking ${url}: ${message(e)}`);
@@ -546,6 +611,7 @@ async function start() {
     noteError(`left on the host by the page before, closed now: ${what}`);
   }
   mark('starting');
+  progress('starting', 'Starting');
   await installFonts();
   mark('fonts in');
   applyBar();
@@ -558,9 +624,11 @@ async function start() {
   sessionStorage.removeItem(FRESH);
   // the app's own files: from the app, always (a copy kept by an older version of it: let go)
   if (ownFile(url)) void forgetGui(url).catch(() => {});
+  loadingTitle(url === DEMO ? 'The demo' : url.replace(/^[a-z]+:\/\//i, ''));
   // its files unpacked by the app from this version, a start before: nothing to read or unzip, its images in sheets
   const key = fresh ? undefined : await unpackKey(url);
   const folder = key ? await unpackedFolder(url, key) : null;
+  if (folder) progress('reading', 'Reading the GUI');
   const m = folder ? await folderManifest(folder, url).catch((e) => void noteError(`the files unpacked: ${message(e)}`)) : undefined;
   if (folder && m && !m.missingScripts.length) {
     mark(`unpacked files found: ${folder.files.length}, ${m.atlas ? `${m.atlas.sheets.length} sheets` : 'no sheets yet'}`);
@@ -583,6 +651,7 @@ async function start() {
   if (saved && !fresh) {
     try {
       const key = keptKey(saved);
+      progress('reading', 'Reading the copy kept on this device');
       const m = (saved.zip && (await unpacked(url, key, saved.zip))) || (await savedManifest(saved));
       if (m.missingScripts.length) {
         // a copy with scripts missing (kept by an older panel from a load that lost them): its server first, if it answers
@@ -607,8 +676,8 @@ async function start() {
       noteError(`the copy kept of ${url}: ${message(e)}`);
     }
   }
-  say(`loading ${url}…`, true);
   try {
+    progress('download', ownFile(url) ? 'Reading the GUI' : `Downloading the GUI from ${new URL(guiUrl(url)).host}`);
     const got = await fetchGui(url);
     // a zipped GUI (the built-in demo too): unpacked by the app, and a copy kept - by its version the app unpacked it as
     if (isZip(got.bytes) && native) {
@@ -626,6 +695,7 @@ async function start() {
         return;
       }
     }
+    progress('reading', 'Reading the GUI');
     const manifest = await manifestOf(got);
     // the link lost scripts the server has: a whole copy kept runs instead (a GUI short of its start script runs nothing)
     if (manifest.missingScripts.length && saved) {
@@ -659,6 +729,7 @@ async function start() {
         noteError(`the copy kept of ${url}: ${message(e2)}`);
       }
     }
+    loaded(true);
     say(`${why} - trying again in 5 s (three fingers, Ctrl+S: settings)`);
     failed = true;
     retryLater();
@@ -948,5 +1019,6 @@ document.addEventListener('contextmenu', (e) => e.preventDefault());
 
 start().catch((e) => {
   console.error(e);
+  loaded(true);
   say(String(e?.message ?? e));
 });

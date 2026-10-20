@@ -73,6 +73,49 @@ html, body {
 #address:focus { border-color: #00a884; }
 
 /* a line while no GUI shows (loading, failing); a GUI shown has the screen */
+/* the loading screen (main.ts): the GUI's name, a bar for how far it got, what it's doing - over the GUI until
+   its first page is drawn; before the page's script runs, a bar that only says it's busy */
+#loading {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: #000;
+  pointer-events: none;
+}
+#loading[hidden] { display: none; }
+#loading-title {
+  max-width: 80vw;
+  overflow: hidden;
+  font-size: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#loading-bar {
+  width: min(60vw, 360px);
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: #ffffff24;
+}
+#loading-bar > div {
+  width: 0;
+  height: 100%;
+  border-radius: 2px;
+  background: #1fc8a0;
+  transition: width 0.3s ease-out;
+}
+#loading.waiting #loading-bar > div { width: 30%; animation: iva-waiting 1.2s ease-in-out infinite; }
+@keyframes iva-waiting {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(340%); }
+}
+#loading-what { min-height: 1.45em; font-size: 14px; color: #9aa0a6; }
+
 #status {
   position: fixed;
   left: 0;

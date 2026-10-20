@@ -15,6 +15,12 @@
       <button type="button" id="go" title="Go">Go</button>
     </div>
     <div id="stage"><div id="view"><canvas id="canvas"></canvas></div></div>
+    <!-- the loading screen: there before the page's script runs; main.ts says how far it got -->
+    <div id="loading" class="waiting">
+      <div id="loading-title">iva panel</div>
+      <div id="loading-bar"><div></div></div>
+      <div id="loading-what"></div>
+    </div>
     <div id="status"></div>
     <form id="settings" hidden>
       <h1>iva panel</h1>
