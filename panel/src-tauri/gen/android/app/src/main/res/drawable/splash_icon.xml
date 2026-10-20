@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12's splash icon: 288 dp, the app's icon 120 dp in its middle - as the window's background (splash.xml)
+     and the loading screen have it -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/app_icon"
+    android:inset="84dp" />

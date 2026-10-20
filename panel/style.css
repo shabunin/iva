@@ -79,15 +79,29 @@ html, body {
   position: fixed;
   inset: 0;
   z-index: 5;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
   background: #000;
   pointer-events: none;
 }
 #loading[hidden] { display: none; }
+/* the app's icon in the middle of the screen, as large as the app's splash draws it (120 dp): the one becomes the other */
+#loading-logo {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 120px;
+  height: 120px;
+  transform: translate(-50%, -50%);
+}
+#loading-info {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(50% + 84px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
 #loading-title {
   max-width: 80vw;
   overflow: hidden;

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- the window's background while the panel starts: black, the app's icon in the middle (120 dp, from its 512 px
+     image: sharp on any screen) - where the page's loading screen has it (panel/index.html), so one becomes the other -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@android:color/black" />
+    <item
+        android:drawable="@drawable/app_icon"
+        android:width="120dp"
+        android:height="120dp"
+        android:gravity="center" />
+</layer-list>
