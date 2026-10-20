@@ -22,7 +22,7 @@ import { createIvaHost } from '../src/runtime/host';
 import { closeHostSockets } from '../src/runtime/host/net/provider';
 import { installFonts } from '../src/preview/fonts';
 import { formatLocation, History, isGuiUrl, parseLocation, type GuiLocation } from '../src/runtime/location';
-import { fetchGui, folderManifest, guiUrl, isZip, loadManifest, manifestOf, newerVersion, ownFile, savedManifest, toSave, unpackPlan, type Download, type Manifest } from './loader';
+import { fetchGui, folderManifest, guiUrl, isZip, loadManifest, manifestOf, newerVersion, ownFile, savedManifest, toSave, unpackPlan, useTurn, type Download, type Manifest } from './loader';
 import { forgetAllGuis, forgetGui, keptGui, keptGuis, saveGui, savedGui, usedGui, type Kept, type SavedGui } from './store';
 import { androidDevice } from './device';
 
@@ -57,6 +57,8 @@ const rendererChoice = (): RendererChoice => {
   return v && RENDERERS.includes(v) ? v : 'auto';
 };
 const BAR = 'iva-panel:addressbar';
+/** a GUI's sizes, as the app unpacked it: the one each orientation runs (JSON by orientation; a key per GUI) */
+const SIZES = 'iva-panel:sizes:';
 /** the GUIs no copy is kept of (JSON: their URLs) */
 const NO_COPY = 'iva-panel:no-copy';
 
@@ -97,6 +99,8 @@ sessionStorage.removeItem(QUIET);
 const wanted = (now: Orientation): Orientation =>
   innerHeight > innerWidth * 1.15 ? 'portrait' : innerWidth > innerHeight * 1.15 ? 'landscape' : now;
 let orientation: Orientation = wanted('landscape');
+// a GUI in several sizes: the one laid out the way the screen is turned
+useTurn(orientation);
 /** a line under the GUI while there is none shown (failing); a GUI shown has the screen to itself */
 const say = (text: string) => {
   status.textContent = current ? '' : text;
@@ -271,12 +275,26 @@ function turned() {
   if (!current || typing()) return;
   const want = wanted(orientation);
   const page = current.renderer.currentPageName;
+  // a GUI in several sizes, another laid out the way it's turned now (iva build's <Project sizes>): that one, on
+  // this page - once the device has stayed turned a moment (a window dragged on a desktop goes through shapes)
+  const other = want !== orientation && shown ? sizesOf(shown.gui)?.[want] : undefined;
+  clearTimeout(turning);
+  if (other !== undefined && other !== shownSize) {
+    turning = window.setTimeout(() => {
+      if (wanted(orientation) !== want) return;
+      if (page) sessionStorage.setItem(PAGE, page);
+      void letGo().then(() => location.reload());
+    }, 400);
+    fit();
+    return;
+  }
   if (want !== orientation && page && (current.project.pages[page]?.[want]?.length ?? 0) > 0) {
     current.renderer.navigate(page, want);
     orientation = (current.renderer.targetOrientation as Orientation | undefined) ?? want;
   }
   fit();
 }
+let turning = 0;
 addEventListener('resize', turned);
 // a field let go (the keyboard going): what the window is now
 document.addEventListener('focusout', () => setTimeout(turned, 300));
@@ -413,6 +431,9 @@ function applyBar() {
 async function show(m: Manifest) {
   document.title = `${m.title} · iva panel`;
   loadingTitle(m.title);
+  shownSize = m.size;
+  // read from its archive (a browser: no app to unpack it): its size for each orientation, for when it's turned
+  if (m.sizes) localStorage.setItem(SIZES + m.url, JSON.stringify(m.sizes));
   const startPage = sessionStorage.getItem(PAGE) ?? undefined;
   sessionStorage.removeItem(PAGE);
   current = await loadProject({
@@ -456,6 +477,8 @@ async function show(m: Manifest) {
   say('');
   progress('done', '');
   loaded();
+  // turned while it loaded
+  turned();
   for (const p of m.problems) noteError(p);
   if (m.missingScripts.length) {
     noteError(`missing scripts: ${m.missingScripts.join(', ')}`);
@@ -515,6 +538,19 @@ async function unpackKey(url: string): Promise<string | undefined> {
 /** the app's side: it unpacks a GUI's archive and packs its images in sheets (src-tauri/src/unpack.rs) - a browser has none */
 const native = isTauri();
 
+/** the size of the GUI shown (its folder in its archive), of several */
+let shownSize: string | undefined;
+
+/** a GUI's size for each orientation, as read from its archive when the app unpacked it */
+function sizesOf(url: string): Record<Orientation, string> | undefined {
+  try {
+    const v = JSON.parse(localStorage.getItem(SIZES + url) ?? 'null') as Record<Orientation, string> | null;
+    return v && typeof v.landscape === 'string' && typeof v.portrait === 'string' ? v : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** a GUI's files unpacked by the app: the folder, its files, whether its images are in sheets yet */
 interface Unpacked {
   root: string;
@@ -540,10 +576,11 @@ if (native) {
     e.error ? noteError(`packing ${e.id}'s images: ${e.error}`) : mark(`packed by the app: ${e.images} images in ${e.sheets} sheets in ${e.ms} ms`));
 }
 
-/** the GUI's files unpacked by the app from this version (its key), if they are */
+/** the GUI's files unpacked by the app from this version (its key), in the size this orientation runs, if they are */
 async function unpackedFolder(url: string, key: string): Promise<Unpacked | null> {
-  if (!native) return null;
-  return invoke<Unpacked | null>('gui_unpacked', { id: url, version: key }).catch((e) => {
+  const size = sizesOf(url)?.[orientation];
+  if (!native || size === undefined) return null;
+  return invoke<Unpacked | null>('gui_unpacked', { id: url, version: key, size }).catch((e) => {
     noteError(`the files unpacked: ${message(e)}`);
     return null;
   });
@@ -585,7 +622,9 @@ async function unpacked(url: string, key: string | undefined, zip: Uint8Array<Ar
     const plan = await unpackPlan(zip, url);
     const from = ownFile(url) ? { asset: decodeURIComponent(new URL(url).pathname) } : { upload: await upload(zip) };
     progress('unpacking', `Unpacking the GUI: ${plan.files.length} files`, 1, 2);
-    const u = await invoke<Unpacked>('gui_unpack', { args: { id: url, version: key, files: plan.files, atlas: plan.atlas, ...from } });
+    const u = await invoke<Unpacked>('gui_unpack', { args: { id: url, version: key, size: plan.size, files: plan.files, atlas: plan.atlas, ...from } });
+    // the size for each orientation: the next start finds the folder for the one it's turned
+    localStorage.setItem(SIZES + url, JSON.stringify({ landscape: plan.sizes?.landscape ?? plan.size, portrait: plan.sizes?.portrait ?? plan.size }));
     mark(`unpacked by the app: ${u.files.length} files${u.ms === undefined ? ' (before)' : ` in ${u.ms} ms`}`);
     progress('reading', 'Reading the GUI');
     return await folderManifest(u, url);
@@ -598,7 +637,7 @@ async function unpacked(url: string, key: string | undefined, zip: Uint8Array<Ar
 /** Its images packed in sheets by the app (behind the GUI running), for the next start - if they aren't. */
 function pack(url: string, key: string | undefined, m: Manifest) {
   if (!native || !key || !m.toPack || m.atlas) return;
-  void invoke('gui_pack', { args: { id: url, version: key, images: m.toPack() } }).catch((e) => noteError(`packing ${url}'s images: ${message(e)}`));
+  void invoke('gui_pack', { args: { id: url, version: key, size: m.size ?? '', images: m.toPack() } }).catch((e) => noteError(`packing ${url}'s images: ${message(e)}`));
 }
 
 /**
@@ -871,7 +910,7 @@ async function showCopies() {
 }
 
 /** a copy forgotten under every spelling of its URL */
-const forgetCopy = (url: string) => Promise.all(spellings(url).flatMap((u) => [forgetGui(u), native ? invoke('gui_forget', { id: u }) : undefined]));
+const forgetCopy = (url: string) => Promise.all(spellings(url).flatMap((u) => (localStorage.removeItem(SIZES + u), [forgetGui(u), native ? invoke('gui_forget', { id: u }) : undefined])));
 
 function copyRow(url: string, k: Kept | undefined): HTMLElement {
   const row = document.createElement('div');

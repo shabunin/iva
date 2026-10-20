@@ -25,6 +25,10 @@ export interface Manifest {
   fileUrl: (name: string) => string | undefined;
   /** its images packed in sheets (iva-atlas/ beside the .gui: the app packed them, a start before), when it has them */
   atlas?: Atlas;
+  /** from an archive: the size run - its folder in the archive ('' the first size's, '1080w1920h/') */
+  size?: string;
+  /** from an archive in several sizes: the one for each orientation (the device turned: the other, if it's another) */
+  sizes?: Record<Turn, string>;
   /**
    * from an archive: its images as the app packs them in sheets
    * (src-tauri/src/atlas.rs) - [file, name in the .gui, group], the groups
@@ -280,19 +284,60 @@ async function remoteManifest(at: string, guiXml: string): Promise<Manifest> {
   return { url: at, title, guiXml, imageMap, scriptMap, missingScripts, problems, fileUrl: (name) => new URL(name.replace(/\\/g, '/'), files).href };
 }
 
-/** of one GUI's sizes, the one shaped most like the screen (turned either way) - by each .gui's first lines */
-function shapedLike(sizes: string[], heads: Map<string, string>, w: number, h: number): string {
+/** the way the screen is turned */
+export type Turn = 'landscape' | 'portrait';
+/** how the screen is turned now (the panel says; else by the window's shape) */
+let turnNow: Turn | undefined;
+export const useTurn = (t: Turn | undefined) => {
+  turnNow = t;
+};
+const turn = (): Turn | undefined => turnNow ?? (typeof innerWidth === 'number' && innerWidth && innerHeight ? (innerHeight > innerWidth ? 'portrait' : 'landscape') : undefined);
+
+/** A .gui's sizes in each orientation (its <size>), and the orientations its pages are laid out in. */
+interface Layout {
+  landscape?: [number, number];
+  portrait?: [number, number];
+  has: Set<Turn>;
+}
+
+export function layoutOf(xml: string): Layout {
+  const dims = (t: Turn): [number, number] | undefined => {
+    const tag = new RegExp(`<${t}\\b[^>]*\\bwidth="[^"]*"[^>]*>`).exec(xml)?.[0] ?? '';
+    const w = Number(/width="(\d+)"/.exec(tag)?.[1]);
+    const h = Number(/height="(\d+)"/.exec(tag)?.[1]);
+    return w && h ? [w, h] : undefined;
+  };
+  // a page's layout in an orientation: <portrait> with something in it (GUI Designer writes the other one empty)
+  const has = new Set<Turn>((['landscape', 'portrait'] as Turn[]).filter((t) => new RegExp(`<${t}>\\s*<(?!/${t}>)`).test(xml)));
+  return { landscape: dims('landscape'), portrait: dims('portrait'), has: has.size ? has : new Set<Turn>(['landscape', 'portrait']) };
+}
+
+/**
+ * Of one GUI's sizes, the one for the screen: turned `t`, one laid out that
+ * way (iva build's <Project sizes>: 1080x1920's pages portrait, 1280x800's
+ * landscape), shaped most like the screen turned so; without `t`, or no
+ * size laid out that way, the one shaped most like the screen turned either
+ * way.
+ */
+export function shapedLike(sizes: string[], layouts: Map<string, Layout>, w: number, h: number, t?: Turn): string {
   const long = (a: number, b: number) => Math.max(a, b) / Math.min(a, b);
-  const want = long(w, h);
-  const off = sizes.map((n) => {
-    const tag = /<landscape\b[^>]*>/.exec(heads.get(n) ?? '')?.[0] ?? '';
-    const gw = Number(/width="(\d+)"/.exec(tag)?.[1]);
-    const gh = Number(/height="(\d+)"/.exec(tag)?.[1]);
-    const d = gw && gh ? Math.abs(Math.log(long(gw, gh) / want)) : Infinity;
+  const pool = t ? sizes.filter((n) => layouts.get(n)?.has.has(t)) : [];
+  const off = (pool.length ? pool : sizes).map((n) => {
+    const l = layouts.get(n);
+    let d: number;
+    if (pool.length && t && l?.[t]) {
+      const [gw, gh] = l[t]!;
+      const [sw, sh] = t === 'landscape' ? [Math.max(w, h), Math.min(w, h)] : [Math.min(w, h), Math.max(w, h)];
+      d = Math.abs(Math.log(gw / gh / (sw / sh)));
+    } else {
+      const [gw, gh] = l?.landscape ?? [0, 0];
+      d = gw && gh ? Math.abs(Math.log(long(gw, gh) / long(w, h))) : Infinity;
+    }
     // a screen with no size yet (0 x 0): no shape to go by
     return Number.isNaN(d) ? Infinity : d;
   });
-  return sizes[Math.max(0, off.indexOf(Math.min(...off)))];
+  const from = pool.length ? pool : sizes;
+  return from[Math.max(0, off.indexOf(Math.min(...off)))];
 }
 
 /**
@@ -385,13 +430,14 @@ const RETINA = /@2x\.(png|jpe?g|gif)$/i;
 
 /**
  * What the app unpacks of a zipped GUI (src-tauri/src/unpack.rs): the size
- * run's files - but for sheets of its own (the app's go there) - and the
- * folder its sheets go in, beside its .gui.
+ * run's files - but for sheets of its own (the app's go there) - the folder
+ * its sheets go in, beside its .gui, and which size it is (the one for each
+ * orientation, of several).
  */
-export async function unpackPlan(zip: Uint8Array<ArrayBuffer>, id: string): Promise<{ files: string[]; atlas: string }> {
-  const { dir, names } = await sizeRun(openZip(zip), id);
+export async function unpackPlan(zip: Uint8Array<ArrayBuffer>, id: string): Promise<{ files: string[]; atlas: string; size: string; sizes?: Record<Turn, string> }> {
+  const { dir, names, sizes } = await sizeRun(openZip(zip), id);
   const sheets = `${dir}${ATLAS_DIR}`;
-  return { files: names.filter((n) => !n.toLowerCase().startsWith(sheets.toLowerCase())), atlas: sheets.replace(/\/$/, '') };
+  return { files: names.filter((n) => !n.toLowerCase().startsWith(sheets.toLowerCase())), atlas: sheets.replace(/\/$/, ''), size: dir, sizes };
 }
 
 /**
@@ -400,7 +446,7 @@ export async function unpackPlan(zip: Uint8Array<ArrayBuffer>, id: string): Prom
  * With it, how the app packs its images (toPack).
  */
 async function zipManifest(a: Archive, id: string): Promise<Manifest> {
-  const { entry, dir, names } = await sizeRun(a, id);
+  const { entry, dir, names, sizes } = await sizeRun(a, id);
   const leaf = (n: string) => n.split('/').pop()!.toLowerCase();
   const guiXml = decodeXml(await a.read(entry));
   const folder = folderOf(guiXml);
@@ -461,7 +507,7 @@ async function zipManifest(a: Archive, id: string): Promise<Manifest> {
   if (!a.url) await each(names.filter((n) => !a.stored(n) && !IMAGE_RE.test(n) && !/\.gui$/i.test(n)), 4, async (n) => void (await urlOf(n)));
   const title = titleOf(guiXml, entry.split('/').pop()!.replace(/\.gui$/i, ''));
   return {
-    url: id, title, guiXml, imageMap, scriptMap: ordered, missingScripts, problems: missingScripts.map((n) => `${n}: not in the archive`), atlas,
+    url: id, title, guiXml, imageMap, scriptMap: ordered, missingScripts, problems: missingScripts.map((n) => `${n}: not in the archive`), atlas, size: dir, sizes,
     // a project file (CF.loadAsset, a web view's page): in the image folder, else beside the .gui
     fileUrl: (name) => {
       const n = name.replace(/\\/g, '/');
@@ -488,7 +534,7 @@ async function zipManifest(a: Archive, id: string): Promise<Manifest> {
  * shaped like the screen - the folder it's in, and the files beside it (not
  * another size's, not the @2x ones only iViewer's retina screens take).
  */
-async function sizeRun(a: Archive, id: string): Promise<{ entry: string; dir: string; names: string[] }> {
+async function sizeRun(a: Archive, id: string): Promise<{ entry: string; dir: string; names: string[]; sizes?: Record<Turn, string> }> {
   const guis = a.names.filter((n) => /\.gui$/i.test(n));
   if (!guis.length) throw new Error(`${id}: no .gui in the archive`);
   const own = decodeURIComponent(new URL(id).pathname.split('/').filter(Boolean).pop() ?? '').replace(/\.zip$/i, '').toLowerCase();
@@ -497,13 +543,19 @@ async function sizeRun(a: Archive, id: string): Promise<{ entry: string; dir: st
     ?? guis.find((n) => leaf(n).replace(/\.gui$/, '') === own)
     ?? [...guis].sort((x, y) => x.split('/').length - y.split('/').length || x.localeCompare(y))[0];
   const sizes = guis.filter((n) => leaf(n) === leaf(entry));
+  const dirOf = (n: string) => (n.includes('/') ? n.slice(0, n.lastIndexOf('/') + 1) : '');
+  let bySize: Record<Turn, string> | undefined;
   if (sizes.length > 1 && typeof screen !== 'undefined') {
-    const heads = new Map(await Promise.all(sizes.map(async (n): Promise<[string, string]> => [n, decodeXml((await a.read(n)).subarray(0, 4096))])));
-    entry = shapedLike(sizes, heads, screen.width, screen.height);
+    const layouts = new Map(await Promise.all(sizes.map(async (n): Promise<[string, Layout]> => [n, layoutOf(decodeXml(await a.read(n)))])));
+    entry = shapedLike(sizes, layouts, screen.width, screen.height, turn());
+    bySize = {
+      landscape: dirOf(shapedLike(sizes, layouts, screen.width, screen.height, 'landscape')),
+      portrait: dirOf(shapedLike(sizes, layouts, screen.width, screen.height, 'portrait')),
+    };
   }
-  const dir = entry.includes('/') ? entry.slice(0, entry.lastIndexOf('/') + 1) : '';
+  const dir = dirOf(entry);
   const names = a.names.filter((n) => n.startsWith(dir) && !(SIZE_DIR.test(n.slice(dir.length)) && !SIZE_DIR.test(dir)) && !RETINA.test(n));
-  return { entry, dir, names };
+  return { entry, dir, names, sizes: bySize };
 }
 
 /**

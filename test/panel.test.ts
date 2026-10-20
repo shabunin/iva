@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeZip } from '../src/server/zip.ts';
-import { folderManifest, loadManifest, savedManifest, toSave, unpackPlan, unzip, useFetch } from '../panel/loader.ts';
+import { folderManifest, layoutOf, loadManifest, savedManifest, toSave, unpackPlan, unzip, useFetch, useTurn } from '../panel/loader.ts';
 
 const GUI = '<gui><properties><project>Kept</project><imagefolder>images</imagefolder></properties><scripts><script name="scripts/main.js" /></scripts></gui>';
 const MAIN = 'var answer = 42;\n'.repeat(40);
@@ -203,4 +203,51 @@ test("the copy kept is whole: iva serve's archive asked for twice, else the file
   asked = scenario({ 'gui.zip': 2, 'dead.js': 99 });
   ({ manifest, got } = await loadManifest('http://10.0.0.2:8019/'));
   await assert.rejects(toSave(got, manifest), /not kept - scripts missing: scripts\/dead\.js/);
+});
+
+test("a GUI in sizes laid out each one way (iva build's: 1080x1920 portrait, 1280x800 landscape): the one for the way the screen is turned, and which for each", async () => {
+  // a size's pages in one orientation (the other written empty, as GUI Designer does)
+  const sized = (w: number, h: number, turn: 'landscape' | 'portrait') => {
+    const page = turn === 'landscape' ? '<landscape><img>a.png</img></landscape><portrait />' : '<portrait><img>a.png</img></portrait><landscape />';
+    return Buffer.from(`<gui><properties><project>${w}x${h}</project><size><portrait width="${Math.min(w, h)}" height="${Math.max(w, h)}" /><landscape width="${Math.max(w, h)}" height="${Math.min(w, h)}" /></size></properties><pages><page name="P">${page}</page></pages></gui>`);
+  };
+  const zip = new Uint8Array(writeZip([
+    ['app.gui', sized(1280, 800, 'landscape')], ['1400w1400h/app.gui', sized(467, 467, 'landscape')], ['1080w1920h/app.gui', sized(432, 768, 'portrait')],
+  ]));
+  const g = globalThis as { screen?: { width: number; height: number } };
+  try {
+    // a phone, its screen as it reports it (portrait), turned either way
+    g.screen = { width: 1080, height: 1920 };
+    useTurn('portrait');
+    const up = await savedManifest({ url: 'http://10.0.0.2/app.gui.zip', zip, savedAt: 0, bytes: zip.length });
+    assert.equal(up.title, '432x768');
+    assert.equal(up.size, '1080w1920h/');
+    assert.deepEqual(up.sizes, { landscape: '', portrait: '1080w1920h/' });
+    useTurn('landscape');
+    const side = await savedManifest({ url: 'http://10.0.0.2/app.gui.zip', zip, savedAt: 0, bytes: zip.length });
+    assert.equal(side.title, '1280x800');
+    assert.equal(side.size, '');
+    // what the app unpacks: that size's files
+    const plan = await unpackPlan(zip, 'http://10.0.0.2/app.gui.zip');
+    assert.deepEqual([plan.size, plan.files], ['', ['app.gui']]);
+    useTurn('portrait');
+    assert.deepEqual((await unpackPlan(zip, 'http://10.0.0.2/app.gui.zip')).files, ['1080w1920h/app.gui']);
+    // a square screen: the square size, either way
+    g.screen = { width: 1440, height: 1440 };
+    useTurn('landscape');
+    assert.equal((await savedManifest({ url: 'http://10.0.0.2/app.gui.zip', zip, savedAt: 0, bytes: zip.length })).title, '467x467');
+  } finally {
+    delete g.screen;
+    useTurn(undefined);
+  }
+});
+
+test('the orientations a .gui is laid out in: a page with something in its <portrait>, its <landscape>; its sizes each way', () => {
+  const both = layoutOf('<gui><properties><size><portrait width="768" height="1024" /><landscape width="1024" height="768" /></size></properties><pages><page name="P"><portrait><btn /></portrait><landscape><btn /></landscape></page></pages></gui>');
+  assert.deepEqual([...both.has].sort(), ['landscape', 'portrait']);
+  assert.deepEqual([both.landscape, both.portrait], [[1024, 768], [768, 1024]]);
+  const one = layoutOf('<gui><pages><page name="P"><portrait></portrait><landscape><img>a.png</img></landscape></page></pages></gui>');
+  assert.deepEqual([...one.has], ['landscape']);
+  // no page laid out either way (none yet): either way
+  assert.deepEqual([...layoutOf('<gui />').has].sort(), ['landscape', 'portrait']);
 });
