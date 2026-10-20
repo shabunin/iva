@@ -99,6 +99,12 @@ export interface ScreenSize {
   scale?: number;
   /** the screen in device pixels, when there's a scale */
   device?: { width: number; height: number };
+  /**
+   * screen(): the way it's being laid out - the size's own (wider: landscape),
+   * or, <Project orientation="both">, turned: a page can differ by it (a
+   * square screen's two ways are the same size)
+   */
+  orientation?: 'landscape' | 'portrait';
 }
 
 /**
@@ -111,7 +117,7 @@ export const screen = (): ScreenSize => {
   if (g.__ivaScreen) return { ...g.__ivaScreen };
   // before iva knows the size (a first look at the project, to read its <Project>)
   g.__ivaScreenUsed = true;
-  return { width: 1280, height: 800 };
+  return { width: 1280, height: 800, orientation: 'landscape' };
 };
 
 /** '1400x1400' -> { width, height }; '1400x1400@3x' -> laid out at 467x467, scale 3; null if it isn't one. @internal */

@@ -985,6 +985,9 @@ export class Builder {
         const kids = all.filter((k) => !HOISTED.has(k.type));
         if (kids.some((k) => k.type === 'Landscape' || k.type === 'Portrait')) continue;
         const x = this.orientBlock(c, tag, hasStyle(c.props) || c.props.theme !== undefined ? c : undefined, kids);
+        // laid out the same either way (a square screen's page, one that doesn't turn): one block, shown either way
+        const main = page.children.find((b) => b.tag === this.primary);
+        if (main && serialize({ ...x, tag: main.tag }) === serialize(main)) continue;
         page.children[block] = x;
         this.turnedNodes.push(x);
         this.pageName = '';

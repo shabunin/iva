@@ -102,10 +102,14 @@ function themesOf(tree: Child): string[] | null {
 
 type BuildGlobals = { __ivaVariant?: string; __ivaScreen?: ScreenSize; __ivaScreenUsed?: boolean };
 
-/** The project evaluated with screen() giving `size` (none: iva doesn't know it yet); whether it asked. */
-async function evaluateAt(file: string, size: ScreenSize | undefined) {
+/**
+ * The project evaluated with screen() giving `size` (none: iva doesn't know
+ * it yet), laid out `way` (default: the size's own - wider, landscape);
+ * whether it asked.
+ */
+async function evaluateAt(file: string, size: ScreenSize | undefined, way?: 'landscape' | 'portrait') {
   const g = globalThis as BuildGlobals;
-  if (size) g.__ivaScreen = size;
+  if (size) g.__ivaScreen = { ...size, orientation: way ?? (size.width >= size.height ? 'landscape' : 'portrait') };
   g.__ivaScreenUsed = false;
   try {
     const ev = await evaluate(file);
@@ -145,10 +149,10 @@ export async function compile(entry: string, opts: CompileOptions = {}): Promise
     const size = asked ?? (own && typeof own !== 'string' ? own : undefined);
     const looks = themesOf(first.tree);
     // <Project orientation="both">: laid out the other way too (screen() turned), into each page's other block - a
-    // square screen has one way; the drawings named together with the first way's
-    const turned = project?.props.orientation === 'both' && size && size.width !== size.height
-      ? turnedSize(size, asked ? undefined : project.props.otherSize)
-      : undefined;
+    // square screen too (the same size: a page may differ by screen().orientation); the drawings named together
+    // with the first way's
+    const turned = project?.props.orientation === 'both' && size ? turnedSize(size, asked ? undefined : project.props.otherSize) : undefined;
+    const otherWay = size && size.width >= size.height ? 'portrait' : 'landscape';
     let result: BuildResult;
     if (!looks) {
       let tree = first.tree;
@@ -161,7 +165,7 @@ export async function compile(entry: string, opts: CompileOptions = {}): Promise
       }
       let other: Child | undefined;
       if (turned) {
-        const ev = await evaluateAt(file, turned);
+        const ev = await evaluateAt(file, turned, otherWay);
         files = [...new Set([...files, ...ev.files])];
         other = ev.tree;
       }
@@ -175,7 +179,7 @@ export async function compile(entry: string, opts: CompileOptions = {}): Promise
         try {
           const ev = await evaluateAt(file, size);
           files = [...new Set([...files, ...ev.files])];
-          const other = turned ? await evaluateAt(file, turned) : undefined;
+          const other = turned ? await evaluateAt(file, turned, otherWay) : undefined;
           if (other) files = [...new Set([...files, ...other.files])];
           builds.push(new Builder(baseDir, { themed: true, start: looks[0], size: asked ?? undefined }).build(ev.tree, other?.tree));
         } finally {

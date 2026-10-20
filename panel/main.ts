@@ -95,9 +95,16 @@ let shown: GuiLocation | null = null;
 /** this load without the loading text */
 const quiet = sessionStorage.getItem(QUIET) === '1';
 sessionStorage.removeItem(QUIET);
-/** the orientation the window asks for: clearly taller or wider - a nearly square one keeps what there is (landscape at first) */
-const wanted = (now: Orientation): Orientation =>
-  innerHeight > innerWidth * 1.15 ? 'portrait' : innerWidth > innerHeight * 1.15 ? 'landscape' : now;
+/**
+ * the orientation the window asks for: clearly taller or wider; a nearly square one (a Titan 2's screen) the way the
+ * device is turned, where it says (screen.orientation), else what there is (landscape at first)
+ */
+const wanted = (now: Orientation): Orientation => {
+  if (innerHeight > innerWidth * 1.15) return 'portrait';
+  if (innerWidth > innerHeight * 1.15) return 'landscape';
+  const type = typeof screen !== 'undefined' ? screen.orientation?.type : undefined;
+  return type ? (type.startsWith('portrait') ? 'portrait' : 'landscape') : now;
+};
 let orientation: Orientation = wanted('landscape');
 // a GUI in several sizes: the one laid out the way the screen is turned
 useTurn(orientation);
@@ -296,6 +303,8 @@ function turned() {
 }
 let turning = 0;
 addEventListener('resize', turned);
+// a square screen turned: its shape the same, the device's orientation not
+screen.orientation?.addEventListener('change', () => turned());
 // a field let go (the keyboard going): what the window is now
 document.addEventListener('focusout', () => setTimeout(turned, 300));
 

@@ -14,6 +14,7 @@ import Animations from './pages/Animations.jsx';
 import Gestures from './pages/Gestures.jsx';
 import Navigation from './pages/Navigation.jsx';
 import Network from './pages/Network.jsx';
+import Orientation from './pages/Orientation.jsx';
 
 export default (
   // built at 1280x800, and for phones: a 1400x1400 screen at 3x and a 1080x1920 one (a Nexus 5) at 2.5x, laid
@@ -36,5 +37,6 @@ export default (
     {Gestures}
     {Navigation}
     {Network}
+    {Orientation}
   </Project>
 );

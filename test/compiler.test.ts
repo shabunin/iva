@@ -475,6 +475,7 @@ export default (
       <OnStart js="CF.log('either way');" />
       <OnStart js={'CF.log(' + JSON.stringify('wide ' + width) + ');'} />
     </Page>
+    <Page name="Turn"><Text w={200} h={30} text={'laid out ' + screen().orientation} /></Page>
   </Project>
 );`);
   const r = await compile(entry);
@@ -514,10 +515,13 @@ export default (
   watchers.forEach((w) => w('Main', CF.PortraitOrientation));
   watchers.forEach((w) => w('Main', CF.LandscapeOrientation));
   assert.deepEqual(logs, ['either way', 'wide 1024', 'wide 768', 'wide 1024']);
-  // a square screen: one way
+  // a square screen: a page laid out the same either way, one way; one that differs by screen().orientation, each
   const square = await compile(entry, { size: '1400x1400' });
   assert.match(/<page name="Main"[\s\S]*?<\/page>/.exec(square.xml)![0], /<portrait \/>/);
   assert.doesNotMatch(square.xml, /__portrait|__landscape/);
+  const turn = /<page name="Turn"[\s\S]*?<\/page>/.exec(square.xml)![0];
+  assert.match(turn, /<landscape(?: [^>/]*)?>[\s\S]*?>laid out landscape<\/txt>[\s\S]*?<\/landscape>/);
+  assert.match(turn, /<portrait(?: [^>/]*)?>[\s\S]*?>laid out portrait<\/txt>[\s\S]*?<\/portrait>/);
   // a phone: portrait first, landscape turned (its screen turned: 768x432)
   const phone = await compile(entry, { size: '1080x1920@2.5x' });
   assert.match(phone.xml, /<portrait width="432" height="768" \/>\s*<landscape width="768" height="432" \/>/);

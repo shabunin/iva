@@ -18,6 +18,7 @@ export const sections = [
   { page: 'Gestures', icon: 'hand-sparkles', text: 'Gestures', sub: 'pinch, rotate, pan, taps, swipes, a page flip' },
   { page: 'Navigation', icon: 'compass', text: 'Navigation & feedback', sub: 'Header, SideMenu, Breadcrumbs, Pager, Loader, ConfirmDialog' },
   { page: 'Network', icon: 'network-wired', text: 'Network', sub: 'CF.request, systems, Bonjour' },
+  { page: 'Orientation', icon: 'rotate', text: 'Orientation', sub: 'a layout each way: turn the panel' },
 ];
 
 // How the pages come: a section pushes in from the right, the overview back from the left, a tab fades in.
