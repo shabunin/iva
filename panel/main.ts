@@ -202,6 +202,8 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 // the phone's own settings and keys (the app's side: PanelDevice.kt), where the app offers them
 const device = androidDevice();
+// the loading screen drawn (the frame after the first): the app's splash, showing through the web view till now, can go
+requestAnimationFrame(() => requestAnimationFrame(() => device?.shown()));
 installHost({ ...createIvaHost(), ...(device ? { deviceControl: device } : {}) });
 
 /** the auto-lock delay set (minutes; 0: the screen always on) */
