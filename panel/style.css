@@ -102,17 +102,19 @@ html, body {
   border-radius: 2px;
   background: #ffffff24;
 }
+/* the fill scaled, not sized: a transform the compositor animates, while the page's script is busy too */
 #loading-bar > div {
-  width: 0;
   height: 100%;
   border-radius: 2px;
   background: #1fc8a0;
-  transition: width 0.3s ease-out;
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+  will-change: transform;
 }
-#loading.waiting #loading-bar > div { width: 30%; animation: iva-waiting 1.2s ease-in-out infinite; }
+#loading.waiting #loading-bar > div { animation: iva-waiting 1.2s ease-in-out infinite; }
 @keyframes iva-waiting {
-  from { transform: translateX(-100%); }
-  to { transform: translateX(340%); }
+  from { transform: translateX(-30%) scaleX(0.3); }
+  to { transform: translateX(100%) scaleX(0.3); }
 }
 #loading-what { min-height: 1.45em; font-size: 14px; color: #9aa0a6; }
 

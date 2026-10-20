@@ -114,36 +114,43 @@ const notice = (text: string, ms = 12000) => {
 
 const loading = $<HTMLDivElement>('loading');
 /**
- * Where each step of a start begins on the bar, and where the next takes
- * over (a step counted - scripts, images, an upload - fills its part as it
- * goes): roughly where a slow phone's time goes.
+ * Each step of a start: where it begins on the bar (the next one's start is
+ * where it ends), and how long it takes a Nexus 5 - the bar creeps through a
+ * step in about that time, so it moves while the page is busy (a transform
+ * animated by the compositor: it goes on with the page's script running). A
+ * step counted (an upload, the scripts, the images) fills its part as it goes.
  */
 const STEPS = {
-  starting: 0,
-  download: 0.04,
-  unpacking: 0.12,
-  reading: 0.22,
-  gui: 0.27,
-  graphics: 0.3,
-  scripts: 0.34,
-  images: 0.48,
-  page: 0.9,
-  started: 0.96,
-  done: 1,
-};
+  starting: [0, 0.6],
+  download: [0.03, 1],
+  unpacking: [0.06, 2],
+  reading: [0.15, 0.9],
+  gui: [0.22, 2],
+  graphics: [0.45, 0.7],
+  scripts: [0.52, 2],
+  images: [0.74, 1],
+  page: [0.82, 2],
+  started: [0.97, 0.5],
+  done: [1, 0.2],
+} as const;
 type Step = keyof typeof STEPS;
 const ORDER = Object.keys(STEPS) as Step[];
-let shownPart = 0;
+const fill = loading.querySelector('#loading-bar > div') as HTMLElement;
+/** where the bar is going: never back (a step said twice, a copy failing over to its server) */
+let barTarget = 0;
 /** how far a start got: its step, what to say, and of a step counted how many of how many - shown unless asked not to (CF.loadGUI's showPreloadStatus: false) */
 function progress(step: Step, what: string, done?: number, total?: number) {
   if (quiet || loading.hidden) return;
-  const from = STEPS[step];
-  const to = STEPS[ORDER[ORDER.indexOf(step) + 1] ?? 'done'];
-  const part = total ? from + (to - from) * Math.min(1, (done ?? 0) / total) : from;
-  // never back (a step said twice, a copy failing over to the server)
-  shownPart = Math.max(shownPart, part);
+  const [from, secs] = STEPS[step];
+  const to = STEPS[ORDER[ORDER.indexOf(step) + 1] ?? 'done'][0];
+  // counted: so far; else most of the way, slowing as it goes
+  const target = total ? from + (to - from) * Math.min(1, (done ?? 0) / total) : from + (to - from) * 0.85;
+  if (target > barTarget) {
+    barTarget = target;
+    fill.style.transition = total || step === 'done' ? 'transform 0.25s ease-out' : `transform ${secs}s cubic-bezier(0.25, 0.6, 0.35, 1)`;
+    fill.style.transform = `scaleX(${target.toFixed(3)})`;
+  }
   loading.classList.remove('waiting');
-  (loading.querySelector('#loading-bar > div') as HTMLElement).style.width = `${(shownPart * 100).toFixed(1)}%`;
   $('loading-what').textContent = what;
 }
 /** the GUI's name over the bar */
