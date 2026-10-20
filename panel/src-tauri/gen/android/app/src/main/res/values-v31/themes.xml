@@ -1,5 +1,6 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Android 12 on: its own splash screen - the app's icon on black, then the window's background (the same) -->
+    <!-- Android 12 on: its own splash screen - the app's icon on black (splash_icon: an adaptive icon, its size as
+         given), then the window's background (the same, at the same place and size) -->
     <style name="Theme.app" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="android:windowBackground">@drawable/splash</item>
         <item name="android:windowSplashScreenBackground">@android:color/black</item>

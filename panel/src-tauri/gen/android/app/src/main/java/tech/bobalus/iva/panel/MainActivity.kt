@@ -61,6 +61,11 @@ class MainActivity : TauriActivity() {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
       window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
     }
+    // Android 12's splash gone at once, not faded out: the window under it shows the same icon in the same place
+    // (res/drawable/splash.xml), and a fade between the two dims it for a moment
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+      splashScreen.setOnExitAnimationListener { it.remove() }
+    }
     device.start()
     device.applyBars()
     // Back puts the panel away, as Home does: it keeps running (its systems connected). Closing

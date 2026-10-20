@@ -40,8 +40,16 @@ import kotlin.math.roundToInt
  *
  * From the page: hello (a page starting: it hears the whole state; the keys
  * are forgotten, the brightness and the bars are the panel's own again),
- * set, keys, autoLock. To it: state (what changed since it was last told;
- * quiet: what its own set made of the device) and key (one let go).
+ * set, keys, autoLock, shown (it has drawn). To it: state (what changed since
+ * it was last told; quiet: what its own set made of the device) and key (one
+ * let go).
+ *
+ * Till the page first draws, the web view is see-through: the window's
+ * background - the app's icon on black, the splash (res/drawable/splash.xml)
+ * - shows instead of an empty black web view, and the page's loading screen,
+ * the same icon in the same place, takes over from it. Then (shown, or
+ * SPLASH_MS at most) it's opaque again, and the view around it black: a
+ * see-through web view costs a full-screen blend every frame.
  */
 class PanelDevice(private val activity: ComponentActivity) {
   private val main = Handler(Looper.getMainLooper())
@@ -71,8 +79,18 @@ class PanelDevice(private val activity: ComponentActivity) {
     if (max > 0) max else 255
   }
 
+  /** the web view, see-through till the page has drawn */
+  private var view: WebView? = null
+  /** the page drawn: the web view and what's around it (beside the bars a GUI shows) black, the splash no longer showing through */
+  private val opaque = Runnable {
+    content.setBackgroundColor(Color.BLACK)
+    view?.setBackgroundColor(Color.BLACK)
+  }
+
   fun attach(webView: WebView) {
     if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) return
+    view = webView
+    webView.setBackgroundColor(Color.TRANSPARENT)
     WebViewCompat.addWebMessageListener(webView, "ivaAndroid", ORIGINS) { _, message, _, isMainFrame, reply ->
       val data = message.data
       if (isMainFrame && data != null) {
@@ -123,6 +141,10 @@ class PanelDevice(private val activity: ComponentActivity) {
         }.filter { it.code >= 0 }
       }
       "autoLock" -> autoLock(m.optInt("minutes", 0))
+      "shown" -> {
+        main.removeCallbacks(opaque)
+        opaque.run()
+      }
     }
   }
 
@@ -238,7 +260,8 @@ class PanelDevice(private val activity: ComponentActivity) {
     // (the system's own broadcast; whoever sends it, the volume is read anew)
     ContextCompat.registerReceiver(activity, volume, IntentFilter("android.media.VOLUME_CHANGED_ACTION"), ContextCompat.RECEIVER_EXPORTED)
     activity.contentResolver.registerContentObserver(Settings.System.getUriFor(Settings.System.SCREEN_BRIGHTNESS), false, settings)
-    content.setBackgroundColor(Color.BLACK)
+    // black once the page has drawn (opaque); till then the splash, behind it, shows
+    main.postDelayed(opaque, SPLASH_MS)
     ViewCompat.setOnApplyWindowInsetsListener(content) { v, insets ->
       // room for the bars the GUI shows; a hidden one swiped out lies over the GUI
       val status = if (statusBarShown) insets.getInsets(WindowInsetsCompat.Type.statusBars()) else Insets.NONE
@@ -376,5 +399,8 @@ class PanelDevice(private val activity: ComponentActivity) {
   companion object {
     /** the panel's own page (Tauri's origin on Android) */
     private val ORIGINS = setOf("http://tauri.localhost", "https://tauri.localhost")
+
+    /** the web view opaque again by then, whether or not the page said it has drawn */
+    private const val SPLASH_MS = 5000L
   }
 }

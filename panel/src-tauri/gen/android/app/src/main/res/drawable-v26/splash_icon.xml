@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12's splash icon, an adaptive one: the system scales an icon that isn't to its own size whatever its margins or
+     insets (it trims them), an adaptive icon it takes as it is - the box (288 dp) its whole layer. The app's icon at 41.7%
+     of it (splash_icon_fg.png), 120 dp, as the window's background (splash.xml) and the loading screen have it -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@android:color/transparent" />
+    <foreground android:drawable="@drawable/splash_icon_fg" />
+</adaptive-icon>
