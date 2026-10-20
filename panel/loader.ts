@@ -15,6 +15,26 @@ import type { CFProject } from '../src/runtime/cf/parser';
 /** what a kept parse is good for: this build of the panel's (its parser, its runtime) - another build parses again */
 export const PARSED_STAMP = new URL(import.meta.url).pathname;
 
+/**
+ * What a zipped GUI's .gui names, found among its files: its title, its image
+ * folder, each image's file by its name, each script's (none: missing) in the
+ * order they run. Kept with its parse, so a start after reads neither the
+ * .gui nor its names (a slow phone: a second).
+ */
+export interface GuiIndex {
+  title: string;
+  folder: string;
+  images: Record<string, string>;
+  scripts: [string, string | null][];
+}
+
+/** what the app keeps beside a GUI's unpacked files (gui_keep_parsed): its parse and its index, by this build */
+export interface KeptParse {
+  stamp: string;
+  project: CFProject;
+  index?: GuiIndex;
+}
+
 export interface Manifest {
   /** where it came from: CF.loadGUI's links resolve against it */
   url: string;
@@ -37,6 +57,8 @@ export interface Manifest {
   project?: CFProject;
   /** the GUI as parsed now: for the app to keep beside its unpacked files */
   keepParsed?: (project: CFProject) => void;
+  /** from an archive: what its .gui names, found among its files - kept with its parse, for a start after */
+  index?: GuiIndex;
   /**
    * from an archive: its images as the app packs them in sheets
    * (src-tauri/src/atlas.rs) - [file, name in the .gui, group], the groups
@@ -453,11 +475,12 @@ export async function unpackPlan(zip: Uint8Array<ArrayBuffer>, id: string): Prom
  * sheets, read as they're needed (as src/server/project.ts zipManifest).
  * With it, how the app packs its images (toPack).
  */
-async function zipManifest(a: Archive, id: string): Promise<Manifest> {
+async function zipManifest(a: Archive, id: string, kept?: GuiIndex): Promise<Manifest> {
   const { entry, dir, names, sizes } = await sizeRun(a, id);
   const leaf = (n: string) => n.split('/').pop()!.toLowerCase();
-  const guiXml = decodeXml(await a.read(entry));
-  const folder = folderOf(guiXml);
+  // the index kept: no .gui to read (nor to pack from - its images are in sheets)
+  const guiXml = kept ? '' : decodeXml(await a.read(entry));
+  const folder = kept ? kept.folder : folderOf(guiXml);
   const imageRoot = dir + (folder ? `${folder}/` : '');
   const lower = new Map(names.map((n) => [n.toLowerCase(), n]));
   const blobs = new Map<string, string>();
@@ -483,46 +506,56 @@ async function zipManifest(a: Archive, id: string): Promise<Manifest> {
   const mapped = mapFile ? atlasOf(decodeXml(await a.read(mapFile)), (file) => inAtlas(file)) : undefined;
   const atlas = mapped?.sheets.length ? { ...mapped, sheets: await Promise.all(mapped.sheets.map(urlOf)) } : undefined;
   // the images the .gui names (as remoteManifest maps them), by their path in the image folder and by bare
-  // name: found in the image folder, then by the .gui, then by name
+  // name: found in the image folder, then by the .gui, then by name (the shallowest of that name - sorted
+  // once it's asked for: a .gui read afresh, not the index kept)
   const byLeaf = new Map<string, string>();
-  for (const n of [...names].sort((x, y) => x.split('/').length - y.split('/').length)) {
-    if (IMAGE_RE.test(n) && !byLeaf.has(leaf(n))) byLeaf.set(leaf(n), n);
-  }
-  const fileOf = (n: string) => lower.get((imageRoot + n).toLowerCase()) ?? lower.get((dir + n).toLowerCase()) ?? byLeaf.get(leaf(n));
-  const images: Record<string, string> = {};
-  for (const named of imageNames(guiXml)) {
-    const n = named.replace(/\\/g, '/');
-    const file = fileOf(n);
-    if (!file) continue;
-    images[n] ??= file;
-    images[n.split('/').pop()!] ??= file;
+  const byLeafOf = () => {
+    if (byLeaf.size) return byLeaf;
+    for (const n of [...names].sort((x, y) => x.split('/').length - y.split('/').length)) {
+      if (IMAGE_RE.test(n) && !byLeaf.has(leaf(n))) byLeaf.set(leaf(n), n);
+    }
+    return byLeaf;
+  };
+  const fileOf = (n: string) => lower.get((imageRoot + n).toLowerCase()) ?? lower.get((dir + n).toLowerCase()) ?? byLeafOf().get(leaf(n));
+  let images: Record<string, string> = {};
+  if (kept) images = kept.images;
+  else {
+    for (const named of imageNames(guiXml)) {
+      const n = named.replace(/\\/g, '/');
+      const file = fileOf(n);
+      if (!file) continue;
+      images[n] ??= file;
+      images[n.split('/').pop()!] ??= file;
+    }
   }
   const imageMap: Record<string, string> = {};
-  await each(Object.entries(images), 8, async ([n, file]) => void (imageMap[n] = await urlOf(file)));
-  const scriptMap: Record<string, string> = {};
-  const missingScripts: string[] = [];
-  await each(scriptNames(guiXml), 4, async (name) => {
+  // files with URLs of their own (a folder's): at once
+  if (a.url) for (const [n, file] of Object.entries(images)) imageMap[n] = a.url(file);
+  else await each(Object.entries(images), 8, async ([n, file]) => void (imageMap[n] = await urlOf(file)));
+  // in the image folder, where iViewer looks for it; then by the .gui, then by name
+  const scriptFiles: [string, string | null][] = kept?.scripts ?? scriptNames(guiXml).map((name) => {
     const want = name.replace(/\\/g, '/').toLowerCase();
-    // in the image folder, where iViewer looks for it; then by the .gui, then by name
-    const found = lower.get(imageRoot.toLowerCase() + want) ?? lower.get(dir.toLowerCase() + want) ?? names.find((n) => leaf(n) === want.split('/').pop());
-    if (found) scriptMap[name] = new TextDecoder().decode(await a.read(found));
-    else missingScripts.push(name);
+    return [name, lower.get(imageRoot.toLowerCase() + want) ?? lower.get(dir.toLowerCase() + want) ?? names.find((n) => leaf(n) === want.split('/').pop()) ?? null];
   });
+  const scriptMap: Record<string, string> = {};
+  const missingScripts = scriptFiles.filter(([, file]) => !file).map(([name]) => name);
+  await each(scriptFiles.filter(([, file]) => file), a.url ? 16 : 4, async ([name, file]) => void (scriptMap[name] = new TextDecoder().decode(await a.read(file!))));
   // the order the .gui has them in (they run in it)
-  const ordered = Object.fromEntries(scriptNames(guiXml).filter((n) => n in scriptMap).map((n) => [n, scriptMap[n]]));
+  const ordered = Object.fromEntries(scriptFiles.filter(([n]) => n in scriptMap).map(([n]) => [n, scriptMap[n]]));
   // the size's other files a deflated archive holds (a web view's page, a script's data): ready for fileUrl, which
   // answers at once
   if (!a.url) await each(names.filter((n) => !a.stored(n) && !IMAGE_RE.test(n) && !/\.gui$/i.test(n)), 4, async (n) => void (await urlOf(n)));
-  const title = titleOf(guiXml, entry.split('/').pop()!.replace(/\.gui$/i, ''));
+  const title = kept ? kept.title : titleOf(guiXml, entry.split('/').pop()!.replace(/\.gui$/i, ''));
   return {
     url: id, title, guiXml, imageMap, scriptMap: ordered, missingScripts, problems: missingScripts.map((n) => `${n}: not in the archive`), atlas, size: dir, sizes,
+    index: { title, folder, images, scripts: scriptFiles },
     // a project file (CF.loadAsset, a web view's page): in the image folder, else beside the .gui
     fileUrl: (name) => {
       const n = name.replace(/\\/g, '/');
       const found = [imageRoot + n, dir + n].map((f) => lower.get(f.toLowerCase())).find(Boolean);
       return found ? urlNow(found) : undefined;
     },
-    toPack: () => {
+    toPack: kept ? undefined : () => {
       // the PNGs, by the group atlasGroups puts each in: the groups in their sheets' order
       const { groups, pages } = atlasGroups(guiXml, Object.values(ordered));
       const pack: [string, string, string][] = [];
@@ -572,13 +605,15 @@ async function sizeRun(a: Archive, id: string): Promise<{ entry: string; dir: st
  * protocol): nothing to unzip, no Blob made; its images in sheets, once the
  * app packed them.
  */
-export async function folderManifest(u: { root: string; files: string[]; parsed?: string }, id: string): Promise<Manifest> {
+export async function folderManifest(u: { root: string; files: string[]; packed?: boolean; parsed?: string }, id: string): Promise<Manifest> {
   const sep = u.root.includes('\\') && !u.root.includes('/') ? '\\' : '/';
   const url = (name: string) => convertFileSrc(`${u.root}${sep}${sep === '\\' ? name.replace(/\//g, '\\') : name}`);
   // the GUI as parsed before, if this build of the panel kept it (read beside the files)
   const kept = u.parsed
-    ? fetch(convertFileSrc(u.parsed)).then((r) => (r.ok ? r.json() : null)).then((k) => (k?.stamp === PARSED_STAMP ? (k.project as CFProject) : undefined), () => undefined)
+    ? fetch(convertFileSrc(u.parsed)).then((r) => (r.ok ? r.json() : null)).then((k: KeptParse | null) => (k?.stamp === PARSED_STAMP ? k : undefined), () => undefined)
     : Promise.resolve(undefined);
+  // its images in sheets: what the .gui names, from the index kept with it (the .gui isn't read)
+  const index = u.packed ? (await kept)?.index : undefined;
   const m = await zipManifest({
     names: u.files,
     stored: () => undefined,
@@ -588,7 +623,7 @@ export async function folderManifest(u: { root: string; files: string[]; parsed?
       if (!res.ok) throw new Error(`${name}: HTTP ${res.status}`);
       return new Uint8Array(await res.arrayBuffer());
     },
-  }, id);
-  m.project = await kept;
+  }, id, index);
+  m.project = (await kept)?.project;
   return m;
 }

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeZip } from '../src/server/zip.ts';
-import { folderManifest, layoutOf, loadManifest, savedManifest, toSave, unpackPlan, unzip, useFetch, useTurn } from '../panel/loader.ts';
+import { PARSED_STAMP, folderManifest, layoutOf, loadManifest, savedManifest, toSave, unpackPlan, unzip, useFetch, useTurn } from '../panel/loader.ts';
 
 const GUI = '<gui><properties><project>Kept</project><imagefolder>images</imagefolder></properties><scripts><script name="scripts/main.js" /></scripts></gui>';
 const MAIN = 'var answer = 42;\n'.repeat(40);
@@ -111,6 +111,25 @@ test("a zipped GUI's size run, for the app to unpack and pack (not another size'
     assert.deepEqual(next.atlas?.frames['icons/b.png'], [0, 2, 2, 4, 4]);
     assert.equal(await (await fetch(next.fileUrl('page.html')!)).text(), 'file images/page.html');
     assert.equal(next.toPack?.().length, 3);
+    // a start after: the parse and the index kept beside the files (this build's) - its images in sheets, the .gui not read
+    const project = { pages: { P: { name: 'P' } } };
+    urls.set('/data/parsed.json', URL.createObjectURL(new Blob([JSON.stringify({ stamp: PARSED_STAMP, project, index: next.index })])));
+    urls.delete('/data/gui/app.gui');
+    const kept = await folderManifest({ root: '/data/gui', files: [...disk.keys()], packed: true, parsed: '/data/parsed.json' }, 'http://10.0.0.2/app.gui.zip');
+    assert.deepEqual(kept.project, project);
+    assert.equal(kept.guiXml, '');
+    assert.equal(kept.title, 'Kept');
+    assert.deepEqual(kept.imageMap, next.imageMap);
+    assert.deepEqual(kept.scriptMap, next.scriptMap);
+    assert.deepEqual(kept.atlas, next.atlas);
+    assert.equal(kept.toPack, undefined);
+    // another build's: parsed afresh, from the .gui
+    urls.set('/data/gui/app.gui', URL.createObjectURL(new Blob([sized(1280, 800)])));
+    urls.set('/data/parsed.json', URL.createObjectURL(new Blob([JSON.stringify({ stamp: 'another build', project, index: next.index })])));
+    const other = await folderManifest({ root: '/data/gui', files: [...disk.keys()], packed: true, parsed: '/data/parsed.json' }, 'http://10.0.0.2/app.gui.zip');
+    assert.equal(other.project, undefined);
+    assert.equal(other.guiXml, sized(1280, 800));
+    assert.deepEqual(other.imageMap, next.imageMap);
   } finally {
     delete g.screen;
     delete g.window;

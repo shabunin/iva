@@ -266,11 +266,11 @@ pub async fn gui_unpack<R: Runtime>(app: AppHandle<R>, args: UnpackArgs) -> Resu
         })
         .await
         .map_err(|e| e.to_string())??;
-        let mut u = gui_unpacked(app, args.id, args.version, Some(args.size))?.ok_or("not unpacked")?;
+        let mut u = gui_unpacked(app, args.id, args.version, Some(args.size)).await?.ok_or("not unpacked")?;
         u.ms = Some(t0.elapsed().as_millis());
         return Ok(u);
     }
-    gui_unpacked(app, args.id, args.version, Some(args.size))?.ok_or_else(|| "not unpacked".into())
+    gui_unpacked(app, args.id, args.version, Some(args.size)).await?.ok_or_else(|| "not unpacked".into())
 }
 
 /// Its images packed into sheets beside its .gui, in a thread of its own (the events say how far it got) - if
@@ -318,7 +318,7 @@ pub fn gui_pack<R: Runtime>(app: AppHandle<R>, args: PackArgs) -> Result<(), Str
 /// The GUI's files unpacked from this version, if they are: where, which (its sheets among them), whether
 /// its images are in sheets yet.
 #[tauri::command]
-pub fn gui_unpacked<R: Runtime>(app: AppHandle<R>, id: String, version: String, size: Option<String>) -> Result<Option<Unpacked>, String> {
+pub async fn gui_unpacked<R: Runtime>(app: AppHandle<R>, id: String, version: String, size: Option<String>) -> Result<Option<Unpacked>, String> {
     let size = size.unwrap_or_default();
     let (_, _, at) = folders(&app, &id, &version, &size)?;
     let Ok(meta) = fs::read(at.join("meta.json")) else { return Ok(None) };
@@ -347,7 +347,7 @@ pub fn gui_unpacked<R: Runtime>(app: AppHandle<R>, id: String, version: String, 
  * reads it instead of parsing the .gui again (a slow phone: 0.1 s, not 1.6).
  */
 #[tauri::command]
-pub fn gui_keep_parsed<R: Runtime>(app: AppHandle<R>, id: String, version: String, size: Option<String>, data: String) -> Result<(), String> {
+pub async fn gui_keep_parsed<R: Runtime>(app: AppHandle<R>, id: String, version: String, size: Option<String>, data: String) -> Result<(), String> {
     let (_, _, at) = folders(&app, &id, &version, &size.unwrap_or_default())?;
     if !at.join("meta.json").is_file() {
         return Err("not unpacked".into());

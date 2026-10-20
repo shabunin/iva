@@ -16,13 +16,14 @@ import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import { openUrl as openOutside } from '@tauri-apps/plugin-opener';
+import type { Application } from 'pixi.js';
 import { installHost } from '../src/runtime/stdlib';
-import { loadProject, rendererLabel, type LoadProgress, type LoadProjectResult, type Orientation, type RendererChoice } from '../src/runtime/cf';
+import { createApp, loadProject, rendererLabel, type LoadProgress, type LoadProjectResult, type Orientation, type RendererChoice } from '../src/runtime/cf';
 import { createIvaHost } from '../src/runtime/host';
 import { closeHostSockets } from '../src/runtime/host/net/provider';
 import { installFonts } from '../src/preview/fonts';
 import { formatLocation, History, isGuiUrl, parseLocation, type GuiLocation } from '../src/runtime/location';
-import { PARSED_STAMP, fetchGui, folderManifest, guiUrl, isZip, loadManifest, manifestOf, newerVersion, ownFile, savedManifest, toSave, unpackPlan, useTurn, type Download, type Manifest } from './loader';
+import { PARSED_STAMP, type KeptParse, fetchGui, folderManifest, guiUrl, isZip, loadManifest, manifestOf, newerVersion, ownFile, savedManifest, toSave, unpackPlan, useTurn, type Download, type Manifest } from './loader';
 import { forgetAllGuis, forgetGui, keptGui, keptGuis, saveGui, savedGui, usedGui, type Kept, type SavedGui } from './store';
 import { androidDevice } from './device';
 
@@ -90,6 +91,12 @@ const options = {
 /** where the panel has been (back, forward), across the page reloads a GUI change takes */
 const history = new History(sessionStorage);
 let current: LoadProjectResult | null = null;
+/** the fonts iViewer panels name, in (start: behind the GUI's reading) - before the GUI draws, so text measures right */
+let fontsIn: Promise<unknown> = Promise.resolve();
+/** what the page before left on the host, closed (start: behind the GUI's reading) - before the GUI runs */
+let socketsClosed: Promise<unknown> = Promise.resolve();
+/** the Pixi app the GUI draws in, being made (start: behind the GUI's reading) */
+let appMade: Promise<Application> | undefined;
 /** the GUI shown and the page it is on: the address bar's text */
 let shown: GuiLocation | null = null;
 /** this load without the loading text */
@@ -442,6 +449,7 @@ function applyBar() {
 
 /** Run it. */
 async function show(m: Manifest) {
+  await Promise.all([fontsIn, socketsClosed]);
   document.title = `${m.title} · iva panel`;
   loadingTitle(m.title);
   shownSize = m.size;
@@ -455,6 +463,7 @@ async function show(m: Manifest) {
     onParsed: m.keepParsed,
     onProgress: projectProgress,
     renderer: rendererChoice(),
+    app: appMade,
     renderOnDemand: onDemand(),
     imageMap: m.imageMap,
     atlas: m.atlas,
@@ -661,7 +670,7 @@ async function unpacked(url: string, key: string | undefined, zip: Uint8Array<Ar
 function keepParsed(m: Manifest, url: string, key: string): Manifest {
   if (!native || m.project) return m;
   m.keepParsed = (project) => {
-    const data = JSON.stringify({ stamp: PARSED_STAMP, project });
+    const data = JSON.stringify({ stamp: PARSED_STAMP, project, index: m.index } satisfies KeptParse);
     void invoke('gui_keep_parsed', { id: url, version: key, size: m.size ?? '', data }).catch((e) => noteError(`keeping ${url}'s parse: ${message(e)}`));
   };
   return m;
@@ -680,19 +689,22 @@ function pack(url: string, key: string | undefined, m: Manifest) {
  * wall should.
  */
 async function start() {
+  mark('starting');
   // a page starting afresh: what the page before it left on the host (a server its reload didn't get
-  // to close) goes first - it would hold its port from this GUI's servers
-  const left = await closeHostSockets();
-  if (left.total) {
+  // to close) goes before the GUI runs (show waits for it) - it would hold its port from this GUI's servers
+  socketsClosed = closeHostSockets().then((left) => {
+    if (!left.total) return;
     const what = ([['server', left.servers], ['connection', left.connections], ['UDP socket', left.udp], ['TLS connection', left.tls]] as [string, number][])
       .filter(([, n]) => n).map(([w, n]) => `${n} ${w}${n === 1 ? '' : 's'}`).join(', ');
     // seen in the settings' error list: a page that left these behind is a bug to look at
     noteError(`left on the host by the page before, closed now: ${what}`);
-  }
-  mark('starting');
+  });
   progress('starting', 'Starting');
-  await installFonts();
-  mark('fonts in');
+  // the fonts and the graphics set up behind the GUI's reading (show waits for them)
+  fontsIn = installFonts().then(() => mark('fonts in'));
+  // (at a pixel's size: sized for the GUI - by loadProject, at 1 - then fitted to the screen)
+  appMade = createApp(canvas, rendererChoice(), 1, 1, 1);
+  void appMade.then(() => mark('graphics set up'), () => {});
   applyBar();
   const stored = sessionStorage.getItem(ONCE) ?? localStorage.getItem(GUI);
   // the first start: the built-in demo, as iViewer starts with one (the settings: a gesture away, as the notice says)
