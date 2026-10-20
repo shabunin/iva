@@ -1703,10 +1703,21 @@ export class CFRenderer {
   }
 
   /** `onImages`: the first page's images in, so many of so many (a loading screen's progress) */
+  /** how start() went: ms for the images known (Assets), the first page's in, and made */
+  startTimes: { assets: number; images: number; made: number } = { assets: 0, images: 0, made: 0 };
+
   async start(onImages?: (done: number, total: number) => void) {
     this.pageHistory = [];
     this.initStore();
+    let at = performance.now();
+    const lap = () => {
+      const now = performance.now();
+      const ms = Math.round(now - at);
+      at = now;
+      return ms;
+    };
     await this.loadAssets();
+    this.startTimes.assets = lap();
     // CF.loadGUI(url, { startPage }): that page, if the GUI has it
     const first = this.startPage && this.project.pages[this.startPage]
       ? this.startPage
@@ -1714,6 +1725,8 @@ export class CFRenderer {
     if (!first) return;
     // the first page's images in before start() is done: the page is there when the scripts run
     await this.ensureLoaded(this.pageImages(first), onImages);
+    this.startTimes.images = lap();
     this.navigate(first);
+    this.startTimes.made = lap();
   }
 }

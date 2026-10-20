@@ -53,6 +53,7 @@ pub fn run() {
             unpack::gui_unpack,
             unpack::gui_pack,
             unpack::gui_unpacked,
+            unpack::gui_keep_parsed,
             unpack::gui_forget,
         ])
         .setup(|app| {

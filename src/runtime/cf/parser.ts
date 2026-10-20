@@ -114,7 +114,12 @@ export function parseThemeName(rawName: string): { name: string; state: string }
     return { name, state };
 }
 
-export async function parseGenericNode(element: Element): Promise<CFNode> {
+/**
+ * A .gui element as the runtime reads it, its children too - at once: an
+ * await a node (tens of thousands in a big GUI) and a pause every 50 cost a
+ * slow phone seconds (a Nexus 5: 3.9 s for the gallery's 700 KB .gui).
+ */
+export function parseNode(element: Element): CFNode {
     const type = element.tagName.toLowerCase();
     const attributes: Record<string, string> = {};
     for (let i = 0; i < element.attributes.length; i++) {
@@ -126,7 +131,7 @@ export async function parseGenericNode(element: Element): Promise<CFNode> {
     let hasElementChildren = false;
     for (let i = 0; i < element.children.length; i++) {
         hasElementChildren = true;
-        children.push(await parseGenericNode(element.children[i]));
+        children.push(parseNode(element.children[i]));
     }
 
     const node: CFNode = {
@@ -211,13 +216,21 @@ export async function parseGenericNode(element: Element): Promise<CFNode> {
     return node;
 }
 
-export async function parseNodes(element: Element): Promise<CFNode[]> {
+/** An element's children as the runtime reads them. */
+export function parseNodeList(element: Element): CFNode[] {
     const nodes: CFNode[] = [];
-    for (let i = 0; i < element.children.length; i++) {
-        if (i % 50 === 0) await new Promise(resolve => setTimeout(resolve, 0));
-        nodes.push(await parseGenericNode(element.children[i]));
-    }
+    for (let i = 0; i < element.children.length; i++) nodes.push(parseNode(element.children[i]));
     return nodes;
+}
+
+/** parseNode, as it was called before (async) */
+export async function parseGenericNode(element: Element): Promise<CFNode> {
+    return parseNode(element);
+}
+
+/** parseNodeList, as it was called before (async) */
+export async function parseNodes(element: Element): Promise<CFNode[]> {
+    return parseNodeList(element);
 }
 
 export async function parseGUI(xmlString: string): Promise<CFProject> {
@@ -247,7 +260,7 @@ export async function parseGUI(xmlString: string): Promise<CFProject> {
     for (const cmdNode of cmdElements) {
         const cmdName = cmdNode.getAttribute("name");
         if (cmdName) {
-            project.commands[cmdName] = await parseGenericNode(cmdNode);
+            project.commands[cmdName] = parseNode(cmdNode);
         }
     }
 
@@ -269,7 +282,7 @@ export async function parseGUI(xmlString: string): Promise<CFProject> {
             };
         }
         // Save generic properties
-        project.properties.raw = await parseGenericNode(propertiesNode);
+        project.properties.raw = parseNode(propertiesNode);
     }
 
     const themesNode = root.querySelector("themes");
@@ -310,7 +323,7 @@ export async function parseGUI(xmlString: string): Promise<CFProject> {
             for (let i = 0; i < portrait.attributes.length; i++) {
                 page.portraitAttributes[portrait.attributes[i].name] = portrait.attributes[i].value;
             }
-            page.portrait = await parseNodes(portrait);
+            page.portrait = parseNodeList(portrait);
         }
 
         const landscape = pageNode.querySelector("landscape");
@@ -320,7 +333,7 @@ export async function parseGUI(xmlString: string): Promise<CFProject> {
             for (let i = 0; i < landscape.attributes.length; i++) {
                 page.landscapeAttributes[landscape.attributes[i].name] = landscape.attributes[i].value;
             }
-            page.landscape = await parseNodes(landscape);
+            page.landscape = parseNodeList(landscape);
         }
 
         project.pages[name] = page;
@@ -340,24 +353,24 @@ export async function parseGUI(xmlString: string): Promise<CFProject> {
             h: parseInt(attributes["h"] || "0", 10),
             theme: attributes["t"],
             attributes,
-            nodes: await parseNodes(subpageNode)
+            nodes: parseNodeList(subpageNode)
         };
     }
 
     const macrosNode = root.querySelector("gui > macros");
-    if (macrosNode) project.macros = await parseNodes(macrosNode);
+    if (macrosNode) project.macros = parseNodeList(macrosNode);
 
     const systemsNode = root.querySelector("gui > systems");
-    if (systemsNode) project.systems = await parseNodes(systemsNode);
+    if (systemsNode) project.systems = parseNodeList(systemsNode);
 
     const soundsNode = root.querySelector("gui > sounds");
-    if (soundsNode) project.sounds = await parseNodes(soundsNode);
+    if (soundsNode) project.sounds = parseNodeList(soundsNode);
 
     const scriptsNode = root.querySelector("gui > scripts");
-    if (scriptsNode) project.scripts = await parseNodes(scriptsNode);
+    if (scriptsNode) project.scripts = parseNodeList(scriptsNode);
 
     const tokensNode = root.querySelector("gui > tokens");
-    if (tokensNode) project.tokens = await parseNodes(tokensNode);
+    if (tokensNode) project.tokens = parseNodeList(tokensNode);
 
     return project;
 }

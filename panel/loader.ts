@@ -10,6 +10,10 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { fetch as hostFetch } from '@tauri-apps/plugin-http';
 import { atlasGroups, groupRank } from '../src/runtime/cf/atlas';
 import type { SavedGui } from './store';
+import type { CFProject } from '../src/runtime/cf/parser';
+
+/** what a kept parse is good for: this build of the panel's (its parser, its runtime) - another build parses again */
+export const PARSED_STAMP = new URL(import.meta.url).pathname;
 
 export interface Manifest {
   /** where it came from: CF.loadGUI's links resolve against it */
@@ -29,6 +33,10 @@ export interface Manifest {
   size?: string;
   /** from an archive in several sizes: the one for each orientation (the device turned: the other, if it's another) */
   sizes?: Record<Turn, string>;
+  /** the GUI parsed before (kept by the app beside its unpacked files): not parsed again */
+  project?: CFProject;
+  /** the GUI as parsed now: for the app to keep beside its unpacked files */
+  keepParsed?: (project: CFProject) => void;
   /**
    * from an archive: its images as the app packs them in sheets
    * (src-tauri/src/atlas.rs) - [file, name in the .gui, group], the groups
@@ -564,10 +572,14 @@ async function sizeRun(a: Archive, id: string): Promise<{ entry: string; dir: st
  * protocol): nothing to unzip, no Blob made; its images in sheets, once the
  * app packed them.
  */
-export function folderManifest(u: { root: string; files: string[] }, id: string): Promise<Manifest> {
+export async function folderManifest(u: { root: string; files: string[]; parsed?: string }, id: string): Promise<Manifest> {
   const sep = u.root.includes('\\') && !u.root.includes('/') ? '\\' : '/';
   const url = (name: string) => convertFileSrc(`${u.root}${sep}${sep === '\\' ? name.replace(/\//g, '\\') : name}`);
-  return zipManifest({
+  // the GUI as parsed before, if this build of the panel kept it (read beside the files)
+  const kept = u.parsed
+    ? fetch(convertFileSrc(u.parsed)).then((r) => (r.ok ? r.json() : null)).then((k) => (k?.stamp === PARSED_STAMP ? (k.project as CFProject) : undefined), () => undefined)
+    : Promise.resolve(undefined);
+  const m = await zipManifest({
     names: u.files,
     stored: () => undefined,
     url,
@@ -577,4 +589,6 @@ export function folderManifest(u: { root: string; files: string[] }, id: string)
       return new Uint8Array(await res.arrayBuffer());
     },
   }, id);
+  m.project = await kept;
+  return m;
 }

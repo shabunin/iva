@@ -72,6 +72,9 @@ pub struct Unpacked {
     files: Vec<String>,
     /// its sheets made (atlas.json there)
     packed: bool,
+    /// the GUI as the page parsed it, kept (gui_keep_parsed): its file, if there is one
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parsed: Option<String>,
     /// how long unpacking took (unpacked just now)
     #[serde(skip_serializing_if = "Option::is_none")]
     ms: Option<u128>,
@@ -334,7 +337,24 @@ pub fn gui_unpacked<R: Runtime>(app: AppHandle<R>, id: String, version: String, 
             }
         }
     }
-    Ok(Some(Unpacked { root: dir.to_string_lossy().into_owned(), files, packed, ms: None }))
+    let parsed = at.join("parsed.json");
+    let parsed = parsed.is_file().then(|| parsed.to_string_lossy().into_owned());
+    Ok(Some(Unpacked { root: dir.to_string_lossy().into_owned(), files, packed, parsed, ms: None }))
+}
+
+/**
+ * The GUI as the page parsed it (JSON), kept beside its files: the next start
+ * reads it instead of parsing the .gui again (a slow phone: 0.1 s, not 1.6).
+ */
+#[tauri::command]
+pub fn gui_keep_parsed<R: Runtime>(app: AppHandle<R>, id: String, version: String, size: Option<String>, data: String) -> Result<(), String> {
+    let (_, _, at) = folders(&app, &id, &version, &size.unwrap_or_default())?;
+    if !at.join("meta.json").is_file() {
+        return Err("not unpacked".into());
+    }
+    let tmp = at.join("parsed.json.tmp");
+    fs::write(&tmp, data).map_err(|e| e.to_string())?;
+    fs::rename(&tmp, at.join("parsed.json")).map_err(|e| e.to_string())
 }
 
 /// A GUI's files unpacked let go - every GUI's, without one.

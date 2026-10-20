@@ -22,7 +22,7 @@ import { createIvaHost } from '../src/runtime/host';
 import { closeHostSockets } from '../src/runtime/host/net/provider';
 import { installFonts } from '../src/preview/fonts';
 import { formatLocation, History, isGuiUrl, parseLocation, type GuiLocation } from '../src/runtime/location';
-import { fetchGui, folderManifest, guiUrl, isZip, loadManifest, manifestOf, newerVersion, ownFile, savedManifest, toSave, unpackPlan, useTurn, type Download, type Manifest } from './loader';
+import { PARSED_STAMP, fetchGui, folderManifest, guiUrl, isZip, loadManifest, manifestOf, newerVersion, ownFile, savedManifest, toSave, unpackPlan, useTurn, type Download, type Manifest } from './loader';
 import { forgetAllGuis, forgetGui, keptGui, keptGuis, saveGui, savedGui, usedGui, type Kept, type SavedGui } from './store';
 import { androidDevice } from './device';
 
@@ -451,6 +451,8 @@ async function show(m: Manifest) {
   sessionStorage.removeItem(PAGE);
   current = await loadProject({
     guiXml: m.guiXml,
+    project: m.project,
+    onParsed: m.keepParsed,
     onProgress: projectProgress,
     renderer: rendererChoice(),
     renderOnDemand: onDemand(),
@@ -571,6 +573,8 @@ interface Unpacked {
   root: string;
   files: string[];
   packed: boolean;
+  /** the GUI as parsed by a start before (its file), if the app keeps one */
+  parsed?: string;
   /** how long unpacking took (unpacked just now) */
   ms?: number;
 }
@@ -642,11 +646,25 @@ async function unpacked(url: string, key: string | undefined, zip: Uint8Array<Ar
     localStorage.setItem(SIZES + url, JSON.stringify({ landscape: plan.sizes?.landscape ?? plan.size, portrait: plan.sizes?.portrait ?? plan.size }));
     mark(`unpacked by the app: ${u.files.length} files${u.ms === undefined ? ' (before)' : ` in ${u.ms} ms`}`);
     progress('reading', 'Reading the GUI');
-    return await folderManifest(u, url);
+    return keepParsed(await folderManifest(u, url), url, key);
   } catch (e) {
     noteError(`unpacking ${url}: ${message(e)}`);
     return null;
   }
+}
+
+/**
+ * A GUI from the app's folder, parsed afresh this start (no kept parse, or
+ * another build's): its parse kept beside its files for the next start
+ * (written as it comes, before the GUI runs and changes it).
+ */
+function keepParsed(m: Manifest, url: string, key: string): Manifest {
+  if (!native || m.project) return m;
+  m.keepParsed = (project) => {
+    const data = JSON.stringify({ stamp: PARSED_STAMP, project });
+    void invoke('gui_keep_parsed', { id: url, version: key, size: m.size ?? '', data }).catch((e) => noteError(`keeping ${url}'s parse: ${message(e)}`));
+  };
+  return m;
 }
 
 /** Its images packed in sheets by the app (behind the GUI running), for the next start - if they aren't. */
@@ -689,8 +707,9 @@ async function start() {
   // its files unpacked by the app from this version, a start before: nothing to read or unzip, its images in sheets
   const key = fresh ? undefined : await unpackKey(url);
   const folder = key ? await unpackedFolder(url, key) : null;
+  if (folder) mark(`the app's folder: ${folder.files.length} files`);
   if (folder) progress('reading', 'Reading the GUI');
-  const m = folder ? await folderManifest(folder, url).catch((e) => void noteError(`the files unpacked: ${message(e)}`)) : undefined;
+  const m = folder && key ? await folderManifest(folder, url).then((f) => keepParsed(f, url, key), (e) => void noteError(`the files unpacked: ${message(e)}`)) : undefined;
   if (folder && m && !m.missingScripts.length) {
     mark(`unpacked files found: ${folder.files.length}, ${m.atlas ? `${m.atlas.sheets.length} sheets` : 'no sheets yet'}`);
     await show(m);

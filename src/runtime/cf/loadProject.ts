@@ -77,6 +77,10 @@ export interface LoadProgress {
 
 export interface LoadProjectOptions {
   guiXml: string;
+  /** the GUI parsed before (kept by the host): not parsed again */
+  project?: CFProject;
+  /** the GUI as just parsed, before anything runs or draws (and changes it): for the host to keep */
+  onParsed?: (project: CFProject) => void;
   /** how far it got, as it goes */
   onProgress?: (p: LoadProgress) => void;
   /** what draws it (a new app only: one passed in `app` keeps its own) */
@@ -192,8 +196,24 @@ export async function loadProject(options: LoadProjectOptions): Promise<LoadProj
       console.warn('[loadProject] onProgress failed:', e);
     }
   };
+  // how long each part took (a slow device's start told apart): one line in the log once it's up
+  const took: [string, number][] = [];
+  let since = performance.now();
+  const lap = (what: string) => {
+    const now = performance.now();
+    took.push([what, Math.round(now - since)]);
+    since = now;
+  };
   progress({ stage: 'gui' });
-  const project = await parseGUI(guiXml);
+  const project = options.project ?? (await parseGUI(guiXml));
+  lap(options.project ? 'gui kept' : 'gui read');
+  if (!options.project && options.onParsed) {
+    try {
+      options.onParsed(project);
+    } catch (e) {
+      console.warn('[loadProject] onParsed failed:', e);
+    }
+  }
 
   stopAllAnimations();
 
@@ -257,7 +277,10 @@ export async function loadProject(options: LoadProjectOptions): Promise<LoadProj
   // the device and its network (CF.device, CF.ipv4address ...) before any script reads them
   globalCF.guiURL = options.guiUrl ?? '';
   globalCF.disconnectOnSuspend = options.disconnectOnSuspend ?? true;
+  lap('graphics');
   await globalCF.loadDevice?.();
+  lap('device');
+  const scriptTimes: [string, number][] = [];
 
   if (project.scripts) {
     const total = project.scripts.filter((s) => s.name).length;
@@ -294,8 +317,12 @@ export async function loadProject(options: LoadProjectOptions): Promise<LoadProj
         const scriptElement = document.createElement('script');
         scriptElement.src = blobUrl;
 
+        const ran = performance.now();
         await new Promise<void>((resolve) => {
-          scriptElement.onload = () => resolve();
+          scriptElement.onload = () => {
+            scriptTimes.push([(scriptNode.name ?? '').split('/').pop() ?? '', Math.round(performance.now() - ran)]);
+            resolve();
+          };
           scriptElement.onerror = () => resolve();
           document.head.appendChild(scriptElement);
         });
@@ -307,7 +334,9 @@ export async function loadProject(options: LoadProjectOptions): Promise<LoadProj
     }
   }
 
+  lap('scripts');
   await renderer.start((done, total) => progress({ stage: 'images', done, total }));
+  lap(`first page (images known ${renderer.startTimes.assets}, in ${renderer.startTimes.images}, made ${renderer.startTimes.made})`);
   progress({ stage: 'page' });
 
   if (globalCF && Array.isArray(globalCF.modules)) {
@@ -340,6 +369,9 @@ export async function loadProject(options: LoadProjectOptions): Promise<LoadProj
   if (globalCF && typeof globalCF.startSystems === 'function') {
     globalCF.startSystems();
   }
+  lap('started (modules, userMain, systems)');
+  const slowest = [...scriptTimes].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([n, ms]) => `${n} ${ms}`).join(', ');
+  console.info(`[iva] start: ${took.map(([w, ms]) => `${w} ${ms} ms`).join(', ')}${slowest ? ` - slowest scripts: ${slowest}` : ''}`);
   progress({ stage: 'started' });
 
   setTimeout(() => {
