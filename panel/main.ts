@@ -299,7 +299,9 @@ function turned() {
   }
   if (want !== orientation && page && (current.project.pages[page]?.[want]?.length ?? 0) > 0) {
     current.renderer.navigate(page, want);
-    orientation = (current.renderer.targetOrientation as Orientation | undefined) ?? want;
+    // the view that way now: the renderer makes the page once that way's images are in (its own orientation the old
+    // one until then)
+    orientation = want;
   }
   fit();
 }
@@ -481,6 +483,8 @@ async function show(m: Manifest) {
     shown = { gui: m.url, page: to };
     history.page(to);
     showAddress();
+    // a page laid out the way the device is turned, after one that wasn't (a square GUI's): that way
+    setTimeout(turned, 0);
   });
   showAddress();
   fit();
