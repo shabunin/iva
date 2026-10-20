@@ -1,5 +1,8 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Android 12 on: its own splash screen - the app's icon on black, then the window's background (the same) -->
+    <!-- Android 12 on: its own splash screen - the app's icon on black, then the window's background (the same). The
+         system fills a box 60% of 288 dp (172.8 dp) with an icon that isn't an adaptive one, insets or not, masked to a
+         circle: splash_icon.png is the icon with its margin in the image - 69.4% of it, 120 dp, as the window's
+         background (splash.xml) and the loading screen have it -->
     <style name="Theme.app" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="android:windowBackground">@drawable/splash</item>
         <item name="android:windowSplashScreenBackground">@android:color/black</item>
