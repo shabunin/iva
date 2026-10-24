@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { create, templates, writeDocs } from '../src/create.ts';
 import { check } from '../src/check.ts';
+import { compile } from '../src/compiler/index.ts';
 import { tmpDir } from './tmp.ts';
 
 const tmp = () => path.join(tmpDir('iva-create-'), 'panel');
@@ -18,6 +19,10 @@ for (const template of templates()) {
     assert.deepEqual(r.warnings, []);
     const c = await check(path.join(r.dir, 'app.jsx'));
     assert.deepEqual(c.problems, []);
+    // a new project has no side menu (nor iva/ui's script): a project puts SideMenu on its pages itself
+    const b = await compile(path.join(r.dir, 'app.jsx'));
+    assert.doesNotMatch(b.xml, /ui_menu/);
+    assert.ok(!b.scripts.some((s) => s.name === 'iva-ui.js'));
   });
 }
 

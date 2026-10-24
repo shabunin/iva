@@ -28,12 +28,13 @@ import Animations from './pages/Animations.jsx';
 import Gestures from './pages/Gestures.jsx';
 import Navigation from './pages/Navigation.jsx';
 import Network from './pages/Network.jsx';
+import Orientation from './pages/Orientation.jsx';
 
 export default (
   // built at 1280x800, and for phones: a 1400x1400 screen at 3x and a 1080x1920 one (a Nexus 5) at 2.5x, laid
   // out at 467x467 and 432x768 and scaled up by iViewer (as big as on a tablet); the pages lay themselves out from
   // the size (ui.grid) and scroll (ScrollArea)
-  <Project name="iva-ui gallery" width={1280} height={800} sizes={['1400x1400@3x', '1080x1920@2.5x']} themes={['dark', 'light']}>
+  <Project name="iva-ui gallery" width={1280} height={800} orientation="both" sizes={['1400x1400@3x', '1080x1920@2.5x']} themes={['dark', 'light']}>
     {Overview}
     {Buttons}
     {Controls}
@@ -50,8 +51,20 @@ export default (
     {Gestures}
     {Navigation}
     {Network}
+    {Orientation}
   </Project>
 );
+
+// examples/gallery/components/Shell.jsx - the header and the side menu: each page puts them on itself
+// (<Shell section="Buttons & status" />); a project without a Shell has neither
+export default function Shell({ section }) {
+  return (
+    <>
+      <ui.Header title="iva/ui gallery" section={section} themeToggle />
+      <ui.SideMenu title="iva/ui gallery" subtitle="every component" items={sections} />
+    </>
+  );
+}
 ```
 
 ```bash
@@ -135,7 +148,9 @@ http://127.0.0.1:5180/.
 
 `iva create` gives a folder with:
 
-- `app.jsx`: the entry;
+- `app.jsx`: the entry - `blank` a page with the project's name on it,
+  `demo` two pages and a receiver; neither has a header or a side menu
+  (iva/ui's `Header` and `SideMenu` go on the pages that want them);
 - `assets/`: images, found by bare name as iViewer finds them;
 - `scripts/`: iViewer JavaScript;
 - `iva.d.ts` + `jsconfig.json`: open the folder in VS Code and elements, props
