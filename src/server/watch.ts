@@ -66,35 +66,63 @@ function stamp(file: string): string {
  * after each build.
  *
  * A file counts as changed when it's no longer as the build left it: set()
- * notes each one. fs.watch tells of a build's own writes (a kit drawing
- * pictures into .neu/ as the project evaluates) once the build is over and
- * set() has added them - as they are, they don't build again. A file that
- * changed while the build ran, after it was read maybe, keeps the state it
- * had when the build began: its event builds again.
+ * notes each one. A build's own writes (a kit drawing pictures into .neu/ as
+ * the project evaluates) are files as the build left them, so they don't
+ * build again - whenever fs.watch tells of them: after the build, or while it
+ * runs (a project with themes is evaluated once a look, with awaits between).
+ * The events seen while a build runs are kept and decided once it's over
+ * (onChange's promise settled), against what its set() noted, so one build
+ * runs at a time. A file that changed while the build ran, after it was read
+ * maybe, keeps the state it had when the build began: its event builds again.
  */
-export function watchInputs(onChange: (file: string) => void, log: (msg: string) => void = () => {}) {
+export function watchInputs(onChange: (file: string) => unknown, log: (msg: string) => void = () => {}) {
   const watchers = new Map<string, { close(): void }>();
   let files = new Map<string, string>();
   let trees: string[] = [];
   let began = new Map<string, string>();
+  // while a build runs: the files events named (true: seen in a tree), for when it's over
+  let held: Map<string, boolean> | null = null;
+  let closed = false;
   let timer: NodeJS.Timeout | undefined;
-  const fire = (file: string) => {
+  // a file read: when it isn't as noted; in a tree, any other file too (a new asset)
+  const counts = (file: string, inTree: boolean) => {
+    const noted = files.get(file);
+    return noted === undefined ? inTree : stamp(file) !== noted;
+  };
+  const hold = (file: string, inTree: boolean) => {
+    held!.set(file, inTree || held!.get(file) === true);
+  };
+  const fire = (file: string, inTree = false) => {
+    if (closed) return;
+    if (held) {
+      hold(file, inTree);
+      return;
+    }
     clearTimeout(timer);
     timer = setTimeout(() => {
       began = new Map([...files.keys()].map((f) => [f, stamp(f)]));
-      onChange(path.relative(process.cwd(), file) || file);
+      held = new Map();
+      void Promise.resolve(onChange(path.relative(process.cwd(), file) || file)).finally(over);
     }, 150);
+  };
+  // the build is over (its set() done, or none if it threw): what was seen meanwhile that counts builds again
+  const over = () => {
+    const seen = held ?? new Map<string, boolean>();
+    held = null;
+    let last = '';
+    for (const [file, inTree] of seen) if (counts(file, inTree)) last = file;
+    if (last) fire(last);
   };
   const watchDir = (dir: string, recursive: boolean) => {
     const key = `${recursive ? 'tree' : 'dir'}:${dir}`;
     if (watchers.has(key)) return;
-    // a file read: when it isn't as noted; in a tree, any other file too (a new asset)
-    const counts = (rel: string) => {
+    const seen = (rel: string) => {
       const file = path.join(dir, rel);
-      const noted = files.get(file);
-      return noted === undefined ? recursive : stamp(file) !== noted;
+      if (!held) return counts(file, recursive);
+      hold(file, recursive);
+      return false;
     };
-    watchers.set(key, watchTree(dir, recursive, (rel) => fire(path.join(dir, rel)), log, counts));
+    watchers.set(key, watchTree(dir, recursive, (rel) => fire(path.join(dir, rel), recursive), log, seen));
   };
   return {
     set(next: { files: string[]; dirs: string[] }) {
@@ -115,6 +143,7 @@ export function watchInputs(onChange: (file: string) => void, log: (msg: string)
       for (const d of trees) if (fs.existsSync(d)) watchDir(d, true);
     },
     close() {
+      closed = true;
       clearTimeout(timer);
       for (const w of watchers.values()) w.close();
       watchers.clear();

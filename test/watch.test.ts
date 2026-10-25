@@ -92,3 +92,65 @@ test('watchInputs: an edit while a build runs (after the build read the file) bu
     w.close();
   }
 });
+
+test('watchInputs: a drawing a build makes again, seen while the build runs (a look evaluated, then the next), builds once', async () => {
+  const dir = tmpDir('iva-watch-');
+  const app = path.join(dir, 'app.jsx');
+  const drawn = path.join(dir, '.neu');
+  const drawing = path.join(drawn, 'neu-knob-40x40-9dcc8e0d22.png');
+  fs.mkdirSync(drawn);
+  fs.writeFileSync(app, 'x');
+  fs.writeFileSync(drawing, 'a');
+  let builds = 0;
+  // as a project with themes builds: neu/paint.js draws what's missing as the first look evaluates, and fs.watch
+  // tells of it before the build is over (the second look is evaluated after an await)
+  const w = watchInputs(async () => {
+    builds++;
+    if (!fs.existsSync(drawing)) {
+      fs.writeFileSync(`${drawing}.tmp`, 'b');
+      fs.renameSync(`${drawing}.tmp`, drawing);
+    }
+    await wait(500);
+    w.set({ files: [app, drawing], dirs: [] });
+  });
+  w.set({ files: [app, drawing], dirs: [] });
+  await wait(100);
+  try {
+    fs.rmSync(drawing); // a drawing the last build read, removed: drawn again by the build it starts
+    await wait(1500);
+    assert.equal(builds, 1);
+    fs.writeFileSync(drawing, 'bb'); // changed after the build: build again
+    await wait(1100);
+    assert.equal(builds, 2);
+  } finally {
+    w.close();
+  }
+});
+
+test('watchInputs: a save seen while a build runs builds again once that build is over, not alongside it', async () => {
+  const dir = tmpDir('iva-watch-');
+  const app = path.join(dir, 'app.jsx');
+  fs.writeFileSync(app, 'x');
+  let builds = 0;
+  let running = 0;
+  let most = 0;
+  const w = watchInputs(async () => {
+    builds++;
+    most = Math.max(most, ++running);
+    // the build reads app.jsx, then it's saved again and fs.watch tells of it before the build ends
+    if (builds === 1) fs.writeFileSync(app, 'zzz');
+    await wait(500);
+    w.set({ files: [app], dirs: [] });
+    running--;
+  });
+  w.set({ files: [app], dirs: [] });
+  await wait(100);
+  try {
+    fs.writeFileSync(app, 'yy');
+    await wait(2000);
+    assert.equal(builds, 2);
+    assert.equal(most, 1);
+  } finally {
+    w.close();
+  }
+});
