@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Panel: a GUI from `iva serve` could reload every few seconds for good after
+  a couple of rebuilds close together, running the copy kept before each time
+  (the settings listing "being downloaded already" and "the copy kept is
+  another now"). A download of a GUI now waits for the one going instead of
+  failing, and a copy the app kept after a reload is the one the next start
+  runs. Clear and Load in the settings is no longer needed to get out of it.
+
 ## 0.1.0 (25 October 2026)
 
 iva's first release: CommandFusion iViewer GUIs written as JSX, built into

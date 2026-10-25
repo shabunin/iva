@@ -87,7 +87,11 @@ orientation's from the same archive when the device turns; the page only
 asks what's in it (its names, its `.gui`s to choose a size from). The check
 for a newer version goes from the app too, with `If-None-Match` and
 `If-Modified-Since`, and a download of the very bytes kept is no newer
-version. A GUI with no copy kept has its archive let go once unpacked. A
+version. A GUI's downloads go one at a time, and on past the page that asked
+for them (a reload - iva serve's live reload in the middle of a check for a
+newer version - doesn't stop one): the page after waits for one going, and a
+copy the app kept after the one the page noted is the copy, by its version.
+A GUI with no copy kept has its archive let go once unpacked. A
 copy an older panel kept in the page (the archive in IndexedDB) is replaced
 by the app's own at its first check. In a browser (no app) the archive
 itself is kept in IndexedDB.

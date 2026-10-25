@@ -131,6 +131,13 @@ export interface Download {
   server?: string;
 }
 
+/** A GUI's copy as the app keeps it now (gui_kept: its kept.json): where it came from, what tells its next version. */
+export interface AppKept extends AppArchive {
+  url: string;
+  etag?: string;
+  lastModified?: string;
+}
+
 /** What the app's download answers (gui_fetch). */
 export interface Fetched {
   status: number;
@@ -153,6 +160,8 @@ export interface Fetched {
 export interface Archives {
   /** GET url (a GUI's own file), with the copy's ETag and Last-Modified if it's only wanted when another */
   fetch(id: string, url: string, known?: { etag?: string; lastModified?: string }): Promise<Fetched>;
+  /** the GUI's copy as the app keeps it now, if it keeps one */
+  kept(id: string): Promise<AppKept | null>;
   /** the names in the GUI's copy - that copy (when it came) */
   names(id: string, savedAt: number): Promise<string[]>;
   /** a file of the GUI's copy as text (a .gui) */
@@ -336,6 +345,28 @@ export async function newerVersion(saved: SavedGui): Promise<SavedGui | null> {
   const bytes = got.bytes!;
   if (!older && (isZip(bytes) ? !saved.gui && !!saved.zip && same(saved.zip, bytes) : saved.gui === decodeXml(bytes))) return null;
   return toSave(got, await manifestOf(got));
+}
+
+/**
+ * The app's copy of a GUI (`id`'s), if it keeps one newer than the copy the
+ * page noted (`savedAt`, when that one came): a download goes on past the page
+ * that asked for it - iva serve's live reload in the middle of a check for a
+ * newer version - and the page after never heard how it ended.
+ */
+export async function newerInApp(id: string, savedAt: number): Promise<AppKept | undefined> {
+  const k = await archives?.kept(id).catch(() => null);
+  return k && k.savedAt > savedAt ? k : undefined;
+}
+
+/**
+ * A copy noted, as the app keeps it now (newerInApp's): its zip the copy, by
+ * the app's version of it. A .gui's text and ETag (iva serve's, beside its
+ * archive) stay the ones noted: the next check asks for the .gui, and the
+ * archive that comes with it is the one the app keeps.
+ */
+export function asTheAppKeeps(saved: SavedGui, k: AppKept): SavedGui {
+  const { zip: _zip, files: _files, ...noted } = saved;
+  return { ...noted, ...(saved.gui ? {} : { etag: k.etag, lastModified: k.lastModified }), appZip: true, savedAt: k.savedAt, bytes: k.bytes };
 }
 
 function same(a: Uint8Array, b: Uint8Array) {

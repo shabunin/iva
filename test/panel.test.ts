@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeZip } from '../src/server/zip.ts';
-import { PARSED_STAMP, appArchive, fetchGui, folderManifest, layoutOf, loadManifest, manifestOf, newerVersion, savedManifest, toSave, unpackPlan, unzip, useArchives, useFetch, useTurn, type Fetched } from '../panel/loader.ts';
+import { PARSED_STAMP, appArchive, asTheAppKeeps, fetchGui, folderManifest, layoutOf, loadManifest, manifestOf, newerInApp, newerVersion, savedManifest, toSave, unpackPlan, unzip, useArchives, useFetch, useTurn, type AppKept, type Fetched } from '../panel/loader.ts';
 
 const GUI = '<gui><properties><project>Kept</project><imagefolder>images</imagefolder></properties><scripts><script name="scripts/main.js" /></scripts></gui>';
 const MAIN = 'var answer = 42;\n'.repeat(40);
@@ -281,6 +281,7 @@ test("in the app a zip never comes to the page: the app downloads and keeps it, 
       if (url.endsWith(':8019/')) return { status: 200, text: GUI, server: 'iva' };
       return known?.etag && known.etag === answer.etag ? { status: 304 } : answer;
     },
+    kept: async () => null,
     async names(id, savedAt) {
       asked.push(`names ${id} ${savedAt}`);
       return ['app.gui', 'images/a.png', 'images/scripts/main.js', '1400w1400h/app.gui', '1400w1400h/images/a.png', 'iva-atlas/atlas.json'];
@@ -347,5 +348,79 @@ test("in the app a zip never comes to the page: the app downloads and keeps it, 
   } finally {
     useArchives(undefined);
     delete g.screen;
+  }
+});
+
+test("a download that went on past the page that asked for it (iva serve's live reload mid-check): the app's copy, newer than the one noted, is the copy - by its version, not 'another now'", async () => {
+  const url = 'http://10.0.0.2:8019/';
+  // the app: the archive a check asked for came in after its page reloaded - kept.json says 200, the page noted 100
+  let inApp: AppKept | null = { url: `${url}__iva/gui.zip`, etag: '"v2"', savedAt: 200, bytes: 31_000_000 };
+  const asked: string[] = [];
+  useArchives({
+    async fetch(id, at) {
+      asked.push(`fetch ${id} ${at}`);
+      // the archive that comes with the server's .gui: the very bytes kept (its version stays the app's)
+      return { status: 200, etag: '"v2"', server: 'iva', archive: { savedAt: inApp!.savedAt, bytes: inApp!.bytes }, same: true };
+    },
+    async kept(id) {
+      asked.push(`kept ${id}`);
+      return id === url ? inApp : null;
+    },
+    async names(id, savedAt) {
+      asked.push(`names ${id} ${savedAt}`);
+      // the copy kept is another now than any the page asks for but the app's
+      if (savedAt !== inApp?.savedAt) throw new Error('the copy kept is another now');
+      return ['app.gui', 'images/scripts/main.js'];
+    },
+    async text() {
+      return GUI;
+    },
+  });
+  const GUI2 = GUI.replace('<project>Kept</project>', '<project>Kept 2</project>');
+  useFetch((async (at: string, init?: { headers?: Record<string, string> }) => {
+    asked.push(`get ${at} ${init?.headers?.['If-None-Match'] ?? '-'}`);
+    const body = new TextEncoder().encode(at.endsWith('.js') ? MAIN : GUI2);
+    return { ok: true, status: 200, headers: { get: (h: string) => (h === 'server' ? 'iva' : h === 'etag' ? '"v2"' : null) }, arrayBuffer: async () => body.buffer };
+  }) as any);
+  try {
+    // iva serve's copy, as the page noted it: its .gui, its ETag, the app's archive of then
+    const noted = { url, gui: GUI, etag: '"v1"', appZip: true as const, savedAt: 100, bytes: 30_000_000 };
+    // the page's note of it no use to the app (what v0.1.0 ran into: no GUI, the copy before that ran instead)
+    await assert.rejects(appArchive(url, noted.savedAt), /another now/);
+    const k = await newerInApp(url, noted.savedAt);
+    assert.deepEqual(k, inApp);
+    const now = asTheAppKeeps(noted, k!);
+    // its .gui and its ETag the ones noted (the next check asks for the .gui); the archive the app's
+    assert.deepEqual(now, { url, gui: GUI, etag: '"v1"', appZip: true, savedAt: 200, bytes: 31_000_000 });
+    assert.deepEqual((await unpackPlan(await appArchive(url, now.savedAt), url)).files.sort(), ['app.gui', 'images/scripts/main.js']);
+    // the app's copy the one noted, an older one, none, an app that can't say: nothing newer
+    assert.equal(await newerInApp(url, 200), undefined);
+    assert.equal(await newerInApp(url, 300), undefined, 'a copy of files noted after the archive the app kept last');
+    assert.equal(await newerInApp('http://10.0.0.3/', 0), undefined);
+    inApp = null;
+    assert.equal(await newerInApp(url, 0), undefined);
+    useArchives({ fetch: async () => ({ status: 304 }), kept: async () => Promise.reject(new Error('no such command')), names: async () => [], text: async () => '' });
+    assert.equal(await newerInApp(url, 0), undefined);
+    inApp = { url, etag: '"v2"', lastModified: 'Sun, 25 Oct 2026 10:00:00 GMT', savedAt: 200, bytes: 31_000_000 };
+    // a zipped GUI's copy: its ETag and Last-Modified the app's archive's too (no 200 for the bytes kept, next check)
+    assert.deepEqual(asTheAppKeeps({ url, etag: '"v1"', appZip: true, savedAt: 100, bytes: 1 }, inApp), { url, etag: '"v2"', lastModified: 'Sun, 25 Oct 2026 10:00:00 GMT', appZip: true, savedAt: 200, bytes: 31_000_000 });
+    // a copy an older panel kept in the page (its zip there), or the files of a load whose archive came short: the app's archive now
+    const older = asTheAppKeeps({ url, gui: GUI, zip: new Uint8Array(4), files: { 'app.gui': new Uint8Array(2) }, savedAt: 100, bytes: 6 }, inApp);
+    assert.deepEqual([older.zip, older.files, older.appZip, older.savedAt], [undefined, undefined, true, 200]);
+    assert.ok(!('zip' in older) && !('files' in older), 'not kept as nothing');
+    // the next check of the copy picked up: the server's .gui by the ETag noted, then the archive with it - the
+    // app's, the very one running (its version: 200), so the copy is noted anew and nothing reloads (main.ts checkServer)
+    asked.length = 0;
+    useArchives({
+      fetch: async (id, at) => (asked.push(`fetch ${id} ${at}`), { status: 200, etag: '"v2"', server: 'iva', archive: { savedAt: 200, bytes: 31_000_000 }, same: true }),
+      kept: async () => inApp,
+      names: async () => [],
+      text: async () => '',
+    });
+    const newer = await newerVersion(now);
+    assert.deepEqual(asked.filter((a) => !a.endsWith('.js -')), [`get ${url} "v1"`, `fetch ${url} ${url}__iva/gui.zip`]);
+    assert.deepEqual(newer, { url, gui: GUI2, etag: '"v2"', lastModified: undefined, appZip: true, savedAt: 200, bytes: 31_000_000 });
+  } finally {
+    useArchives(undefined);
   }
 });
