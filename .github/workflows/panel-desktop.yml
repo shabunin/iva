@@ -4,8 +4,9 @@ name: panel-desktop
 # install: Linux an AppImage, Windows the app's .exe alone (it needs the
 # WebView2 runtime Windows 10 and 11 have), macOS the .app zipped (universal:
 # Apple silicon and Intel; signed ad hoc, not by a developer - the first open
-# is a right click, Open). On every change to it or to what it runs; a
-# release's too (release.yml calls it). The Android APK: panel.yml.
+# is refused: System Settings, Privacy & Security, Open Anyway). On every
+# change to it or to what it runs; a release's too (release.yml calls it). The
+# Android APK: panel.yml.
 on:
   push:
     branches: [main, 'release/**']
