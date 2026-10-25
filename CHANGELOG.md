@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.1.2 (26 October 2026)
+
+`iva serve` is now found on the network: the iva panel's settings list the
+servers the device reaches and load one with a tap, so no address has to be
+typed on the panel. 0.1.1 is withdrawn: use these downloads, which have its
+fixes too. What iva is and does, and its known limits, are under 0.1.0 below.
 
 ### Added
 
@@ -19,7 +24,8 @@
   on Android, which carries the panel's multicast query out but may bring
   none in. A network that doesn't carry multicast from the device to the
   computer (a Wi-Fi with client isolation, many guest networks, Tailscale)
-  hides it: type the address there.
+  hides it: type the address there. Checked on Android over ZeroTier; not yet
+  tried in the desktop builds.
 
 ### Fixed
 
@@ -28,7 +34,38 @@
   lookup now asks every 4 s, so a service found no longer drops out and comes
   back between its queries.
 
+### Downloads
+
+The panel app; the CLI comes from the repository (below).
+
+| System | File | Notes |
+|---|---|---|
+| Android 7 and newer | `iva-panel-0.1.2-android.apk` | Signed with the release key: installs over 0.1.1 and 0.1.0, their kept GUIs and settings kept. A panel signed with the development key (a CI or local build from before 0.1.0) has to be uninstalled first; its kept GUIs and settings go with it. Needs an up-to-date Android System WebView. |
+| Linux x86_64 | `iva-panel-0.1.2-linux-x86_64.AppImage` | `chmod +x` and run. Built on Ubuntu 22.04: glibc 2.35 or newer. |
+| Windows 10 and 11, x64 | `iva-panel-0.1.2-windows-x64.exe` | The app alone, nothing to install. Needs the WebView2 runtime (Windows 11 has it; Windows 10 with an up-to-date Edge does). Not code signed: SmartScreen may warn. |
+| macOS, Apple silicon and Intel | `iva-panel-0.1.2-macos-universal.zip` | Not signed by a developer: the first open is refused. On macOS 15 and newer, allow it in System Settings, Privacy & Security, Open Anyway; before, right click the app, Open. |
+
+iOS: not yet.
+
+### Install the CLI
+
+Node.js 22 or newer:
+
+```bash
+git clone https://github.com/shabunin/iva.git
+cd iva
+npm install
+npm link        # puts `iva` on your PATH
+```
+
+Then `iva create my-panel --template demo`, `iva dev` in it, and http://127.0.0.1:5180/.
+
+Updating a clone of 0.1.1 or 0.1.0: `git fetch --depth 1 origin tag v0.1.2` and `git checkout v0.1.2` (or `git pull` on main), then `iva types` in each project, which rewrites its `iva.d.ts` and the copied docs. A running `iva serve` is found on the network once it is started again with this version.
+
 ## 0.1.1 (25 October 2026)
+
+Withdrawn: its downloads are no longer published - use 0.1.2's, which have
+these fixes too. What follows still describes them.
 
 A fix release. The iva panel could get stuck reloading a GUI from `iva serve`,
 and `iva serve` built twice for drawings a project makes and could leave a
@@ -85,7 +122,7 @@ Updating a clone of 0.1.0: `git fetch --depth 1 origin tag v0.1.1` and `git chec
 ## 0.1.0 (25 October 2026)
 
 Withdrawn: its panel could get stuck reloading a GUI from `iva serve` (fixed
-in 0.1.1), and its downloads are no longer published - use 0.1.1's. What
+in 0.1.1), and its downloads are no longer published - use 0.1.2's. What
 follows still describes iva.
 
 iva's first release: CommandFusion iViewer GUIs written as JSX, built into
