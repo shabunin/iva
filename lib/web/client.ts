@@ -119,11 +119,13 @@ function unwrap(text: string): { data: any } | null {
 
 // one page's requests numbered apart from another's (they share the panel's server)
 const tag = Math.random().toString(36).slice(2, 7);
+// the key the panel gave this page's address (?k=): it answers nothing without it
+const key = new URLSearchParams(location.search).get('k') ?? '';
 
 function send(job: Job) {
   const r = `${tag}${++seq}`;
   const xhr = new XMLHttpRequest();
-  const qs = Object.entries({ ...job.query, r }).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+  const qs = Object.entries({ ...job.query, r, k: key }).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
   xhr.open('GET', `${job.path}?${qs}`);
   xhr.timeout = job.poll ? 30000 : 20000;
   busy = { job, xhr };
@@ -148,6 +150,8 @@ function send(job: Job) {
     failures = 0;
     if (xhr.status === 200) job.resolve(got.data);
     else job.reject(new Error(got.data?.error ?? `${job.path}: HTTP ${xhr.status}`));
+    // refused: the panel started again since this page loaded (a new key) - nothing more asked of this one
+    if (xhr.status === 403) leaving = true;
     finish(false);
   };
   xhr.onerror = failed;

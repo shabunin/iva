@@ -9,9 +9,12 @@
 // boot page, the answer's data in it: whatever a web view gets is a page that
 // knows from its own URL what to show, and a request of iva/web checks that
 // the answer is its own (the number it sent) and asks again if not. Each
-// answer closes its connection (Connection: close).
+// answer closes its connection (Connection: close). The server listens on
+// every network the panel is on: a page's address has a key (?k=, new each
+// start), and a request without it gets the ping and the swatches, nothing
+// that sets, runs, reads or logs anything.
 var IvaHttp = (() => {
-  const REASONS = { 200: 'OK', 204: 'No Content', 400: 'Bad Request', 404: 'Not Found', 500: 'Internal Server Error' };
+  const REASONS = { 200: 'OK', 204: 'No Content', 400: 'Bad Request', 403: 'Forbidden', 404: 'Not Found', 500: 'Internal Server Error' };
   const TYPES = {
     html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8',
     json: 'application/json; charset=utf-8', txt: 'text/plain; charset=utf-8', svg: 'image/svg+xml',
@@ -90,11 +93,13 @@ var IvaHttp = (() => {
       document.head.appendChild(style);
       return;
     }
+    // the key the panel gave this page's address (?k=): what it asks carries it
+    var key = (/[?&]k=([^&#]*)/.exec(location.search) || [])[1] || '';
     // what a page meets on the panel - its size, its errors - in the panel's log (iva serve shows it)
     function report(m) {
       try {
         var x = new XMLHttpRequest();
-        x.open('GET', '/iva/log?m=' + encodeURIComponent(location.pathname + ': ' + m));
+        x.open('GET', '/iva/log?k=' + key + '&m=' + encodeURIComponent(location.pathname + ': ' + m));
         x.send();
       } catch (e) {}
     }
@@ -152,18 +157,19 @@ var IvaHttp = (() => {
       var x = new XMLHttpRequest();
       if (file) {
         // the page again, numbered: until the answer is its own
-        x.open('GET', location.pathname + '?r=' + r);
+        x.open('GET', location.pathname + '?r=' + r + '&k=' + key);
         x.timeout = 30000;
         x.onload = function () {
           var data = x.getResponseHeader('X-Iva-Req') === r ? unwrap(x.responseText) : null;
-          if (data && data.path === path) return show(data);
+          // its own answer: the page, or why not (a key that isn't the panel's)
+          if (data && (data.path === path || data.error)) return show(data);
           setTimeout(ask, Math.min(3000, 30 * ++tries));
         };
         x.onerror = x.ontimeout = function () { setTimeout(ask, Math.min(5000, 250 * ++tries)); };
         x.send();
         return;
       }
-      x.open('GET', 'iva/boot?r=' + r);
+      x.open('GET', 'iva/boot?r=' + r + '&k=' + key);
       x.timeout = 30000;
       x.onload = function () {
         var data = x.getResponseHeader('X-Iva-Req') === r ? unwrap(x.responseText) : null;
@@ -265,6 +271,8 @@ var IvaHttp = (() => {
   // ── the web server: web apps (/<name>/) and swatches (/iva-color/RRGGBB), one port ──
 
   let web = null;
+  // the key in every page's address (IvaHttp.url), new each start: what a page asks needs it
+  const key = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, '0')).join('');
   // the server answers (its self-check passed): the web views get their URLs, what waited runs
   let up = false;
   const views = [];
@@ -285,6 +293,8 @@ var IvaHttp = (() => {
       return null;
     }
   };
+  // a project file's name: inside the project - no "..", not a URL or a path from the root (CF.loadAsset reads those too)
+  const inProject = (name) => !/^[a-z][a-z0-9+.-]*:|^[\\/]|(^|[\\/])\.\.([\\/]|$)/i.test(name);
   // the app's options and colour in the look shown (<Project themes>: each look has its own)
   const lookOf = (a) => (typeof IvaTheme !== 'undefined' && IvaTheme.app && IvaTheme.app(a.name)) || { options: a.o.options || {}, bg: a.o.bg };
 
@@ -372,12 +382,13 @@ var IvaHttp = (() => {
       return;
     }
     if (p === '/iva/set') {
-      for (const [k, v] of Object.entries(req.query)) if (k !== 'r' && a.o.joins[k] !== undefined) CF.setJoin(a.o.joins[k], v);
+      for (const [k, v] of Object.entries(req.query)) if (k !== 'r' && k !== 'k' && a.o.joins[k] !== undefined) CF.setJoin(a.o.joins[k], v);
       return res.page({ ok: 1 });
     }
     if (p === '/iva/call') return call(a, req, res);
     if (p.startsWith('/iva/asset/')) {
       const name = p.slice('/iva/asset/'.length);
+      if (!inProject(name)) return res.page({ error: `not a project file: ${name}` }, 400);
       CF.loadAsset(name, CF.BINARY, (data) => {
         if (data === null || data === undefined) res.page({ error: `not found: ${name}` }, 404);
         else res.page({ type: typeOf(name), b64: btoa(data) });
@@ -389,18 +400,22 @@ var IvaHttp = (() => {
 
   /** The web server, on its TCP system: the first part of a path names the web app. */
   function webServe(req, res) {
-    // the server's self-check (IvaHttp.web); what a page reports (its size, its errors): the panel's log
+    // the server's self-check (IvaHttp.web)
     if (req.path === '/iva/ping') return res.text('ok');
+    const parts = req.path.replace(/^\/+/, '').split('/');
+    // a swatch: the boot page shows the colour its URL names
+    if (parts[0] === 'iva-color') return res.page(null);
+    // the rest only with the key (another device on the network has none)
+    if (req.query.k !== key) return res.page({ error: 'iva: not an address the panel gave (its key is missing or old)' }, 403);
+    // what a page reports (its size, its errors): the panel's log
     if (req.path === '/iva/log') {
       CF.log(`web ${String(req.query.m || '').slice(0, 500)}`);
       return res.text('ok');
     }
-    const parts = req.path.replace(/^\/+/, '').split('/');
-    // a swatch: the boot page shows the colour its URL names
-    if (parts[0] === 'iva-color') return res.page(null);
     // a page of the project (a file of its image folder, CF.loadAsset): the boot page writes it in
     if (parts[0] === 'iva-file') {
       const name = parts.slice(1).map((x) => decodeURIComponent(x)).join('/');
+      if (!inProject(name)) return res.page({ path: name, error: `not a project file: ${name}` }, 400);
       CF.loadAsset(name, CF.UTF8, (text) => {
         if (text === null || text === undefined) res.page({ path: name, error: `not found: ${name}` }, 404);
         else res.page({ path: name, file: String(text) });
@@ -505,7 +520,9 @@ var IvaHttp = (() => {
     }
   }
 
-  const url = (path) => `http://127.0.0.1:${web ? web.port : 0}/${String(path).replace(/^\/+/, '')}`;
+  // the key in its query (before a #)
+  const url = (path) => `http://127.0.0.1:${web ? web.port : 0}/${String(path).replace(/^\/+/, '')
+    .replace(/^([^?#]*)(\?[^#]*)?/, (_, p, q) => `${p}${q ? `${q}&` : '?'}k=${key}`)}`;
 
   return {
     serve,
@@ -527,7 +544,7 @@ var IvaHttp = (() => {
       if (up) fn();
       else waiting.push(fn);
     },
-    /** a page of the web server: http://127.0.0.1:<port>/<path> */
+    /** a page of the web server, its key in it: http://127.0.0.1:<port>/<path>?k=<key> */
     url,
     app,
     /** a function a web app can call (panel.call(name, ...args)): fn(...args, reply) returns the answer or replies later */

@@ -67,6 +67,8 @@ function panel(assets: Record<string, string> = {}) {
   const IvaHttp = new Function('CF', 'setTimeout', 'clearTimeout', 'setInterval', 'Date', `${HTTP_RUNTIME}\nreturn IvaHttp;`)(
     CF, setTimeout, clearTimeout, setInterval, FakeDate);
   const request = (system: string, target: string, method = 'GET') => {
+    // the web server's: as a web view asks, the key its address has (IvaHttp.url) in it
+    if (system === 'IvaWeb') target += `${target.includes('?') ? '&' : '?'}k=${new URL(IvaHttp.url('')).searchParams.get('k')}`;
     for (const f of feedback) if (f.system === system) f.cb('request', `${method} ${target} HTTP/1.1\r\nHost: 127.0.0.1\r\nAccept: */*\r\n\r\n`);
   };
   return { CF, IvaHttp, joins, sent, request, tick, server, asked, switched, logged };
@@ -119,7 +121,7 @@ test('the web server: one system for every web app (/<name>/) and swatch; every 
   CF.setJoin('d5', 1);
   IvaHttp.web('IvaWeb', 8900);
   IvaHttp.app('x', { asset: 'apps/iva_app_x.js', joins: { lamp: 'd5', note: 's9' }, options: { label: 'Küche' }, handlers: {}, record: null, bg: '#123456', title: 'X' });
-  assert.equal(IvaHttp.url('iva-color/FFB000'), 'http://127.0.0.1:8900/iva-color/FFB000');
+  assert.match(IvaHttp.url('iva-color/FFB000'), /^http:\/\/127\.0\.0\.1:8900\/iva-color\/FFB000\?k=[0-9a-f]{24}$/);
   // the page: the boot page, the app's colour in its data
   request('IvaWeb', '/x/');
   const a = parse(sent[0][1]);
@@ -159,11 +161,11 @@ test('the web server checks itself: web views load once it answers; not answerin
   // it answers: the views get their URLs, what waited runs - and no more asking
   server.up = true;
   tick(1200);
-  assert.equal(joins.s5, 'http://127.0.0.1:8900/iva-file/page.html');
-  assert.equal(swatch, 'http://127.0.0.1:8900/iva-color/ffb000');
+  assert.equal(joins.s5, IvaHttp.url('iva-file/page.html'));
+  assert.equal(swatch, IvaHttp.url('iva-color/ffb000'));
   const n = asked.length;
   IvaHttp.view('s6', 'app/');
-  assert.equal(joins.s6, 'http://127.0.0.1:8900/app/');
+  assert.equal(joins.s6, IvaHttp.url('app/'));
   tick(60000);
   assert.equal(asked.length, n);
   assert.equal(switched.length, 2);
