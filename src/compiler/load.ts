@@ -4,6 +4,7 @@
  */
 
 import fs from 'node:fs';
+import Module from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -52,23 +53,21 @@ export interface Loaded {
 
 // exceptions in project code then point at the .jsx line, not the bundle
 process.setSourceMapsEnabled?.(true);
-const TMP = path.join(os.tmpdir(), `iva-${process.pid}`);
+/** where bundles are written (their frames in a stack aren't the project's) */
+export const TMP = path.join(os.tmpdir(), `iva-${process.pid}`);
 let seq = 0;
 // gone with the process (each would leave an empty folder behind)
 process.on('exit', () => fs.rmSync(TMP, { recursive: true, force: true }));
 
-export async function evaluate(entry: string): Promise<Loaded> {
-  const dir = path.dirname(entry);
-  fs.mkdirSync(TMP, { recursive: true });
-  const outfile = path.join(TMP, `bundle-${++seq}.mjs`);
-  let result;
+/** The bundle as CommonJS (`esm`: as an ES module, for a project with top-level await). */
+async function bundle(entry: string, dir: string, outfile: string, format: 'cjs' | 'esm') {
   try {
-    result = await build({
+    return await build({
       entryPoints: [entry],
       absWorkingDir: dir,
       bundle: true,
       write: false,
-      format: 'esm',
+      format,
       platform: 'node',
       target: 'node20',
       jsx: 'automatic',
@@ -84,16 +83,39 @@ export async function evaluate(entry: string): Promise<Loaded> {
     });
   } catch (e: any) {
     const m: Message | undefined = e.errors?.[0];
+    if (format === 'cjs' && m?.text.startsWith('Top-level await is currently not supported')) return null;
     if (m) throw new LoadError(m.text, m.location ? path.resolve(dir, m.location.file) : undefined, m.location?.line, m.location?.column);
     throw e;
   }
-  // a real file (not a data: URL): Node applies its source map only then
-  fs.writeFileSync(outfile, result.outputFiles[0].text);
+}
+
+export async function evaluate(entry: string): Promise<Loaded> {
+  const dir = path.dirname(entry);
+  const n = ++seq;
+  let outfile = path.join(TMP, `bundle-${n}.cjs`);
+  let result = await bundle(entry, dir, outfile, 'cjs');
   let mod: any;
-  try {
-    mod = await import(pathToFileURL(outfile).href);
-  } finally {
-    fs.rmSync(outfile, { force: true });
+  if (result) {
+    // a module of its own, never in require's cache: a rebuild's code is freed with its tree (an import()ed ES
+    // module stays for the life of the process - iva dev ran out of memory after some hundred saves). Node
+    // applies the inline source map here too.
+    const m = new Module(outfile) as Module & { _compile(code: string, file: string): void };
+    m.filename = outfile;
+    m.paths = (Module as unknown as { _nodeModulePaths(dir: string): string[] })._nodeModulePaths(dir);
+    m._compile(result.outputFiles[0].text, outfile);
+    mod = m.exports;
+  } else {
+    // top-level await: only an ES module has it
+    outfile = path.join(TMP, `bundle-${n}.mjs`);
+    result = (await bundle(entry, dir, outfile, 'esm'))!;
+    fs.mkdirSync(TMP, { recursive: true });
+    // a real file (not a data: URL): Node applies its source map only then
+    fs.writeFileSync(outfile, result.outputFiles[0].text);
+    try {
+      mod = await import(pathToFileURL(outfile).href);
+    } finally {
+      fs.rmSync(outfile, { force: true });
+    }
   }
   if (!('default' in mod)) throw new LoadError('the entry has no `export default` (it should export default <Project>...)', entry);
   return {

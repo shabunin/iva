@@ -8,7 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Builder, CompileError, flat, projectSize, type Asset, type BuildResult, type ScriptOut } from './build.js';
 import { parseSize, sizeFolder, type ScreenSize } from './components.js';
-import { evaluate, LoadError } from './load.js';
+import { evaluate, LoadError, TMP } from './load.js';
 import { JsxError, type Child, type VNode } from './runtime.js';
 import { mergeThemes } from './themes.js';
 import { dropNames, newNames } from './names.js';
@@ -79,7 +79,7 @@ function located(e: unknown, baseDir: string): IvaError {
   const err = e as Error;
   // an exception in the project's own code: point at its first frame in a project file
   const frames = [...(err?.stack ?? '').matchAll(/\(?((?:\/|[A-Za-z]:\\)[^():]+\.(?:jsx?|tsx?|mjs)):(\d+):(\d+)\)?/g)];
-  const m = frames.find((f) => !f[1].startsWith(COMPILER_DIR) && !f[1].includes(`${path.sep}iva-`));
+  const m = frames.find((f) => !f[1].startsWith(COMPILER_DIR) && !f[1].startsWith(TMP + path.sep));
   if (m) return new IvaError(err.message, m[1], Number(m[2]), Number(m[3]) - 1);
   const s = (err as any)?.ivaSource;
   return new IvaError(err?.message ?? String(e), s ? path.resolve(baseDir, s.fileName) : undefined, s?.lineNumber, s?.columnNumber);

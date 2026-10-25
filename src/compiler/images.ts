@@ -42,20 +42,44 @@ function paint(attr: 'fill' | 'stroke', color: string): string {
   return `${attr}="rgb(${r},${g},${b})"${a < 255 ? ` ${attr}-opacity="${(a / 255).toFixed(3)}"` : ''}`;
 }
 
-/** Drawn images by their SVG and scale: a rebuild (iva dev, iva serve) redraws only what changed. */
+/**
+ * Drawn images by their SVG and scale, the least recently used first: a
+ * rebuild (iva dev, iva serve) redraws only what changed. Bounded by bytes,
+ * not entries - the gallery draws some 3300 at each size.
+ */
 const drawnCache = new Map<string, Buffer>();
+let drawnBytes = 0;
+let drawnMax = 64 * 1024 * 1024;
+
+/** The most the drawing cache keeps, in bytes (its SVG and PNG). @internal */
+export function drawnCacheLimit(bytes: number): void {
+  drawnMax = bytes;
+  evictDrawn();
+}
+
+function evictDrawn() {
+  for (const [key, png] of drawnCache) {
+    if (drawnBytes <= drawnMax) break;
+    drawnCache.delete(key);
+    drawnBytes -= key.length + png.length;
+  }
+}
 
 /** Render SVG (in `w` x `h` units) to a PNG `scale` times that size. */
 function render(svgBody: string, w: number, h: number, scale: number): Buffer {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${svgBody}</svg>`;
   const key = `${scale}|${svg}`;
   let png = drawnCache.get(key);
-  if (!png) {
+  if (png) {
+    drawnCache.delete(key);
+  } else {
     // no system fonts: iva draws shapes and icon paths, never text (loading them is most of the time)
     png = Buffer.from(new Resvg(svg, { fitTo: { mode: 'width', value: Math.round(w * scale) }, font: { loadSystemFonts: false } }).render().asPng());
-    if (drawnCache.size > 2000) drawnCache.clear();
-    drawnCache.set(key, png);
+    drawnBytes += key.length + png.length;
   }
+  // last: the most recently used
+  drawnCache.set(key, png);
+  evictDrawn();
   return png;
 }
 
