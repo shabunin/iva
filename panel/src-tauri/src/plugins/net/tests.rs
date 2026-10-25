@@ -85,3 +85,29 @@ async fn closed_its_commands_end_after_what_it_was_told() {
     assert_eq!(rx.recv().await, Some(1));
     assert_eq!(rx.recv().await, None);
 }
+
+#[test]
+fn iva_serve_is_looked_for_on_the_wifi_first_then_a_vpn_not_on_the_mobile_network() {
+    use std::net::Ipv4Addr;
+    let ip = |s: &str| s.parse::<Ipv4Addr>().unwrap();
+    // a Titan 2 with ZeroTier on: its interfaces as the OS lists them
+    let list = vec![
+        ("lo".to_string(), ip("127.0.0.1"), ip("255.0.0.0")),
+        ("ccmni3".to_string(), ip("10.185.113.192"), ip("255.0.0.0")),
+        ("tun0".to_string(), ip("10.153.12.182"), ip("255.255.255.0")),
+        ("wlan0".to_string(), ip("192.168.2.9"), ip("255.255.255.0")),
+    ];
+    let names: Vec<_> = device::lan_networks(&list).into_iter().map(|(name, address, _, kind)| (name, address.to_string(), kind)).collect();
+    assert_eq!(names, vec![
+        ("wlan0".to_string(), "192.168.2.9".to_string(), "WiFi"),
+        ("tun0".to_string(), "10.153.12.182".to_string(), "VPN"),
+    ]);
+}
+
+#[tokio::test]
+async fn a_udp_socket_sends_its_multicast_out_of_the_interface_set() {
+    let sock = tokio::net::UdpSocket::bind("0.0.0.0:0").await.unwrap();
+    udp::set_multicast_interface(&sock, "127.0.0.1").unwrap();
+    assert_eq!(socket2::SockRef::from(&sock).multicast_if_v4().unwrap(), std::net::Ipv4Addr::LOCALHOST);
+    assert!(udp::set_multicast_interface(&sock, "not an address").is_err());
+}

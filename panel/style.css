@@ -204,6 +204,13 @@ html, body {
 #settings .hint { margin: 0; color: #8b929a; font-size: 14px; }
 #settings code { color: #c4c9cf; }
 .copy { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 10px; background: #171b1f; }
+#found-on { display: flex; flex-direction: column; gap: 8px; }
+#found-on[hidden] { display: none; }
+#found { display: flex; flex-direction: column; gap: 8px; }
+#settings button.found { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 10px 12px; border-radius: 10px; background: #171b1f; text-align: left; }
+#settings button.found:active { background: #22282e; }
+.found-name { font-size: 16px; color: #e8eaed; font-weight: 600; }
+.found .hint { word-break: break-all; }
 .copy-url { font-size: 15px; color: #e8eaed; word-break: break-all; }
 #errors { margin: 8px 0 0; color: #f28b82; font-size: 12px; white-space: pre-wrap; }
 #errors:empty { display: none; }

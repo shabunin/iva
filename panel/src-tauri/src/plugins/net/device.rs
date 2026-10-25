@@ -88,6 +88,35 @@ fn kind_of(name: &str) -> (u8, &'static str) {
     }
 }
 
+/// The device's IPv4 networks to look for iva serve on (the settings' Found
+/// on the network): (name, address, netmask, type), the main one first as
+/// device_info ranks them - not loopback, not the mobile network's (no one
+/// serves a GUI there, and a query there costs data).
+pub fn lan_networks(list: &[(String, std::net::Ipv4Addr, std::net::Ipv4Addr)]) -> Vec<(String, std::net::Ipv4Addr, std::net::Ipv4Addr, &'static str)> {
+    let mut out: Vec<_> = list
+        .iter()
+        .filter(|(_, ip, _)| !ip.is_loopback() && !ip.is_unspecified() && !ip.is_link_local())
+        .map(|(name, ip, mask)| (name.clone(), *ip, *mask, kind_of(name)))
+        .filter(|(_, _, _, (_, kind))| *kind != "WAN")
+        .map(|(name, ip, mask, (rank, kind))| (rank, name, ip, mask, kind))
+        .collect();
+    out.sort_by_key(|(rank, ..)| *rank);
+    out.into_iter().map(|(_, name, ip, mask, kind)| (name, ip, mask, kind)).collect()
+}
+
+#[tauri::command]
+pub fn net_interfaces() -> Result<Vec<serde_json::Value>, String> {
+    let interfaces = if_addrs::get_if_addrs().map_err(|e| format!("get_if_addrs: {e}"))?;
+    let v4: Vec<_> = interfaces
+        .iter()
+        .filter_map(|i| if let if_addrs::IfAddr::V4(v4) = &i.addr { Some((i.name.clone(), v4.ip, v4.netmask)) } else { None })
+        .collect();
+    Ok(lan_networks(&v4)
+        .into_iter()
+        .map(|(name, ip, mask, kind)| serde_json::json!({ "name": name, "address": ip.to_string(), "netmask": mask.to_string(), "type": kind }))
+        .collect())
+}
+
 #[tauri::command]
 pub fn device_info<R: Runtime>(app: AppHandle<R>) -> Result<serde_json::Value, String> {
     let (platform, version, model, name) = os_info();

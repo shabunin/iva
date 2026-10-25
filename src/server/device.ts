@@ -8,6 +8,9 @@
  * saved from GUI Designer). With live reload on (default), the served .gui
  * carries one extra script that waits for the next build and reloads the
  * panel with CF.loadGUI, so the device follows your edits.
+ *
+ * While it runs it's advertised on the network (mDNS / DNS-SD: mdns.ts), so
+ * the iva panel's settings list it and load it with a tap.
  */
 
 import fs from 'node:fs';
@@ -16,6 +19,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { compile, IvaError, scriptsDir, slug, type CompileResult } from '../compiler/index.js';
 import { sizeFolder, sizeLabel, type ScreenSize } from '../compiler/components.js';
+import { VERSION } from '../create.js';
+import { servedTxt, type ServedInfo } from '../runtime/cf/mdns/served.js';
+import type { IUdpSocket } from '../runtime/stdlib/net/types.js';
+import { advertise, type Advertised } from './mdns.js';
 import { watchInputs, watchTree } from './watch.js';
 import { writeZip } from './zip.js';
 
@@ -32,6 +39,14 @@ export interface DeviceServerOptions {
    * it the archive has every size of <Project sizes> too, for the panel to choose
    */
   size?: string;
+  /**
+   * advertise it on the network while it runs - an _iva._tcp service (DNS-SD)
+   * on each address it serves at, for the iva panel's settings to find
+   * (default true; iva serve --no-mdns: off)
+   */
+  mdns?: boolean;
+  /** the mDNS sockets (default: Node's, on port 5353) - a fake network's in the tests */
+  mdnsSocket?: () => IUdpSocket;
   log?: (msg: string) => void;
 }
 
@@ -56,6 +71,10 @@ const LIVE_SCRIPT = /^iva-live(?:-([a-z0-9]+))?\.js$/;
 
 interface Served {
   name: string;
+  /** what it's called: the project's name, the .gui's, the folder's */
+  title: string;
+  /** the sizes served ('1400x1400@3x'): the one at / first, then the rest of <Project sizes> */
+  sizeLabels: string[];
   /** the .gui as served (the live script added when live); a folder's: the page listing its GUIs */
   gui: Buffer;
   /** a folder served: what's at / is that page (HTML), there's no one build */
@@ -80,9 +99,20 @@ interface ServedFile {
 /** One size's build as served: its .gui (the live script added when live), its files by lower-cased path. */
 type SizeBuild = Pick<Served, 'name' | 'gui' | 'files'>;
 
+/** An address --host gives as served at: one of this machine's (its interface and netmask), else as given. */
+function hostAddress(host: string): Address {
+  for (const [iface, list] of Object.entries(os.networkInterfaces())) {
+    const a = list?.find((x) => x.family === 'IPv4' && x.address === host);
+    if (a) return { address: host, iface, netmask: a.netmask, kind: VIRTUAL.find(([re]) => re.test(iface))?.[1] };
+  }
+  return { address: host, iface: '' };
+}
+
 export interface Address {
   address: string;
   iface: string;
+  /** its network's netmask (where an mDNS query came from: which network) */
+  netmask?: string;
   /** what kind of network, when the interface name tells (ZeroTier, Tailscale, ...) */
   kind?: string;
 }
@@ -98,7 +128,7 @@ export function lanAddresses(): Address[] {
   for (const [iface, list] of Object.entries(os.networkInterfaces())) {
     for (const a of list ?? []) {
       if (a.family !== 'IPv4' || a.internal) continue;
-      out.push({ address: a.address, iface, kind: VIRTUAL.find(([re]) => re.test(iface))?.[1] });
+      out.push({ address: a.address, iface, netmask: a.netmask, kind: VIRTUAL.find(([re]) => re.test(iface))?.[1] });
     }
   }
   return out.sort((x, y) => Number(!!x.kind) - Number(!!y.kind));
@@ -295,8 +325,8 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
       };
       walk('', 0);
       next = isDir
-        ? { name: 'index.html', gui: Buffer.from(indexPage(path.basename(target), [...files.values()].map((f) => f.path))), files, html: true }
-        : { name: path.basename(target), gui: fs.readFileSync(target), files };
+        ? { name: 'index.html', title: path.basename(target), sizeLabels: [], gui: Buffer.from(indexPage(path.basename(target), [...files.values()].map((f) => f.path))), files, html: true }
+        : { name: path.basename(target), title: path.basename(target).replace(/\.gui$/i, ''), sizeLabels: [], gui: fs.readFileSync(target), files };
     } else {
       let r: CompileResult;
       try {
@@ -308,7 +338,8 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
       }
       for (const w of r.warnings) log(`warning: ${w}`);
       state.inputs = r.inputs;
-      next = { ...sizeBuild(r), sizes: opts.size ? [] : r.sizes, warnings: r.warnings };
+      const sizes = opts.size ? [] : r.sizes;
+      next = { ...sizeBuild(r), title: r.name, sizeLabels: [...new Set([r.size, ...sizes].map(sizeLabel))], sizes, warnings: r.warnings };
       log(`built ${path.basename(target)} in ${Date.now() - t0} ms`);
     }
     state.error = null;
@@ -322,7 +353,14 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
     state.served = { ...next, version, modified: new Date() };
     for (const w of waiting) w(version);
     waiting.clear();
+    // another build's sizes: the advertisement's TXT too
+    advertised?.update(servedTxt(infoOf(state.served)));
   };
+  /** what the advertisement says of what's served */
+  const infoOf = (s: Served): ServedInfo => ({
+    path: '/', version: VERSION, project: s.title, kind: isDir ? 'folder' : isGui ? 'gui' : 'project', sizes: s.sizeLabels, host: os.hostname(),
+  });
+  let advertised: Advertised | null = null;
   await load();
   if (!state.served) throw new Error(`can't serve: ${state.error}`);
 
@@ -516,16 +554,30 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
     server.listen(opts.port, opts.host, resolve);
   });
   const port = (server.address() as import('node:net').AddressInfo).port;
+  const addresses = (opts.host === '0.0.0.0' || opts.host === '::' ? lanAddresses() : [hostAddress(opts.host)]).map((a) => ({
+    ...a,
+    url: `http://${a.address}:${port}`,
+  }));
+  // on the network: each address served at whose network is known (not loopback: no one else reaches it)
+  const networks = addresses.filter((a) => a.netmask && !a.address.startsWith('127.')).map((a) => ({ address: a.address, netmask: a.netmask! }));
+  if (opts.mdns !== false && networks.length) {
+    advertised = await advertise({
+      name: state.served.title, port, networks, txt: servedTxt(infoOf(state.served)), host: os.hostname(),
+      createSocket: opts.mdnsSocket, log,
+    });
+  }
   return {
     name: state.served.name,
     port,
-    addresses: (opts.host === '0.0.0.0' || opts.host === '::' ? lanAddresses() : [{ address: opts.host, iface: '' } as Address]).map((a) => ({
-      ...a,
-      url: `http://${a.address}:${port}`,
-    })),
+    addresses,
+    /** its name on the network (DNS-SD's): the project's, or "Name (2)" if another has it; null: not advertised */
+    get advertisedAs() {
+      return advertised?.name ?? null;
+    },
     async close() {
       watcher.close();
       for (const w of waiting) w(state.served!.version);
+      await advertised?.close();
       await new Promise((r) => server.close(r));
     },
   };

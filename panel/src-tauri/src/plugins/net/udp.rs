@@ -44,6 +44,8 @@ pub enum UdpCommand {
     SetTtl(u32),
     SetMulticastTtl(u32),
     SetMulticastLoopback(bool),
+    /// the interface multicast goes out of (an IPv4 address of it); answered once it's set
+    SetMulticastInterface(String, tokio::sync::oneshot::Sender<Result<(), String>>),
     SetRecvBufferSize(usize),
     SetSendBufferSize(usize),
     GetRecvBufferSize(tokio::sync::oneshot::Sender<Result<usize, String>>),
@@ -295,6 +297,9 @@ pub async fn udp_bind<R: tauri::Runtime>(
                             let _ = socket.set_multicast_loop_v4(flag);
                             let _ = socket.set_multicast_loop_v6(flag);
                         }
+                        Some(UdpCommand::SetMulticastInterface(iface, resp_tx)) => {
+                            let _ = resp_tx.send(set_multicast_interface(&socket, &iface));
+                        }
                         Some(UdpCommand::SetRecvBufferSize(size)) => {
                             #[cfg(unix)]
                             {
@@ -543,6 +548,25 @@ pub async fn udp_set_multicast_loopback(
     } else {
         Err("Socket not found".to_string())
     }
+}
+
+/// IP_MULTICAST_IF: multicast from this socket out of the interface with that IPv4 address
+pub fn set_multicast_interface(socket: &UdpSocket, iface: &str) -> Result<(), String> {
+    let addr = iface.parse::<std::net::Ipv4Addr>().map_err(|e| format!("Invalid interface address {}: {}", iface, e))?;
+    socket2::SockRef::from(socket).set_multicast_if_v4(&addr).map_err(|e| e.to_string())
+}
+
+/// The interface multicast goes out of; the answer comes once it's set, so a send after it goes out there.
+#[tauri::command]
+pub async fn udp_set_multicast_interface(
+    state: State<'_, NetState>,
+    id: String,
+    multicast_interface: String,
+) -> Result<(), String> {
+    let Some(tx) = super::sender(&state.udp_sockets, &id).await else { return Err("Socket not found".to_string()) };
+    let (resp_tx, resp_rx) = tokio::sync::oneshot::channel();
+    tx.send(UdpCommand::SetMulticastInterface(multicast_interface, resp_tx)).await.map_err(|_| "Socket closed".to_string())?;
+    resp_rx.await.map_err(|_| "Socket closed".to_string())?
 }
 
 #[tauri::command]

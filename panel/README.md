@@ -16,6 +16,7 @@ phone's crash log). Nothing in a .gui can avoid that.
 panel/
   index.html, main.ts   the page: the GUI full screen, the address bar, the settings
   loader.ts             a GUI from a web server: .gui, zipped GUI, iva serve
+  discover.ts           the settings' Found on the network: iva serves (DNS-SD)
   store.ts              the GUIs kept on the device (IndexedDB; in the app a zip is the app's)
   vite.config.ts        the runtime's host stand-ins -> the real Tauri APIs
   src-tauri/            the app: Rust host, Tauri config, Android project (gen/android)
@@ -31,6 +32,30 @@ with every size: the one shaped like the screen runs) - no server needed. That i
 panel's default GUI: what it starts with, where `CF.loadGUI(null)` goes.
 From `iva serve` it reloads on every rebuild, and its log (`CF.log`, errors,
 page flips) goes to iva serve's console, as with iViewer.
+
+**Found on the network**, under the GUI in the settings, lists the
+`iva serve`s this device reaches while the settings are open: the project,
+the machine, its address and port, the sizes it serves and iva's version. A
+tap puts its address in the GUI field and loads it, as typing it and Load
+would (a folder served, `iva serve dist/`, fills the field only: its GUIs'
+paths go after it). The address picked is one the panel has loaded that
+server from before, so its kept copy is used; otherwise the one on the
+device's main network (Wi-Fi first). `discover.ts` runs CF Bonjour's engine
+(`../src/runtime/cf/mdns`) once per network of the device's - Wi-Fi, a wired
+LAN, a VPN; not the mobile network - each asking only: a one-shot query for
+`_iva._tcp` every few seconds, from a port of its own on that network's
+address, which `iva serve` (and any responder) answers by unicast, straight
+back to that port. So it works where multicast goes out but doesn't come
+in, as with the ZeroTier app on Android, and it shares nothing with the
+GUI's own `CF.startLookup` or the system's responder on port 5353. A server
+that stops answering is off the list within about 10 s. Android: the app
+holds a Wi-Fi multicast lock already (for the GUIs' systems), no other
+permission is needed. Not found: a network that doesn't carry multicast
+from the device to the computer - a Wi-Fi with client isolation, many guest
+networks, Tailscale and most WireGuard set-ups, a ZeroTier network with
+multicast turned off - or an `iva serve` started with `--no-mdns` or from
+iva 0.1.1 and older; type its address then. In a browser (`npm run
+panel:dev`) the list isn't there: a page has no UDP.
 
 The main window is the GUI and nothing else. Settings: three fingers on the
 screen (held a moment), Ctrl+S or F1 on a keyboard (a phone's own, a desktop's), or a

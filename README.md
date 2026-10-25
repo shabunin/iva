@@ -291,6 +291,22 @@ panel runs the one shaped like its screen. The other sizes are built when the
 archive is asked for, once a build, so saving rebuilds only the size at `/`.
 `--size 1400x1400@3x` serves that size only, in the archive too.
 
+While it runs, `iva serve` is on the network for the iva panel to find
+(mDNS / DNS-SD, CF Bonjour's own engine): an `_iva._tcp` service named after
+the project, on each address it prints (`--host`: that one), each network's
+answer with its own address. Its TXT record has what the panel shows and
+loads: `path=/`, `iva=` (iva's version), `name`, `kind` (`project`, `gui` or
+`folder`), `sizes` (the size at `/` first) and `host` (this machine's name).
+The panel's settings list it under **Found on the network**, and a tap loads
+it. Port 5353 is shared with the system's own responder (avahi,
+mDNSResponder) and with other `iva serve`s; a project name someone else
+serves on the network is advertised as `Name (2)`; stopping sends goodbyes.
+`--no-mdns` turns it off. It needs a network that carries the panel's query
+(multicast) to this machine: a home Wi-Fi or wired LAN does, and so does a
+ZeroTier network (multicast is on unless the network's settings turn it off).
+A Wi-Fi with client isolation, many guest networks, Tailscale and most
+WireGuard set-ups don't: type the address there.
+
 The same script brings the panel's log to the console - `CF.log`, script
 errors, what the panel's servers get and send, whether they answer, and what
 its web pages meet (their size, their errors) - no remote debugger needed:
@@ -312,8 +328,9 @@ iViewer for Android isn't maintained any more, and 5.0.7 crashes on Android
 16 once a page whose gestures were touched goes away. [panel/](panel/README.md)
 is an app of iva's own for the panel instead: the GUI on iva's runtime, full
 screen, real sockets from the app (Tauri; an Android APK from CI, and a
-desktop build). Give it `iva serve`'s address and it reloads with every build
-too; with no server it starts on the gallery, built in.
+desktop build). Give it `iva serve`'s address, or tap it in the settings'
+**Found on the network**, and it reloads with every build too; with no
+server it starts on the gallery, built in.
 
 ## `iva decompile`
 

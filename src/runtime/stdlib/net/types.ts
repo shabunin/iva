@@ -66,6 +66,8 @@ export interface IUdpSocket {
   setTTL?(ttl: number): void;
   setMulticastTTL?(ttl: number): void;
   setMulticastLoopback?(flag: boolean): void;
+  /** the interface (an IPv4 address of it) multicast goes out of */
+  setMulticastInterface?(multicastInterface: string): void;
   getRecvBufferSize?(): number;
   setRecvBufferSize?(size: number): void;
   getSendBufferSize?(): number;
