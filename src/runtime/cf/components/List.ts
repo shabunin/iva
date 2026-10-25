@@ -476,11 +476,10 @@ export function renderList(
             items.splice(at, 0, ...fresh);
             items.forEach((r, i) => reindex(r, i));
             layout(true, new Set(fresh));
-            for (const r of fresh) {
-                render(r);
-                transit(r, insertAs, true);
-            }
+            // only the new rows near what shows are built (and come in): 500 added - not 500 subpages made and
+            // thrown away in the same call
             renderNear();
+            for (const r of fresh) if (r.view) transit(r, insertAs, true);
             return;
         }
         if (op === 'remove' && list.length === items.length - count && at + count <= items.length) {

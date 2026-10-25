@@ -20,6 +20,16 @@ const toBase64 = (b: Uint8Array) => {
   return btoa(s);
 };
 
+/** base64 to bytes: the browser's own decoder (Chrome 140+), else a plain loop - Uint8Array.from(atob(), fn) took ~100 ms per MB */
+const fromBase64 = (s: string): Uint8Array => {
+  const own = (Uint8Array as unknown as { fromBase64?: (s: string) => Uint8Array }).fromBase64;
+  if (own) return own.call(Uint8Array, s);
+  const chars = atob(s);
+  const out = new Uint8Array(chars.length);
+  for (let i = 0; i < chars.length; i++) out[i] = chars.charCodeAt(i);
+  return out;
+};
+
 async function bodyBytes(body: unknown): Promise<Uint8Array | null> {
   if (body == null) return null;
   if (typeof body === 'string') return new TextEncoder().encode(body);
@@ -43,7 +53,7 @@ export async function fetch(input: string | URL | Request, init: Record<string, 
     connectTimeout: init.connectTimeout ?? null,
     maxRedirections: init.maxRedirections ?? 20,
   });
-  const raw = Uint8Array.from(atob(res.body), (c) => c.charCodeAt(0));
+  const raw = fromBase64(res.body);
   // Response() refuses a body on 204/304 and any status outside 200-599
   const nullBody = [101, 204, 205, 304].includes(res.status);
   const status = res.status >= 200 && res.status <= 599 ? res.status : 200;

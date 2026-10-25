@@ -14,7 +14,8 @@ export interface HttpRequestEvent {
     method: string;
     url: string;
     headers: Record<string, string>;
-    body: number[];
+    /** an HTTP client's answer: the bytes as they came (a number[] costs ~100 ms per MB on the page's thread) */
+    body: number[] | Uint8Array;
 }
 
 export interface HttpResponsePayload {
@@ -57,7 +58,7 @@ export class IncomingMessage extends EventEmitter {
         this.method = event.method;
         this.url = event.url;
         this.headers = event.headers;
-        this.body = new Uint8Array(event.body);
+        this.body = event.body instanceof Uint8Array ? event.body : new Uint8Array(event.body);
     }
 
     // Node.js compat for reading stream
@@ -266,7 +267,7 @@ export class ClientRequest extends EventEmitter {
             response.headers.forEach((v, k) => {
                 headers[k] = v;
             });
-            const body = Array.from(new Uint8Array(await response.arrayBuffer()));
+            const body = new Uint8Array(await response.arrayBuffer());
 
             const incoming = new IncomingMessage({
                 id: '',

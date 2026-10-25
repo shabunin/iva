@@ -176,8 +176,11 @@ async function load() {
 }
 
 panel.onSample((row) => {
+  // the past looked at keeps its rows (uPlot holds these arrays: a cut would shift them under it); Live asks the
+  // history afresh
+  if (!live) return;
   addRow(panel.recorded, row);
-  if (live) redraw();
+  redraw();
 });
 back.onclick = () => {
   end = (live ? Date.now() : end) - range * 1000;
