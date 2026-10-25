@@ -68,7 +68,8 @@ disconnect while the panel sleeps.
 
 The GUI is kept on the device once it has loaded (the last four GUIs used):
 a zipped GUI as it came, iva serve's whole build (`/__iva/gui.zip`: its web
-pages and the assets scripts load too), or a `.gui` and the files it names.
+pages and the assets scripts load too, every size of `<Project sizes>` - the
+one shaped like the screen runs), or a `.gui` and the files it names.
 The next start runs that copy at once and asks the server behind it whether
 it has another version (`If-None-Match`, `If-Modified-Since`, else the bytes
 compared); if it has, it's kept and runs at once, on the page shown. The same

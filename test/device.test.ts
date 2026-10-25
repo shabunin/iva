@@ -160,6 +160,51 @@ test('the whole build in one zip for the panel to keep, and 304 for the build it
   }
 });
 
+test('<Project sizes>: the zip has every size - the one at / at its root, each other in its folder - built only when it\'s asked for', async () => {
+  const dir = tmpDir('iva-serve-sizes-');
+  const entry = path.join(dir, 'app.jsx');
+  fs.writeFileSync(entry, `const { width } = screen();
+export default (
+  <Project name="app" width={1280} height={800} sizes={['1400x1400@3x']}>
+    <Page name="Main"><Box x={16} y={16} w={width - 32} h={100} bg="#336699" radius={8} /></Page>
+  </Project>
+);`);
+  const lines: string[] = [];
+  const s = await startDeviceServer({ target: entry, port: 0, host: '127.0.0.1', live: true, log: (m) => lines.push(m) });
+  try {
+    // at /: the project's own size, as before; the other sizes not built on a rebuild
+    const root = await get(s.port, '/');
+    assert.match(root.body, /<portrait width="800" height="1280" \/>\s*<landscape width="1280" height="800" \/>/);
+    assert.ok(!lines.some((l) => /1400x1400@3x/.test(l)), lines.join('\n'));
+    const res = await fetch(`http://127.0.0.1:${s.port}/__iva/gui.zip`);
+    assert.equal(res.status, 200);
+    // the build's version, as at /: the panel's If-None-Match still gets 304
+    assert.equal(res.headers.get('etag'), root.headers.get('etag'));
+    const files = readZip(Buffer.from(await res.arrayBuffer()));
+    assert.match(files.get('app.gui')!.toString('utf8'), /<landscape width="1280" height="800" \/>/);
+    // as iva build --zip: the other size in its folder, its files beside it, the live script too
+    const phone = files.get('1400w1400h/app.gui')!.toString('utf8');
+    assert.match(phone, /<portrait width="467" height="467" \/>\s*<landscape width="467" height="467" \/>/);
+    assert.match(phone, /<script name="iva-live\.js" \/>/);
+    assert.match(files.get('1400w1400h/iva-live.js')!.toString('utf8'), /__iva\/wait/);
+    assert.ok(files.has('1400w1400h/joins.json'));
+    assert.ok([...files.keys()].some((n) => /^1400w1400h\/.+\/boxes\/[\w-]+\.png$/.test(n)), [...files.keys()].join('\n'));
+    assert.ok(lines.some((l) => /built 1400x1400@3x for the panel's archive/.test(l)), lines.join('\n'));
+    assert.equal((await fetch(`http://127.0.0.1:${s.port}/__iva/gui.zip`, { headers: { 'If-None-Match': res.headers.get('etag')! } })).status, 304);
+  } finally {
+    await s.close();
+  }
+  // --size: that size only, at / and in the zip (as iva build --size)
+  const sized = await startDeviceServer({ target: entry, port: 0, host: '127.0.0.1', live: false, size: '1400x1400@3x', log: quiet });
+  try {
+    const files = readZip(Buffer.from(await (await fetch(`http://127.0.0.1:${sized.port}/__iva/gui.zip`)).arrayBuffer()));
+    assert.match(files.get('app.gui')!.toString('utf8'), /<landscape width="467" height="467" \/>/);
+    assert.ok(![...files.keys()].some((n) => /^\d+w\d+h\//.test(n)), [...files.keys()].join('\n'));
+  } finally {
+    await sized.close();
+  }
+});
+
 test('a request for // or worse is answered, not a crash', async () => {
   const dir = tmpDir('iva-serve-');
   fs.copyFileSync(ECHO, path.join(dir, 'Echo.gui'));

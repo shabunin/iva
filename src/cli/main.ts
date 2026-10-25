@@ -36,7 +36,9 @@ Usage:
   iva serve [entry | file.gui]
                        serve it to iViewer on a real device, as GUI Designer's
                        Upload Service does (port 8019); rebuilds on save and
-                       reloads the panel on the device (--no-live: don't)
+                       reloads the panel on the device (--no-live: don't); the
+                       iva panel's archive has every <Project sizes> size
+                       (--size: that one only)
   iva designer [entry | file.gui]
                        build and open in CommandFusion GUI Designer (Wine on
                        Linux / macOS: $IVA_DESIGNER, $IVA_WINEPREFIX)
