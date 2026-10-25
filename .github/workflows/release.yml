@@ -1,0 +1,58 @@
+name: release
+
+# A v* tag: the tests, then the panel for Android, Linux, Windows and macOS,
+# then a GitHub release with them all and the version's notes from
+# CHANGELOG.md (its "## <version>" section). The tag must be package.json's
+# version; the APK is signed with the release key (the repository's secrets).
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
+  android:
+    needs: test
+    uses: ./.github/workflows/panel.yml
+    secrets: inherit
+
+  desktop:
+    needs: test
+    uses: ./.github/workflows/panel-desktop.yml
+
+  release:
+    needs: [android, desktop]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: The release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          if [ "$(node -p "require('./package.json').version")" != "$v" ]; then
+            echo "::error::the tag is $GITHUB_REF_NAME, package.json's version isn't $v"
+            exit 1
+          fi
+          awk -v v="$v" '/^## /{ p = ($2 == v); next } p' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "::error::no '## $v' section in CHANGELOG.md"
+            exit 1
+          fi
+          one() { f=$(find "artifacts/$1" -name "$2" | head -1); [ -n "$f" ] || { echo "::error::no $2 in $1"; exit 1; }; cp "$f" "out/$3"; }
+          mkdir out
+          one iva-panel-apk '*.apk' "iva-panel-$v-android.apk"
+          one iva-panel-linux '*.AppImage' "iva-panel-$v-linux-x86_64.AppImage"
+          one iva-panel-windows '*.exe' "iva-panel-$v-windows-x64.exe"
+          one iva-panel-macos '*.zip' "iva-panel-$v-macos-universal.zip"
+          ls -la out
+          gh release create "$GITHUB_REF_NAME" out/* --title "iva $v" --notes-file notes.md
