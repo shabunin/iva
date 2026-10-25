@@ -180,6 +180,22 @@ test('a request for // or worse is answered, not a crash', async () => {
   }
 });
 
+test("a path with a '%' that starts no escape: the file named so, else 400 - not a crash", async () => {
+  const dir = tmpDir('iva-serve-');
+  fs.copyFileSync(ECHO, path.join(dir, 'Echo.gui'));
+  fs.writeFileSync(path.join(dir, '100%.png'), 'full');
+  const s = await startDeviceServer({ target: path.join(dir, 'Echo.gui'), port: 0, host: '127.0.0.1', live: false, log: quiet });
+  try {
+    assert.equal((await get(s.port, '/%E0%A4%A')).status, 400);
+    assert.equal((await get(s.port, '/50%.png')).status, 400);
+    assert.equal((await get(s.port, '/100%.png')).body, 'full');
+    assert.equal((await get(s.port, '/100%25.png')).body, 'full');
+    assert.equal((await get(s.port, '/Echo.gui')).status, 200);
+  } finally {
+    await s.close();
+  }
+});
+
 test('serves a folder of GUIs: every file by its path, a page at / listing the GUIs, no one build to archive', async () => {
   const dir = tmpDir('iva-serve-dir-');
   for (const name of ['home', 'lights']) {

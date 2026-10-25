@@ -372,7 +372,15 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
       return send(200, zipOf(s, host), 'application/zip');
     }
 
-    const name = decodeURIComponent(url.pathname.slice(1));
+    let name: string;
+    try {
+      name = decodeURIComponent(url.pathname.slice(1));
+    } catch {
+      // a '%' that starts no escape: a file named so, asked for as it is (100%.png), else a bad request - never a throw
+      // (it ended iva serve)
+      name = url.pathname.slice(1);
+      if (!s.files.has(name.toLowerCase())) return send(400, 'a malformed path', 'text/plain');
+    }
     const type = s.html ? 'text/html; charset=utf-8' : 'text/xml';
     if (name === '' || name.toLowerCase() === s.name.toLowerCase() || (name.toLowerCase().endsWith('.gui') && !s.files.has(name.toLowerCase()) && !s.html)) {
       if (unchanged) return send(304, '', type);
