@@ -217,6 +217,10 @@ const transitionAttrs = (t: Transition) => ({
 /** a list's insert / delete transition as iViewer reads it: Fade, Left, Right, Top, Bottom, Middle, None */
 const listTransition = (t: unknown) => (typeof t === 'string' && t ? t[0].toUpperCase() + t.slice(1) : undefined);
 const tagsAttr = (t: unknown) => (t === undefined ? undefined : Array.isArray(t) ? t.join(' ') : String(t));
+/** characters XML can't hold, not even as &#n; (control characters but tab, LF, CR): a .gui with one doesn't load */
+const NOT_XML = /[\x00-\x08\x0B\x0C\x0E-\x1F]/;
+/** a character in iViewer's \xNN notation */
+const hex = (c: string) => `\\x${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}`;
 const bool = (v: unknown, dflt = false) => ((v ?? dflt) ? '1' : '0');
 const hasStyle = (p: Record<string, unknown>) => STYLE_PROPS.some((k) => k !== 'theme' && p[k] !== undefined);
 const pickStyle = (p: Record<string, any>): StyleProps =>
@@ -241,8 +245,14 @@ export class Builder {
   private warnings: string[] = [];
   /** the named joins buttons' setProps() actions change: checked against the elements' once all are in */
   private actionJoins: { node: VNode; joins: JoinRef[] }[] = [];
-  /** joins given to elements with motion={...} so far (iva_motion0 ...), and whether their script is in */
-  private motions = 0;
+  /**
+   * joins given to elements with motion={...} (iva_motion0 ...), by where each is made - its page / subpage,
+   * its place there, its kind and box: the same element made again (a subpage placed again, a page laid out
+   * the same turned) the same join, one laid out otherwise its own (iva-motion.js reads where it is once);
+   * the page / subpage being made and how many there had one so far; whether their script is in
+   */
+  private motions = new Map<string, number>();
+  private motionAt = { scope: '', n: 0 };
   private motionScript = false;
   private primary: 'landscape' | 'portrait' = 'landscape';
   /** <Project assets>: shipped whole; images found there by bare name */
@@ -483,10 +493,10 @@ export class Builder {
     return new CompileError(node ? `<${node.type}>: ${msg}` : msg, node?.source);
   }
 
-  /** `xml={{...}}`: raw attributes over what iva wrote; null removes one. */
+  /** `xml={{...}}`: raw attributes over what iva wrote; null removes one. Then checked (xmlSafe). */
   private withXml(x: XNode, node: VNode): XNode {
     const extra = node.props.xml;
-    if (extra === undefined) return x;
+    if (extra === undefined) return this.xmlSafe(x, node);
     if (typeof extra !== 'object' || extra === null || Array.isArray(extra)) throw this.err(node, 'xml: an object of attributes');
     for (const [k, v] of Object.entries(extra)) {
       const i = x.attrs.findIndex(([a]) => a === k);
@@ -495,6 +505,16 @@ export class Builder {
       } else if (i >= 0) x.attrs[i][1] = String(v);
       else x.attrs.push([k, String(v)]);
     }
+    return this.xmlSafe(x, node);
+  }
+
+  /** An element's text and attributes, and its children's: a character XML can't hold is an error, not a .gui that doesn't load. */
+  private xmlSafe(x: XNode, node: VNode): XNode {
+    for (const [what, v] of [['text', x.text ?? ''], ...x.attrs]) {
+      const bad = NOT_XML.exec(v);
+      if (bad) throw this.err(node, `${what}: ${JSON.stringify(v.length > 40 ? `${v.slice(0, 40)}...` : v)} has the control character ${hex(bad[0])} - a .gui can't hold one (XML has no way to write it)`);
+    }
+    for (const c of x.children) this.xmlSafe(c, node);
     return x;
   }
 
@@ -549,7 +569,8 @@ export class Builder {
     for (const [k, v] of Object.entries(attrs)) {
       if (v === undefined || v === null) continue;
       if (v instanceof JoinSlot) {
-        const entry: [string, string] = [k, ''];
+        // which join, until it has its number: a subpage / system made twice is compared with it
+        const entry: [string, string] = [k, `${v.type}:${v.id}`];
         x.attrs.push(entry);
         try {
           this.joins.use(v, (n) => (entry[1] = String(n)));
@@ -613,7 +634,7 @@ export class Builder {
       x.attrs.push([key, t]);
       return;
     }
-    const entry: [string, string] = [key, ''];
+    const entry: [string, string] = [key, `${t.type}:${t.id}`];
     x.attrs.push(entry);
     this.joins.use(t, (n) => (entry[1] = `${t.type}${n}`));
   }
@@ -913,6 +934,7 @@ export class Builder {
     const p = node.props;
     if (this.pages.some((pg) => pg.attrs[0][1] === p.name)) throw this.err(node, `page "${p.name}" is defined twice`);
     this.pageName = p.name;
+    this.motionAt = { scope: `page:${p.name}`, n: 0 };
     const all = this.elements(node);
     this.items(all.filter((k) => HOISTED.has(k.type)));
     const kids = all.filter((k) => !HOISTED.has(k.type));
@@ -980,6 +1002,7 @@ export class Builder {
         // given both (<Landscape> and <Portrait>): as given
         if (block < 0 || page.children[block].children.length) continue;
         this.pageName = c.props.name;
+        this.motionAt = { scope: `page:${c.props.name}`, n: 0 };
         const all = this.elements(c);
         this.items(all.filter((k) => HOISTED.has(k.type)));
         const kids = all.filter((k) => !HOISTED.has(k.type));
@@ -1031,7 +1054,7 @@ export class Builder {
     if (!previous) this.subpages.set(p.name, { node: el('subpage'), source: node.source });
     const drawnBg = this.bgImage(node, p.w, p.h);
     const t = drawnBg ? '' : this.styleTheme(node, 'background');
-    const items = [...(drawnBg ? [drawnBg] : []), ...this.items(this.elements(node))];
+    const items = [...(drawnBg ? [drawnBg] : []), ...this.subpageItems(node)];
     if (previous) {
       // the same subpage again (a component placed on several pages): fine; a different one isn't
       const again = this.E('subpage', { name: p.name, w: p.w, h: p.h, t: t || undefined, clip: bool(p.clip, true) }, items);
@@ -1060,7 +1083,7 @@ export class Builder {
     const mine = this.turnedNames.get(p.name);
     const drawnBg = this.bgImage(node, p.w, p.h);
     const t = drawnBg ? '' : this.styleTheme(node, 'background');
-    const items = [...(drawnBg ? [drawnBg] : []), ...this.items(this.elements(node))];
+    const items = [...(drawnBg ? [drawnBg] : []), ...this.subpageItems(node)];
     const made = (name: string) => this.E('subpage', { name, w: p.w, h: p.h, t: t || undefined, clip: bool(p.clip, true) }, items);
     const text = (x: XNode) => serialize({ ...x, attrs: x.attrs.filter(([k]) => k !== 'xml') });
     // placed again turned (a component on several pages): the one it made
@@ -1083,6 +1106,17 @@ export class Builder {
     else this.turnedNames.set(p.name, p.name);
     this.turnedNodes.push(x);
     return name;
+  }
+
+  /** A subpage's items, their motion joins counted in it: the same each time it's made. */
+  private subpageItems(node: VNode): XNode[] {
+    const outer = this.motionAt;
+    this.motionAt = { scope: `subpage:${node.props.name}`, n: 0 };
+    try {
+      return this.items(this.elements(node));
+    } finally {
+      this.motionAt = outer;
+    }
   }
 
   /** Themed builds: a page's / subpage's colour background as a drawn image (first in it), not a theme. */
@@ -1197,9 +1231,14 @@ export class Builder {
       if (m.when.off !== undefined) check('when.off', m.when.off, false);
       timing('when', m.when as unknown as Record<string, unknown>);
     }
-    // its join: the one given, else one of its own
+    // its join: the one given, else one of its own (see motions)
     const given = p.join !== undefined && p.join !== 0 && p.join !== '0' && p.join !== '';
-    const out: VNode = given ? node : { ...node, props: { ...p, join: { $$join: 1, type, id: `iva_motion${this.motions++}` } } };
+    let out = node;
+    if (!given) {
+      const key = JSON.stringify([this.motionAt.scope, this.motionAt.n++, node.type, p.x ?? 0, p.y ?? 0, p.w, p.h]);
+      if (!this.motions.has(key)) this.motions.set(key, this.motions.size);
+      out = { ...node, props: { ...p, join: { $$join: 1, type, id: `iva_motion${this.motions.get(key)}` } } };
+    }
     let slot: JoinSlot;
     try {
       slot = fixedJoin(type, out.props.join)!;
@@ -1336,9 +1375,10 @@ export class Builder {
     const body = this.text(node);
     if (body !== undefined && p.send !== undefined) throw this.err(node, 'give what it sends as send="..." or as children, not both');
     if ((p.target === undefined) !== (p.value === undefined)) throw this.err(node, 'target and value go together');
+    // its control characters (send={'PWR\r'}) in iViewer's \xNN: XML reads a CR as LF, can't hold most of the rest
     const x = this.E('cmd', {
       name: p.name, js: p.js, jsSendsCommand: p.js !== undefined ? (p.jsSendsCommand ? 'True' : 'False') : undefined, folder: p.folder,
-    }, [], p.send ?? body ?? '', node);
+    }, [], (p.send ?? body ?? '').replace(/[\x00-\x1F]/g, hex), node);
     this.targetAttr(x, 'target', this.target(node, 'target'));
     if (p.value !== undefined) x.attrs.push(['value', String(p.value)]);
     return this.withXml(x, node);

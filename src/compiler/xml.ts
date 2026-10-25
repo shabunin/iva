@@ -30,7 +30,8 @@ export function el(tag: string, attrs: Record<string, AttrValue> = {}, children:
 const escAttr = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
     .replace(/\r/g, '&#13;').replace(/\n/g, '&#10;').replace(/\t/g, '&#9;');
-const escText = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+// a CR as &#13;: XML reads a raw one as LF
+const escText = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\r/g, '&#13;');
 
 function write(node: XNode, depth: number, out: string[]) {
   const pad = '  '.repeat(depth);
