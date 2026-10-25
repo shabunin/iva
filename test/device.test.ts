@@ -16,6 +16,20 @@ async function get(port: number, p: string, method = 'GET') {
   return { status: res.status, headers: res.headers, body: method === 'HEAD' ? '' : await res.text() };
 }
 
+/** What /__iva/wait?v=<version> answers within `ms`: the build it sees - null if it's still waiting (no newer build). */
+async function waited(port: number, version: string, ms = 300): Promise<string | null> {
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), ms);
+  try {
+    return await (await fetch(`http://127.0.0.1:${port}/__iva/wait?v=${encodeURIComponent(version)}`, { signal: abort.signal })).text();
+  } catch (e) {
+    if (abort.signal.aborted) return null;
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 test('serves a .gui the way GUI Designer\'s Upload Service does', async () => {
   const dir = tmpDir('iva-serve-');
   fs.copyFileSync(ECHO, path.join(dir, 'Echo.gui'));
@@ -29,7 +43,7 @@ test('serves a .gui the way GUI Designer\'s Upload Service does', async () => {
       assert.equal(r.headers.get('cf-server'), 'v2.7.10.918;debug=launchmonitor;complete=cachecomplete');
       assert.ok(r.headers.get('last-modified'));
       assert.match(r.body, /<project>Echo system/);
-      assert.doesNotMatch(r.body, /iva-live\.js/);
+      assert.doesNotMatch(r.body, /iva-live/);
     }
     // files by name, whatever the case (projects come from Windows)
     assert.equal((await get(s.port, '/logo.png')).body, 'png');
@@ -48,15 +62,20 @@ test('live: the served .gui reloads itself after a change', async () => {
   const s = await startDeviceServer({ target: gui, port: 0, host: '127.0.0.1', live: true, log: quiet });
   try {
     const served = (await get(s.port, '/')).body;
-    assert.match(served, /<script name="iva-live\.js" \/>/);
-    const script = (await get(s.port, '/iva-live.js')).body;
+    // named after the build (a page that got this .gui before a rebuild gets this build's script after it)
+    const named = /<script name="(iva-live-[a-z0-9]+\.js)" \/>/.exec(served)![1];
+    const script = (await get(s.port, `/${named}`)).body;
     // where iViewer asks for it: in the .gui's image folder
-    assert.equal((await get(s.port, '/images/iva-live.js')).body, script);
+    assert.equal((await get(s.port, `/images/${named}`)).body, script);
     assert.match(script, new RegExp(`var base = "http://127\\.0\\.0\\.1:${s.port}"`));
     assert.match(script, /CF\.loadGUI\(base \+ "\/", \{ reloadGUI: true, reloadAssets: true, reloadAllAssets: true \}\)/);
     // its systems switched off before (iViewer keeps a GUI's sockets past a reload: a server would hold its port)
     assert.match(script, /var systems = \["Echo"\];[\s\S]*CF\.setSystemProperties\(n, \{ enabled: false \}\)[\s\S]*CF\.loadGUI/);
     const version = /var version = "([^"]+)"/.exec(script)![1];
+    assert.equal(named, `iva-live-${version}.js`);
+    // an older iva serve's .gui (iva-live.js): its script sees the build served now at once, and reloads into it
+    const older = /var version = "([^"]*)"/.exec((await get(s.port, '/images/iva-live.js')).body)![1];
+    assert.equal(await waited(s.port, older), version);
     // a device waiting for the next build gets it as soon as the file changes
     const waiting = get(s.port, `/__iva/wait?v=${version}`);
     await new Promise((r) => setTimeout(r, 100));
@@ -69,13 +88,46 @@ test('live: the served .gui reloads itself after a change', async () => {
   }
 });
 
+test('live: a .gui served before a rebuild gets its own build\'s live script - it sees the newer build at once; the newest one waits', async () => {
+  const dir = tmpDir('iva-serve-');
+  const gui = path.join(dir, 'Echo.gui');
+  fs.copyFileSync(ECHO, gui);
+  const s = await startDeviceServer({ target: gui, port: 0, host: '127.0.0.1', live: true, log: quiet });
+  const liveIn = (xml: string) => /<script name="(iva-live[^"]*\.js)" \/>/.exec(xml)![1];
+  const versionIn = (script: string) => /var version = "([^"]*)"/.exec(script)![1];
+  try {
+    // the device has the .gui, then the project is rebuilt before it asks for the scripts (iva serve's log:
+    // GET / -> 200, built app.jsx, GET /assets/iva-live.js)
+    const before = liveIn((await get(s.port, '/')).body);
+    const first = versionIn((await get(s.port, `/images/${before}`)).body);
+    const rebuilt = waited(s.port, first, 10000);
+    fs.appendFileSync(gui, '\n');
+    const second = await rebuilt;
+    assert.ok(second && second !== first);
+    // that .gui's live script, asked for now: it waits on the build that .gui is of, so it sees the newer one
+    // and reloads the panel
+    const late = versionIn((await get(s.port, `/images/${before}`)).body);
+    assert.equal(late, first);
+    assert.equal(await waited(s.port, late), second);
+    // the newest .gui names its own live script, which waits for the next build
+    const after = liveIn((await get(s.port, '/')).body);
+    assert.notEqual(after, before);
+    const current = versionIn((await get(s.port, `/images/${after}`)).body);
+    assert.equal(current, second);
+    assert.equal(await waited(s.port, current), null);
+  } finally {
+    await s.close();
+  }
+});
+
 test('live: the panel\'s log in the console - CF.log, what its servers get and send, whether they answer', async () => {
   const lines: string[] = [];
   const s = await startDeviceServer({
     target: path.resolve(import.meta.dirname, '../examples/gallery/app.jsx'), port: 0, host: '127.0.0.1', live: true, log: (m) => lines.push(m),
   });
   try {
-    const script = (await get(s.port, '/iva-live.js')).body;
+    const named = /<script name="(iva-live-[a-z0-9]+\.js)" \/>/.exec((await get(s.port, '/')).body)![1];
+    const script = (await get(s.port, `/assets/${named}`)).body;
     assert.doesNotThrow(() => new Function(script));
     // the gallery's servers (its web apps', its camera's, its API's, the Network page's echo), found in the .gui: probed and watched
     assert.match(script, /var servers = \[\{"name":"IvaWeb","port":8900,"feedback":\["request"\]\},\{"name":"galleryCams","port":8898,"feedback":\["request"\]\},\{"name":"galleryApiServer","port":8899,"feedback":\["request"\]\},\{"name":"EchoServer","port":8897,"feedback":\["line"\]\}\];/);
@@ -120,7 +172,7 @@ test('a JSX project is built and served from memory', async () => {
     const gui = (await get(s.port, '/Hello-iva.gui')).body;
     // the build's folders: scripts/, assets/ (the .gui's image folder)
     assert.match(gui, /<imagefolder>assets<\/imagefolder>/);
-    assert.match(gui, /<script name="scripts\/iva-joins\.js" \/>\s*<script name="scripts\/main\.js" \/>\s*<script name="iva-live\.js" \/>/);
+    assert.match(gui, /<script name="scripts\/iva-joins\.js" \/>\s*<script name="scripts\/main\.js" \/>\s*<script name="iva-live-[a-z0-9]+\.js" \/>/);
     const png = /sliders\/[\w-]+-track\.png/.exec(gui)![0];
     const image = await get(s.port, `/assets/${png}`);
     assert.equal(image.headers.get('content-type'), 'image/png');
@@ -146,10 +198,13 @@ test('the whole build in one zip for the panel to keep, and 304 for the build it
     const etag = res.headers.get('etag')!;
     const files = readZip(Buffer.from(await res.arrayBuffer()));
     // the .gui and every file at the path it's served from (its case kept), the live script too
-    assert.match(files.get('Hello-iva.gui')!.toString('utf8'), /<imagefolder>assets<\/imagefolder>/);
+    const gui = files.get('Hello-iva.gui')!.toString('utf8');
+    assert.match(gui, /<imagefolder>assets<\/imagefolder>/);
     assert.ok([...files.keys()].some((n) => /^assets\/sliders\/[\w-]+-track\.png$/.test(n)));
     assert.match(files.get('assets/scripts/iva-joins.js')!.toString('utf8'), /var Joins/);
-    assert.match(files.get('iva-live.js')!.toString('utf8'), /__iva\/wait/);
+    // the live script by the name the .gui gives it, waiting on this build
+    const named = /<script name="(iva-live-[a-z0-9]+\.js)" \/>/.exec(gui)![1];
+    assert.match(files.get(named)!.toString('utf8'), new RegExp(`var version = ${etag};[\\s\\S]*__iva/wait`));
     // the same build again: not modified
     const again = { headers: { 'If-None-Match': etag } };
     assert.equal((await fetch(`http://127.0.0.1:${s.port}/__iva/gui.zip`, again)).status, 304);
@@ -185,8 +240,10 @@ export default (
     // as iva build --zip: the other size in its folder, its files beside it, the live script too
     const phone = files.get('1400w1400h/app.gui')!.toString('utf8');
     assert.match(phone, /<portrait width="467" height="467" \/>\s*<landscape width="467" height="467" \/>/);
-    assert.match(phone, /<script name="iva-live\.js" \/>/);
-    assert.match(files.get('1400w1400h/iva-live.js')!.toString('utf8'), /__iva\/wait/);
+    // its live script named after the build, as at / (the version of the build at /: the panel's If-None-Match)
+    const named = /<script name="(iva-live-[a-z0-9]+\.js)" \/>/.exec(phone)![1];
+    assert.equal(`"${named.slice('iva-live-'.length, -'.js'.length)}"`, res.headers.get('etag'));
+    assert.match(files.get(`1400w1400h/${named}`)!.toString('utf8'), /__iva\/wait/);
     assert.ok(files.has('1400w1400h/joins.json'));
     assert.ok([...files.keys()].some((n) => /^1400w1400h\/.+\/boxes\/[\w-]+\.png$/.test(n)), [...files.keys()].join('\n'));
     assert.ok(lines.some((l) => /built 1400x1400@3x for the panel's archive/.test(l)), lines.join('\n'));
@@ -260,7 +317,7 @@ test('serves a folder of GUIs: every file by its path, a page at / listing the G
     assert.equal(gui.headers.get('content-type'), 'text/xml');
     assert.match(gui.body, /<project>Echo system/);
     // no live script in a folder's GUIs (nothing is built here)
-    assert.doesNotMatch(gui.body, /iva-live\.js/);
+    assert.doesNotMatch(gui.body, /iva-live/);
     assert.equal((await get(s.port, '/home/assets/logo.png')).body, 'png home');
     // a .gui that isn't there is not there (a single .gui served answers any .gui name with itself)
     assert.equal((await get(s.port, '/nope.gui')).status, 404);
