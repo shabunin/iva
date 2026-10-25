@@ -129,6 +129,16 @@ with a square 1400x1400 screen (`<Project sizes={['1400x1400@3x']}>`):
   <img src="docs/images/gallery-phone-dials.webp" width="280" alt="Dials on a square phone screen, a tab per section">
 </p>
 
+[`examples/neomorph`](examples/neomorph) is another look built on iva's elements: a
+neumorphic kit whose soft shapes are drawn into images as the project builds, in
+a light and a dark look, for a tablet and two phones - iva/ui's pickers made soft
+too:
+
+<p align="center">
+  <img src="docs/images/neomorph-forms.webp" width="440" alt="neomorph's Forms in the light look: a sign-in card, a dropdown open over the pickers, a PIN pad">
+  <img src="docs/images/neomorph-dials-dark.webp" width="440" alt="neomorph's Dials in the dark look: a knob, a thermostat, four rings">
+</p>
+
 ## Getting started
 
 You need [Node.js](https://nodejs.org/) 22 or newer. GUI Designer is optional
@@ -407,6 +417,7 @@ templates/             iva create's templates (blank, demo) and the files every 
 docs/                  components, ui, web apps, drivers, CF API compatibility
 examples/hello/        a small JSX project
 examples/gallery/      every iva/ui component (and examples/elements: shapes, icons)
+examples/neomorph/     a neumorphic kit and gallery: soft shapes drawn at build time, two looks, three sizes
 examples/browse/       GUIs linking to one another
 examples/matter/       a Matter controller on the panel (iva/drivers/matter)
 examples/mqtt/         an MQTT broker's topics on a page (iva/drivers/mqtt)

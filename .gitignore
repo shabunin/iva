@@ -5,3 +5,4 @@ panel/src-tauri/target/
 panel/public/demo/
 panel/src-tauri/gen/schemas/
 examples/matter/.virtual-light/
+examples/neomorph/.neu/

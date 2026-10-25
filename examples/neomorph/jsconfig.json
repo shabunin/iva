@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "iva",
+    "allowJs": true,
+    "checkJs": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "target": "ES2022",
+    "lib": [
+      "ES2022"
+    ],
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "**/*.jsx",
+    "**/*.js",
+    "**/*.tsx",
+    "**/*.ts",
+    "iva.d.ts"
+  ],
+  "exclude": [
+    "dist",
+    "scripts",
+    "node_modules",
+    "web"
+  ]
+}
