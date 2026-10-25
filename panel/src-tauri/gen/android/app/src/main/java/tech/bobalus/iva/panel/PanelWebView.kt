@@ -11,6 +11,7 @@ import android.webkit.WebViewClient
 import androidx.annotation.RequiresApi
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import java.util.concurrent.Executors
 
 /**
  * What the panel changes of the web view wry makes - after wry has set it
@@ -21,6 +22,13 @@ import androidx.webkit.WebViewFeature
 object PanelWebView {
   /** the panel's own page (Tauri's origin on Android) */
   private val ORIGINS = setOf("http://tauri.localhost", "https://tauri.localhost")
+
+  /**
+   * Where the page's IPC messages go to Rust, one after another: not the main thread, where the
+   * listener hears them - a command may wait for the main thread (wry's interface ran on the web
+   * view's JavaBridge thread; on the main thread the panel hung at its first command).
+   */
+  private val ipcThread = Executors.newSingleThreadExecutor { Thread(it, "iva-ipc") }
 
   /**
    * Tauri's IPC for the panel's own page only. wry offers it to every frame
@@ -36,8 +44,10 @@ object PanelWebView {
     view.removeJavascriptInterface("ipc")
     WebViewCompat.addWebMessageListener(view, "ipc", ORIGINS) { _, message, origin, isMainFrame, _ ->
       val data = message.data
-      // (on the main thread: the page's own URL at hand)
-      if (isMainFrame && data != null) Rust.ipc(view.id, view.url ?: "$origin/", data)
+      if (!isMainFrame || data == null) return@addWebMessageListener
+      // (the page's own URL read here, on the main thread)
+      val url = view.url ?: "$origin/"
+      ipcThread.execute { Rust.ipc(view.id, url, data) }
     }
   }
 
