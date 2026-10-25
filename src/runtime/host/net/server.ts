@@ -2,21 +2,28 @@ import { EventEmitter, ITcpServer } from '../../stdlib/net';
 import { mapHostError } from '../../stdlib/errors';
 import { invoke } from '../bridge/tauri-core';
 import { listen, UnlistenFn } from '../bridge/tauri-event';
-import { TauriTcpSocket } from './socket';
+import { TauriTcpSocket, ensureGlobalSocketListener } from './socket';
 import type { NetEventPayload } from '../../stdlib/net';
+import { EarlyEvents } from './early';
 
 export const activeServers = new Map<string, TauriTcpServer>();
 
 let globalServerListenerPromise: Promise<UnlistenFn> | null = null;
+const early = new EarlyEvents();
 
-export function ensureGlobalServerListener() {
-    if (globalServerListenerPromise) return;
-    globalServerListenerPromise = listen<NetEventPayload>('plugin:net:tcpserver', (event) => {
+/** The page's one listener for TCP servers' events, as ensureGlobalSocketListener. */
+export function ensureGlobalServerListener(): Promise<UnlistenFn> {
+    return (globalServerListenerPromise ??= listen<NetEventPayload>('plugin:net:tcpserver', (event) => {
         const server = activeServers.get(event.payload.id);
         if (server) {
             server.handleServerEvent(event.payload);
+        } else {
+            early.keep(event.payload);
         }
-    });
+    }).catch((e) => {
+        globalServerListenerPromise = null;
+        throw e;
+    }));
 }
 
 interface TcpListenResult {
@@ -96,7 +103,9 @@ export class TauriTcpServer extends EventEmitter implements ITcpServer {
         }
 
         this.opening = true;
-        invoke<TcpListenResult>('tcp_listen', { host, port })
+        // (a client's first bytes too: the socket listener as well)
+        Promise.all([ensureGlobalServerListener(), ensureGlobalSocketListener()])
+            .then(() => invoke<TcpListenResult>('tcp_listen', { host, port }))
             .then(result => {
                 this.opening = false;
                 this.serverId = result.id;
@@ -105,16 +114,21 @@ export class TauriTcpServer extends EventEmitter implements ITcpServer {
                 this.localFamily = result.family;
 
                 activeServers.set(result.id, this);
-                ensureGlobalServerListener();
 
                 // closed while it opened (the GUI asleep and awake again in a moment): closed now -
                 // not left holding its port with no one to answer
                 if (this.isClosing) {
                     this.closeOnHost();
-                    return;
+                } else {
+                    this.listening = true;
+                    this.emit('listening');
                 }
-                this.listening = true;
-                this.emit('listening');
+                // connections made before its answer came in (a client quick to connect): told now -
+                // closing, let go of
+                for (const payload of early.take(result.id)) {
+                    if (this.serverId !== result.id) break;
+                    this.handleServerEvent(payload);
+                }
             })
             .catch((err) => {
                 this.opening = false;
@@ -181,6 +195,8 @@ export class TauriTcpServer extends EventEmitter implements ITcpServer {
                     });
 
                     this.emit('connection', socket);
+                    // what it sent before it was known, to the handlers 'connection' gave it
+                    socket.replayEarly();
                 }
                 break;
             case 'close':

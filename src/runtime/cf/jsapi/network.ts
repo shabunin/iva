@@ -336,6 +336,18 @@ export function stopPublishing(
     bonjourOf(ctx).stopPublishing(serviceType, serviceName, Number(port));
 }
 
+/**
+ * A port as a script gives it - a number, or a text field's or serial join's
+ * string - as the system has its own: a number (`least` up; a local port's
+ * -1 is any). One that isn't a port: none, the system's left as it was.
+ */
+function portOf(systemName: string, key: string, value: unknown, least: number): number | undefined {
+    const n = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
+    if (typeof n === 'number' && Number.isInteger(n) && n >= least && n <= 65535) return n;
+    console.warn(`CF.setSystemProperties: ${key} ${JSON.stringify(value)} for "${systemName}" is not a port.`);
+    return undefined;
+}
+
 export function setSystemProperties(
     ctx: CFContext,
     systemName: string,
@@ -344,14 +356,17 @@ export function setSystemProperties(
     const api = ctx as any;
     const sys = api.controlSystems?.[systemName];
     if (sys) {
+        const port = changes.port !== undefined ? portOf(systemName, 'port', changes.port, 0) : undefined;
+        const localPort = changes.localPort !== undefined ? portOf(systemName, 'localPort', changes.localPort, -1) : undefined;
         if (changes.address !== undefined) sys.address = changes.address;
-        if (changes.port !== undefined) sys.port = changes.port;
-        if (changes.localPort !== undefined) sys.localPort = changes.localPort;
+        if (port !== undefined) sys.port = port;
+        if (localPort !== undefined) sys.localPort = localPort;
         if (changes.connect !== undefined) sys.connectJoin = changes.connect;
         if (changes.disconnect !== undefined) sys.disconnectJoin = changes.disconnect;
 
+        // (a port that isn't one: the connection left as it is too)
         let needsRestart = false;
-        if (changes.address !== undefined || changes.port !== undefined || changes.localPort !== undefined) {
+        if (changes.address !== undefined || port !== undefined || localPort !== undefined) {
             needsRestart = true;
         }
 

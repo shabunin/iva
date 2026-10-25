@@ -1,4 +1,4 @@
-use super::NetState;
+use super::{Conn, NetState};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -40,7 +40,6 @@ pub enum TcpCommand {
     Write(Vec<u8>),
     /// Half-close the write side (Node `socket.end()`); keep reading.
     Shutdown,
-    Destroy,
     SetKeepAlive(bool, Option<u64>),
     SetNoDelay(bool),
 }
@@ -66,8 +65,8 @@ pub async fn tcp_connect<R: tauri::Runtime>(
     let id = Uuid::new_v4().to_string();
     let id_clone = id.clone();
     
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<TcpCommand>(32);
-    state.tcp_sockets.lock().await.insert(id.clone(), tx);
+    let (conn, mut rx, stop) = Conn::<TcpCommand>::new(32);
+    state.tcp_sockets.lock().await.insert(id.clone(), conn);
     
     let app_clone = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -106,7 +105,9 @@ pub async fn tcp_connect<R: tauri::Runtime>(
                 cmd = rx.recv() => {
                     match cmd {
                         Some(TcpCommand::Write(data)) => {
-                            if let Err(e) = stream.write_all(&data).await {
+                            // closed while its peer doesn't take it: let go of
+                            let Some(written) = super::unless_stopped(&stop, stream.write_all(&data)).await else { break };
+                            if let Err(e) = written {
                                 let _ = app_clone.emit("plugin:net:tcp", NetEventPayload {
                                     id: id_clone.clone(),
                                     event: "error".to_string(),
@@ -134,21 +135,13 @@ pub async fn tcp_connect<R: tauri::Runtime>(
                             });
                         }
                         Some(TcpCommand::SetKeepAlive(enable, delay)) => {
-                            let sock = socket2::SockRef::from(&stream);
-                            if enable {
-                                let mut ka = socket2::TcpKeepalive::new();
-                                if let Some(ms) = delay {
-                                    ka = ka.with_time(std::time::Duration::from_millis(ms));
-                                }
-                                let _ = sock.set_tcp_keepalive(&ka);
-                            } else {
-                                let _ = sock.set_keepalive(false);
-                            }
+                            let _ = super::keep_alive(socket2::SockRef::from(&stream), enable, delay);
                         }
                         Some(TcpCommand::SetNoDelay(no_delay)) => {
                             let _ = stream.set_nodelay(no_delay);
                         }
-                        Some(TcpCommand::Destroy) | None => {
+                        // closed (tcp_destroy, net_close_all): its sender gone
+                        None => {
                             let _ = stream.shutdown().await;
                             break;
                         }
@@ -157,6 +150,8 @@ pub async fn tcp_connect<R: tauri::Runtime>(
             }
         }
         
+        // a command still waiting to be taken fails now, not after the lock
+        drop(rx);
         if let Some(state_mutex) = app_clone.try_state::<NetState>() {
             state_mutex.tcp_sockets.lock().await.remove(&id_clone);
         }
@@ -178,8 +173,7 @@ pub async fn tcp_write(
     id: String,
     data: Vec<u8>,
 ) -> Result<(), String> {
-    let sockets = state.tcp_sockets.lock().await;
-    if let Some(tx) = sockets.get(&id) {
+    if let Some(tx) = super::sender(&state.tcp_sockets, &id).await {
         tx.send(TcpCommand::Write(data)).await.map_err(|e| e.to_string())?;
         Ok(())
     } else {
@@ -192,9 +186,9 @@ pub async fn tcp_destroy(
     state: State<'_, NetState>,
     id: String,
 ) -> Result<(), String> {
-    let mut sockets = state.tcp_sockets.lock().await;
-    if let Some(tx) = sockets.remove(&id) {
-        let _ = tx.send(TcpCommand::Destroy).await;
+    let conn = state.tcp_sockets.lock().await.remove(&id);
+    if let Some(conn) = conn {
+        conn.close();
         Ok(())
     } else {
         Err("Socket not found".to_string())
@@ -207,8 +201,7 @@ pub async fn tcp_shutdown(
     state: State<'_, NetState>,
     id: String,
 ) -> Result<(), String> {
-    let sockets = state.tcp_sockets.lock().await;
-    if let Some(tx) = sockets.get(&id) {
+    if let Some(tx) = super::sender(&state.tcp_sockets, &id).await {
         tx.send(TcpCommand::Shutdown)
             .await
             .map_err(|e| e.to_string())?;
@@ -251,9 +244,9 @@ pub async fn tcp_listen<R: tauri::Runtime>(
 
                             // Register the socket BEFORE announcing it: a JS 'connection'
                             // handler may synchronously write/destroy by client_id.
-                            let (client_tx, mut client_rx) = tokio::sync::mpsc::channel::<TcpCommand>(32);
+                            let (client_conn, mut client_rx, client_stop) = Conn::<TcpCommand>::new(32);
                             if let Some(state_mutex) = app_clone.try_state::<NetState>() {
-                                state_mutex.tcp_sockets.lock().await.insert(client_id.clone(), client_tx);
+                                state_mutex.tcp_sockets.lock().await.insert(client_id.clone(), client_conn);
                             }
 
                             let _ = app_clone.emit("plugin:net:tcpserver", NetEventPayload {
@@ -308,7 +301,8 @@ pub async fn tcp_listen<R: tauri::Runtime>(
                                         cmd = client_rx.recv() => {
                                             match cmd {
                                                 Some(TcpCommand::Write(data)) => {
-                                                    if let Err(e) = stream.write_all(&data).await {
+                                                    let Some(written) = super::unless_stopped(&client_stop, stream.write_all(&data)).await else { break };
+                                                    if let Err(e) = written {
                                                         let _ = app_clone_inner.emit("plugin:net:tcp", NetEventPayload {
                                                             id: client_id_clone.clone(),
                                                             event: "error".to_string(),
@@ -335,21 +329,12 @@ pub async fn tcp_listen<R: tauri::Runtime>(
                                                     });
                                                 }
                                                 Some(TcpCommand::SetKeepAlive(enable, delay)) => {
-                                                    let sock = socket2::SockRef::from(&stream);
-                                                    if enable {
-                                                        let mut ka = socket2::TcpKeepalive::new();
-                                                        if let Some(ms) = delay {
-                                                            ka = ka.with_time(std::time::Duration::from_millis(ms));
-                                                        }
-                                                        let _ = sock.set_tcp_keepalive(&ka);
-                                                    } else {
-                                                        let _ = sock.set_keepalive(false);
-                                                    }
+                                                    let _ = super::keep_alive(socket2::SockRef::from(&stream), enable, delay);
                                                 }
                                                 Some(TcpCommand::SetNoDelay(no_delay)) => {
                                                     let _ = stream.set_nodelay(no_delay);
                                                 }
-                                                Some(TcpCommand::Destroy) | None => {
+                                                None => {
                                                     let _ = stream.shutdown().await;
                                                     break;
                                                 }
@@ -357,6 +342,7 @@ pub async fn tcp_listen<R: tauri::Runtime>(
                                         }
                                     }
                                 }
+                                drop(client_rx);
                                 if let Some(state_mutex) = app_clone_inner.try_state::<NetState>() {
                                     state_mutex.tcp_sockets.lock().await.remove(&client_id_clone);
                                 }
@@ -407,8 +393,8 @@ pub async fn tcp_server_close(
     state: State<'_, NetState>,
     id: String,
 ) -> Result<(), String> {
-    let mut servers = state.tcp_servers.lock().await;
-    if let Some(tx) = servers.remove(&id) {
+    let tx = state.tcp_servers.lock().await.remove(&id);
+    if let Some(tx) = tx {
         let _ = tx.send(TcpServerCommand::Close).await;
         Ok(())
     } else {
@@ -423,8 +409,7 @@ pub async fn tcp_set_keep_alive(
     enable: bool,
     delay: Option<u64>,
 ) -> Result<(), String> {
-    let sockets = state.tcp_sockets.lock().await;
-    if let Some(tx) = sockets.get(&id) {
+    if let Some(tx) = super::sender(&state.tcp_sockets, &id).await {
         tx.send(TcpCommand::SetKeepAlive(enable, delay)).await.map_err(|e| e.to_string())?;
         Ok(())
     } else {
@@ -438,8 +423,7 @@ pub async fn tcp_set_no_delay(
     id: String,
     no_delay: bool,
 ) -> Result<(), String> {
-    let sockets = state.tcp_sockets.lock().await;
-    if let Some(tx) = sockets.get(&id) {
+    if let Some(tx) = super::sender(&state.tcp_sockets, &id).await {
         tx.send(TcpCommand::SetNoDelay(no_delay)).await.map_err(|e| e.to_string())?;
         Ok(())
     } else {

@@ -28,6 +28,7 @@ pub fn run() {
             plugins::net::tls::tls_write,
             plugins::net::tls::tls_shutdown,
             plugins::net::tls::tls_destroy,
+            plugins::net::tls::tls_set_keep_alive,
             plugins::net::udp::udp_bind,
             plugins::net::udp::udp_send,
             plugins::net::udp::udp_close,

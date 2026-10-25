@@ -4,19 +4,32 @@ import { mapHostError } from '../../stdlib/errors';
 import { invoke } from '../bridge/tauri-core';
 import { listen, UnlistenFn } from '../bridge/tauri-event';
 import type { NetEventPayload } from '../../stdlib/net';
+import { EarlyEvents } from './early';
 
 export const activeSockets = new Map<string, TauriTcpSocket>();
 
 let globalSocketListenerPromise: Promise<UnlistenFn> | null = null;
+const early = new EarlyEvents();
 
-export function ensureGlobalSocketListener() {
-    if (globalSocketListenerPromise) return;
-    globalSocketListenerPromise = listen<NetEventPayload>('plugin:net:tcp', (event) => {
+/**
+ * The page's one listener for TCP sockets' events, there (awaited) before a
+ * connect or a listen is asked for: the host tells of a connection only to
+ * listeners it has by then. An event for a socket not known yet - its
+ * connect's answer still on its way - is kept for it. Not had (its listen
+ * refused): the next connect or listen asks again.
+ */
+export function ensureGlobalSocketListener(): Promise<UnlistenFn> {
+    return (globalSocketListenerPromise ??= listen<NetEventPayload>('plugin:net:tcp', (event) => {
         const socket = activeSockets.get(event.payload.id);
         if (socket) {
             socket.handleNetEvent(event.payload);
+        } else {
+            early.keep(event.payload);
         }
-    });
+    }).catch((e) => {
+        globalSocketListenerPromise = null;
+        throw e;
+    }));
 }
 
 interface TcpConnectResult {
@@ -63,12 +76,22 @@ export class TauriTcpSocket extends EventEmitter implements ITcpSocket {
             this.socketId = existingId;
             this.readyState = 'open';
             activeSockets.set(existingId, this);
-            ensureGlobalSocketListener();
+            void ensureGlobalSocketListener();
         }
     }
 
     get pending(): boolean {
         return this.connecting;
+    }
+
+    /** @internal what the host told of it before the page knew it (a banner on connect): told now */
+    public replayEarly() {
+        const id = this.socketId;
+        if (!id) return;
+        for (const payload of early.take(id)) {
+            if (this.socketId !== id) return;
+            this.handleNetEvent(payload);
+        }
     }
 
     /** @internal */
@@ -170,7 +193,8 @@ export class TauriTcpSocket extends EventEmitter implements ITcpSocket {
             this.once('connect', listener);
         }
 
-        invoke<TcpConnectResult>('tcp_connect', { host, port })
+        ensureGlobalSocketListener()
+            .then(() => invoke<TcpConnectResult>('tcp_connect', { host, port }))
             .then((result) => {
                 // given up while it connected (destroy() said close already): the connection goes too
                 if (this.destroyed) {
@@ -189,7 +213,6 @@ export class TauriTcpSocket extends EventEmitter implements ITcpSocket {
                 this.readyState = 'open';
 
                 activeSockets.set(result.id, this);
-                ensureGlobalSocketListener();
 
                 if (keepAlive) {
                     this.setKeepAlive(true, keepAliveDelay);
@@ -202,6 +225,7 @@ export class TauriTcpSocket extends EventEmitter implements ITcpSocket {
 
                 this.emit('connect');
                 this.emit('ready');
+                this.replayEarly();
             })
             .catch((err) => {
                 this.connecting = false;

@@ -186,6 +186,7 @@ export class HostSession {
     tls_write: ({ id, data }: Args) => this.write(this.tlsSockets as Map<string, net.Socket>, id, data),
     tls_shutdown: ({ id }: Args) => { this.get(this.tlsSockets as Map<string, net.Socket>, id).end(); return null; },
     tls_destroy: ({ id }: Args) => { this.tlsSockets.get(id)?.destroy(); return null; },
+    tls_set_keep_alive: ({ id, enable, delay }: Args) => { this.get(this.tlsSockets, id).setKeepAlive(!!enable, delay ?? 0); return null; },
 
     // ── UDP ────────────────────────────────────────────────────────
 

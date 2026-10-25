@@ -5,17 +5,23 @@ import type { TlsConnectOptions } from '../../stdlib/host';
 import { invoke } from '../bridge/tauri-core';
 import { listen, UnlistenFn } from '../bridge/tauri-event';
 import type { NetEventPayload } from '../../stdlib/net';
+import { EarlyEvents } from '../net/early';
 
 export const activeTlsSockets = new Map<string, TauriTlsSocket>();
 
 let globalTlsListenerPromise: Promise<UnlistenFn> | null = null;
+const early = new EarlyEvents();
 
-function ensureGlobalTlsListener() {
-  if (globalTlsListenerPromise) return;
-  globalTlsListenerPromise = listen<NetEventPayload>('plugin:net:tls', (event) => {
+/** The page's one listener for TLS sockets' events, as net/socket's ensureGlobalSocketListener. */
+function ensureGlobalTlsListener(): Promise<UnlistenFn> {
+  return (globalTlsListenerPromise ??= listen<NetEventPayload>('plugin:net:tls', (event) => {
     const socket = activeTlsSockets.get(event.payload.id);
     if (socket) socket.handleNetEvent(event.payload);
-  });
+    else early.keep(event.payload);
+  }).catch((e) => {
+    globalTlsListenerPromise = null;
+    throw e;
+  }));
 }
 
 interface TlsConnectResult {
@@ -73,13 +79,16 @@ export class TauriTlsSocket extends EventEmitter implements ITcpSocket {
     this.remoteAddress = host;
     this.remotePort = port;
 
-    invoke<TlsConnectResult>('tls_connect', {
-      host,
-      port,
-      serverName,
-      rejectUnauthorized,
-      alpn: alpn ?? null,
-    })
+    ensureGlobalTlsListener()
+      .then(() =>
+        invoke<TlsConnectResult>('tls_connect', {
+          host,
+          port,
+          serverName,
+          rejectUnauthorized,
+          alpn: alpn ?? null,
+        })
+      )
       .then((result) => {
         // given up while it connected (destroy() said close already): the connection goes too
         if (this.destroyed) {
@@ -100,12 +109,17 @@ export class TauriTlsSocket extends EventEmitter implements ITcpSocket {
         this.readyState = 'open';
 
         activeTlsSockets.set(result.id, this);
-        ensureGlobalTlsListener();
         this.resetTimeoutTimer();
 
         this.emit('connect');
         this.emit('secureConnect');
         this.emit('ready');
+        // what the host told before its answer (a banner on connect): told now
+        const id = result.id;
+        for (const payload of early.take(id)) {
+          if (this.socketId !== id) break;
+          this.handleNetEvent(payload);
+        }
       })
       .catch((err) => {
         this.connecting = false;
@@ -259,7 +273,13 @@ export class TauriTlsSocket extends EventEmitter implements ITcpSocket {
     return this.destroy();
   }
 
-  setKeepAlive(_enable?: boolean, _initialDelay?: number): this {
+  setKeepAlive(enable: boolean = false, initialDelay: number = 0): this {
+    if (this.destroyed || !this.socketId) return this;
+    invoke('tls_set_keep_alive', {
+      id: this.socketId,
+      enable,
+      delay: initialDelay > 0 ? initialDelay : null,
+    }).catch((err) => this.emit('error', mapHostError(err, { syscall: 'setsockopt' })));
     return this;
   }
 

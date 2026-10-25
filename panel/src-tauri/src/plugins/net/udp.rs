@@ -1,4 +1,4 @@
-use super::{tcp::NetEventPayload, NetState};
+use super::{tcp::NetEventPayload, Conn, NetState};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::net::UdpSocket;
@@ -36,7 +36,6 @@ fn emit_udp_err<R: tauri::Runtime>(app: &AppHandle<R>, id: &str, e: impl ToStrin
 
 pub enum UdpCommand {
     Send(Vec<u8>, Option<String>, Option<u16>),
-    Close,
     AddMembership(String, Option<String>),
     DropMembership(String, Option<String>),
     SetBroadcast(bool),
@@ -66,7 +65,7 @@ pub async fn udp_bind<R: tauri::Runtime>(
     let id = Uuid::new_v4().to_string();
     let id_clone = id.clone();
     
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<UdpCommand>(32);
+    let (conn, mut rx, stop) = Conn::<UdpCommand>::new(32);
     
     let h = host.unwrap_or_else(|| "0.0.0.0".to_string());
     let p = port.unwrap_or(0);
@@ -118,7 +117,7 @@ pub async fn udp_bind<R: tauri::Runtime>(
         std::net::SocketAddr::V6(_) => "IPv6".to_string(),
     };
     
-    state.udp_sockets.lock().await.insert(id.clone(), tx);
+    state.udp_sockets.lock().await.insert(id.clone(), conn);
     
     tauri::async_runtime::spawn(async move {
         let socket = Arc::new(tokio_socket);
@@ -186,7 +185,9 @@ pub async fn udp_bind<R: tauri::Runtime>(
                             
                             if let Some(addr_str) = dest_addr {
                                 let socket_write = Arc::clone(&socket);
-                                if let Err(e) = socket_write.send_to(&data, &addr_str).await {
+                                // closed while it waits (a host name looked up first: seconds, its DNS down): let go of
+                                let Some(sent) = super::unless_stopped(&stop, socket_write.send_to(&data, &addr_str)).await else { break };
+                                if let Err(e) = sent {
                                     let _ = app.emit("plugin:net:udp", NetEventPayload {
                                         id: id_clone.clone(),
                                         event: "error".to_string(),
@@ -368,7 +369,8 @@ pub async fn udp_bind<R: tauri::Runtime>(
                             };
                             let _ = resp_tx.send(res);
                         }
-                        Some(UdpCommand::Close) | None => {
+                        // closed (udp_close, net_close_all): its sender gone
+                        None => {
                             break;
                         }
                     }
@@ -382,6 +384,8 @@ pub async fn udp_bind<R: tauri::Runtime>(
             ..Default::default()
         });
 
+        // a command still waiting to be taken fails now, not after the lock
+        drop(rx);
         if let Some(state_mutex) = app.try_state::<NetState>() {
             state_mutex.udp_sockets.lock().await.remove(&id_clone);
         }
@@ -403,8 +407,7 @@ pub async fn udp_send(
     host: Option<String>,
     port: Option<u16>,
 ) -> Result<(), String> {
-    let sockets = state.udp_sockets.lock().await;
-    if let Some(tx) = sockets.get(&id) {
+    if let Some(tx) = super::sender(&state.udp_sockets, &id).await {
         tx.send(UdpCommand::Send(data, host, port)).await.map_err(|e| e.to_string())?;
         Ok(())
     } else {
@@ -417,9 +420,9 @@ pub async fn udp_close(
     state: State<'_, NetState>,
     id: String,
 ) -> Result<(), String> {
-    let mut sockets = state.udp_sockets.lock().await;
-    if let Some(tx) = sockets.remove(&id) {
-        let _ = tx.send(UdpCommand::Close).await;
+    let conn = state.udp_sockets.lock().await.remove(&id);
+    if let Some(conn) = conn {
+        conn.close();
         Ok(())
     } else {
         Err("Socket not found".to_string())
@@ -433,8 +436,7 @@ pub async fn udp_connect(
     host: String,
     port: u16,
 ) -> Result<(), String> {
-    let sockets = state.udp_sockets.lock().await;
-    if let Some(tx) = sockets.get(&id) {
+    if let Some(tx) = super::sender(&state.udp_sockets, &id).await {
         let (resp_tx, resp_rx) = tokio::sync::oneshot::channel();
         tx.send(UdpCommand::Connect(host, port, resp_tx)).await.map_err(|e| e.to_string())?;
         resp_rx.await.map_err(|e| e.to_string())?
@@ -448,8 +450,7 @@ pub async fn udp_disconnect(
     state: State<'_, NetState>,
     id: String,
 ) -> Result<(), String> {
-    let sockets = state.udp_sockets.lock().await;
-    if let Some(tx) = sockets.get(&id) {
+    if let Some(tx) = super::sender(&state.udp_sockets, &id).await {
         let (resp_tx, resp_rx) = tokio::sync::oneshot::channel();
         tx.send(UdpCommand::Disconnect(resp_tx)).await.map_err(|e| e.to_string())?;
         resp_rx.await.map_err(|e| e.to_string())?
@@ -465,8 +466,7 @@ pub async fn udp_add_membership(
     multicast_address: String,
     multicast_interface: Option<String>,
 ) -> Result<(), String> {
-    let sockets = state.udp_sockets.lock().await;
-    if let Some(tx) = sockets.get(&id) {
+    if let Some(tx) = super::sender(&state.udp_sockets, &id).await {
         let _ = tx.send(UdpCommand::AddMembership(multicast_address, multicast_interface)).await;
         Ok(())
     } else {
@@ -481,8 +481,7 @@ pub async fn udp_drop_membership(
     multicast_address: String,
     multicast_interface: Option<String>,
 ) -> Result<(), String> {
-    let sockets = state.udp_sockets.lock().await;
-    if let Some(tx) = sockets.get(&id) {
+    if let Some(tx) = super::sender(&state.udp_sockets, &id).await {
         let _ = tx.send(UdpCommand::DropMembership(multicast_address, multicast_interface)).await;
         Ok(())
     } else {
@@ -496,8 +495,7 @@ pub async fn udp_set_broadcast(
     id: String,
     flag: bool,
 ) -> Result<(), String> {
-    let sockets = state.udp_sockets.lock().await;
-    if let Some(tx) = sockets.get(&id) {
+    if let Some(tx) = super::sender(&state.udp_sockets, &id).await {
         let _ = tx.send(UdpCommand::SetBroadcast(flag)).await;
         Ok(())
     } else {
@@ -511,8 +509,7 @@ pub async fn udp_set_ttl(
     id: String,
     ttl: u32,
 ) -> Result<(), String> {
-    let sockets = state.udp_sockets.lock().await;
-    if let Some(tx) = sockets.get(&id) {
+    if let Some(tx) = super::sender(&state.udp_sockets, &id).await {
         tx.send(UdpCommand::SetTtl(ttl)).await.map_err(|e| e.to_string())?;
         Ok(())
     } else {
@@ -526,8 +523,7 @@ pub async fn udp_set_multicast_ttl(
     id: String,
     ttl: u32,
 ) -> Result<(), String> {
-    let sockets = state.udp_sockets.lock().await;
-    if let Some(tx) = sockets.get(&id) {
+    if let Some(tx) = super::sender(&state.udp_sockets, &id).await {
         tx.send(UdpCommand::SetMulticastTtl(ttl)).await.map_err(|e| e.to_string())?;
         Ok(())
     } else {
@@ -541,8 +537,7 @@ pub async fn udp_set_multicast_loopback(
     id: String,
     flag: bool,
 ) -> Result<(), String> {
-    let sockets = state.udp_sockets.lock().await;
-    if let Some(tx) = sockets.get(&id) {
+    if let Some(tx) = super::sender(&state.udp_sockets, &id).await {
         tx.send(UdpCommand::SetMulticastLoopback(flag)).await.map_err(|e| e.to_string())?;
         Ok(())
     } else {
@@ -556,8 +551,7 @@ pub async fn udp_set_recv_buffer_size(
     id: String,
     size: usize,
 ) -> Result<(), String> {
-    let sockets = state.udp_sockets.lock().await;
-    if let Some(tx) = sockets.get(&id) {
+    if let Some(tx) = super::sender(&state.udp_sockets, &id).await {
         tx.send(UdpCommand::SetRecvBufferSize(size)).await.map_err(|e| e.to_string())?;
         Ok(())
     } else {
@@ -571,8 +565,7 @@ pub async fn udp_set_send_buffer_size(
     id: String,
     size: usize,
 ) -> Result<(), String> {
-    let sockets = state.udp_sockets.lock().await;
-    if let Some(tx) = sockets.get(&id) {
+    if let Some(tx) = super::sender(&state.udp_sockets, &id).await {
         tx.send(UdpCommand::SetSendBufferSize(size)).await.map_err(|e| e.to_string())?;
         Ok(())
     } else {
@@ -585,8 +578,7 @@ pub async fn udp_get_recv_buffer_size(
     state: State<'_, NetState>,
     id: String,
 ) -> Result<usize, String> {
-    let sockets = state.udp_sockets.lock().await;
-    if let Some(tx) = sockets.get(&id) {
+    if let Some(tx) = super::sender(&state.udp_sockets, &id).await {
         let (resp_tx, resp_rx) = tokio::sync::oneshot::channel();
         tx.send(UdpCommand::GetRecvBufferSize(resp_tx)).await.map_err(|e| e.to_string())?;
         resp_rx.await.map_err(|e| e.to_string())?
@@ -600,8 +592,7 @@ pub async fn udp_get_send_buffer_size(
     state: State<'_, NetState>,
     id: String,
 ) -> Result<usize, String> {
-    let sockets = state.udp_sockets.lock().await;
-    if let Some(tx) = sockets.get(&id) {
+    if let Some(tx) = super::sender(&state.udp_sockets, &id).await {
         let (resp_tx, resp_rx) = tokio::sync::oneshot::channel();
         tx.send(UdpCommand::GetSendBufferSize(resp_tx)).await.map_err(|e| e.to_string())?;
         resp_rx.await.map_err(|e| e.to_string())?
