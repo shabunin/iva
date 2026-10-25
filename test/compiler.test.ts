@@ -671,9 +671,10 @@ test("writeBuild empties its folder first, so it refuses one the project's own f
   // an empty (or new) folder; then the same one again - a previous build (its .gui and joins.json): emptied and written anew
   const out = path.join(dir, 'proj', 'dist');
   writeBuild(r, out);
-  fs.writeFileSync(path.join(out, 'stale.png'), '');
+  fs.mkdirSync(path.join(out, 'assets'), { recursive: true });
+  fs.writeFileSync(path.join(out, 'assets', 'stale.png'), '');
   writeBuild(r, out);
-  assert.ok(!fs.existsSync(path.join(out, 'stale.png')));
+  assert.ok(!fs.existsSync(path.join(out, 'assets', 'stale.png')));
   assert.ok(fs.existsSync(path.join(out, 'T.gui')));
   // several sizes: the others' folders inside the build's are fresh
   const sized = await compile(path.join(dir, 'proj', 'app.jsx'), { size: '800x600' });

@@ -11,7 +11,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { compile, IvaError } from '../compiler/index.js';
+import { compile, IvaError, leavesFolder } from '../compiler/index.js';
 import { compareTrees } from './compare.js';
 import { parseXml, serialize, type XNode } from '../compiler/xml.js';
 import { Code, fileName, identifier, j, print, type JNode, type PropValue } from './jsx.js';
@@ -25,6 +25,9 @@ export interface DecompileResult {
   raw: Record<string, number>;
   warnings: string[];
 }
+
+/** A file name from the .gui as a path in the project: as given, or just its file name if it leads out of its folder (../, absolute). */
+const local = (name: string) => (leavesFolder(name) ? path.posix.basename(name.replace(/\\/g, '/')) : name);
 
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|svg|bmp)$/i;
 const SOUND_RE = /\.(mp3|wav|aac|m4a|caf|aiff?)$/i;
@@ -633,7 +636,7 @@ class Decompiler {
   sound(n: XNode): JNode {
     const a = new Attrs(n);
     return this.reg(n, j('Sound', [
-      ['name', a.str('name')], ['src', `./assets/${n.text?.trim() ?? ''}`], ['join', a.join('j')], ['loop', a.flag('loop')], ['releaseStop', a.flag('releasestop')],
+      ['name', a.str('name')], ['src', `./assets/${local(n.text?.trim() ?? '')}`], ['join', a.join('j')], ['loop', a.flag('loop')], ['releaseStop', a.flag('releasestop')],
       ...this.xml(a, n),
     ]), false);
   }
@@ -751,7 +754,7 @@ export async function decompile(guiPath: string, outDir: string): Promise<Decomp
     const rel = (f: string) => path.relative(srcDir, f).split(path.sep).join('/').toLowerCase();
     const found = files.find((f) => rel(f) === want) ?? files.find((f) => path.basename(f).toLowerCase() === leaf);
     if (found) {
-      const dest = path.join('scripts', name.replace(/\\/g, '/'));
+      const dest = path.join('scripts', local(name.replace(/\\/g, '/')));
       write(dest, fs.readFileSync(found));
       inline.push(j('Script', [['src', `./${dest.split(path.sep).join('/')}`], ['name', path.basename(name) === name ? undefined : name]]));
     } else {
