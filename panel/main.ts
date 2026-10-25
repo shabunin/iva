@@ -23,7 +23,7 @@ import { createIvaHost } from '../src/runtime/host';
 import { closeHostSockets } from '../src/runtime/host/net/provider';
 import { installFonts } from '../src/preview/fonts';
 import { formatLocation, History, isGuiUrl, parseLocation, type GuiLocation } from '../src/runtime/location';
-import { PARSED_STAMP, type KeptParse, appArchive, fetchGui, folderManifest, guiUrl, manifestOf, newerVersion, ownFile, savedManifest, toSave, unpackPlan, useArchives, useTurn, zipped, type Download, type Fetched, type Manifest } from './loader';
+import { PARSED_STAMP, type KeptParse, appArchive, asTheAppKeeps, fetchGui, folderManifest, guiUrl, manifestOf, newerInApp, newerVersion, ownFile, savedManifest, toSave, unpackPlan, useArchives, useTurn, zipped, type AppKept, type Download, type Fetched, type Manifest } from './loader';
 import { forgetAllGuis, forgetGui, keptGui, keptGuis, saveGui, savedGui, usedGui, type Kept, type SavedGui } from './store';
 import { androidDevice } from './device';
 
@@ -523,6 +523,28 @@ async function savedCopy(url: string): Promise<SavedGui | undefined> {
   return undefined;
 }
 
+/**
+ * The copy noted of a GUI made the one the app keeps, if that's a newer one
+ * (newerInApp: a download that went on past the page before, which never
+ * heard how it ended) - run, and asked about, by its version from now on. It,
+ * if it was; none, the copy noted is the app's.
+ */
+async function followApp(url: string): Promise<SavedGui | undefined> {
+  if (!native || ownFile(url)) return undefined;
+  for (const u of spellings(url)) {
+    const k = await keptGui(u).catch(() => undefined);
+    if (!k) continue;
+    const app = await newerInApp(u, k.savedAt);
+    const s = app && (await savedGui(u).catch(() => undefined));
+    if (!app || !s) return undefined;
+    const now = asTheAppKeeps(s, app);
+    await keepCopy(now).catch((e) => noteError(`keeping ${u} on the device: ${message(e)}`));
+    mark(`the app's copy, newer than the one noted: ${new Date(app.savedAt).toLocaleString()}`);
+    return now;
+  }
+  return undefined;
+}
+
 // ── the files unpacked: a start doesn't unzip what one before did ──────
 
 /** a start's stages, timed from the page's start (in the log; a slow phone's start told apart) */
@@ -569,6 +591,7 @@ const native = isTauri();
 if (native) {
   useArchives({
     fetch: (id, url, known) => invoke<Fetched>('gui_fetch', { args: { id, url, ...known } }),
+    kept: (id) => invoke<AppKept | null>('gui_kept', { id }),
     names: (id, savedAt) => invoke<string[]>('gui_archive', { id, savedAt }),
     text: (id, savedAt, name) => invoke<string>('gui_archive_text', { id, savedAt, name }),
   });
@@ -783,6 +806,8 @@ async function start() {
   // the app's own files: from the app, always (a copy kept by an older version of it: let go)
   if (ownFile(url)) void forgetGui(url).catch(() => {});
   loadingTitle(url === DEMO ? 'The demo' : url.replace(/^[a-z]+:\/\//i, ''));
+  // the app keeps a newer copy than the one noted (its download went on past the page before): that one
+  await followApp(url);
   // its files unpacked by the app from this version, a start before: nothing to read or unzip, its images in sheets
   const key = fresh ? undefined : await unpackKey(url);
   const folder = key ? await unpackedFolder(url, key) : null;
@@ -844,11 +869,13 @@ async function start() {
     // the link lost scripts the server has: a whole copy kept runs instead (a GUI short of its start script runs nothing)
     if (live.m.missingScripts.length && saved) {
       try {
-        const m = await fromCopy(url, saved);
+        // (the app's, should a download that went on have replaced it meanwhile)
+        const copy = (await followApp(url)) ?? saved;
+        const m = await fromCopy(url, copy);
         if (!m.missingScripts.length) {
           await show(m);
-          kept = saved;
-          notice(`the server's copy came short of ${live.m.missingScripts.length} script(s) - the copy kept on ${new Date(saved.savedAt).toLocaleString()} runs (Ctrl+R: again from the server)`);
+          kept = copy;
+          notice(`the server's copy came short of ${live.m.missingScripts.length} script(s) - the copy kept on ${new Date(copy.savedAt).toLocaleString()} runs (Ctrl+R: again from the server)`);
           return;
         }
       } catch (e) {
@@ -865,9 +892,11 @@ async function start() {
     // the server's asked for and not there: the copy kept
     if (saved && !current) {
       try {
-        await show(await fromCopy(url, saved));
-        kept = saved;
-        notice(`${why} - the copy kept on ${new Date(saved.savedAt).toLocaleString()} runs`);
+        // (the app's, should a download that went on have replaced it meanwhile)
+        const copy = (await followApp(url)) ?? saved;
+        await show(await fromCopy(url, copy));
+        kept = copy;
+        notice(`${why} - the copy kept on ${new Date(copy.savedAt).toLocaleString()} runs`);
         return;
       } catch (e2) {
         noteError(`the copy kept of ${url}: ${message(e2)}`);
@@ -936,13 +965,18 @@ async function keep(got: Download, m?: Manifest) {
 let checking = false;
 let checkedAt = 0;
 async function checkServer() {
-  if (!kept || checking) return;
+  const was = kept;
+  if (!was || checking) return;
   checking = true;
   checkedAt = Date.now();
   try {
-    const newer = await newerVersion(kept);
+    const newer = await newerVersion(was);
     if (!newer) return;
     await keepCopy(newer);
+    kept = newer;
+    // the archive that came the one the app keeps, running now (a copy picked up from the app: only its .gui's
+    // ETag new): nothing to reload
+    if (newer.appZip && was.appZip && newer.savedAt === was.savedAt) return;
     const page = current?.renderer.currentPageName;
     if (page) sessionStorage.setItem(PAGE, page);
     await letGo();

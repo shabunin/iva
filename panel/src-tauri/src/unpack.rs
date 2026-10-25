@@ -21,7 +21,7 @@ use std::fs::{self, File};
 use std::io::{Cursor, Read, Seek, SeekFrom};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
@@ -35,10 +35,25 @@ use crate::atlas;
 pub struct Guis {
     uploads: Mutex<HashMap<u32, Vec<u8>>>,
     next: AtomicU32,
-    /// the version folders being unpacked or packed now, the GUIs' archives being downloaded
+    /// the version folders being unpacked or packed now
     busy: Mutex<HashSet<PathBuf>>,
+    /// each GUI's downloads (its kept.zip.part), one at a time
+    downloads: Mutex<HashMap<PathBuf, Arc<tokio::sync::Mutex<()>>>>,
     /// what downloads the archives (made once)
     client: OnceLock<reqwest::Client>,
+}
+
+impl Guis {
+    /**
+     * A GUI's download (into its part file) to itself, once the one going is
+     * done. A download goes on when the page that asked for it reloads (iva
+     * serve's live reload, mid-check for a newer version), and the page after
+     * asks for the GUI again meanwhile: it waits for it, then has its own.
+     */
+    async fn downloading(&self, part: &Path) -> tokio::sync::OwnedMutexGuard<()> {
+        let one = self.downloads.lock().unwrap().entry(part.to_path_buf()).or_default().clone();
+        one.lock_owned().await
+    }
 }
 
 /// What the page asks to unpack (and what's unpacked: meta.json).
@@ -281,7 +296,7 @@ pub struct FetchArgs {
 /// when it came, how large.
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
-struct Kept {
+pub struct Kept {
     id: String,
     url: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -497,33 +512,35 @@ fn kept_zip<R: Runtime>(app: &AppHandle<R>, id: &str, saved_at: u64) -> Result<P
  */
 #[tauri::command]
 pub async fn gui_fetch<R: Runtime>(app: AppHandle<R>, args: FetchArgs) -> Result<Fetched, String> {
-    let parsed = reqwest::Url::parse(&args.url).map_err(|e| format!("{}: {e}", args.url))?;
-    if !matches!(parsed.scheme(), "http" | "https") {
-        return Err(format!("{}: not an http:// or https:// address", args.url));
-    }
     let gui = root(&app)?.join(hash(&args.id));
-    fs::create_dir_all(&gui).map_err(|e| e.to_string())?;
-    let part = gui.join("kept.zip.part");
-    let _busy = Busy::take(&app, &part).ok_or("being downloaded already")?;
-    let client = {
-        let state = app.state::<Guis>();
-        match state.client.get() {
-            Some(c) => c.clone(),
-            None => {
-                let c = reqwest::Client::builder()
-                    .connect_timeout(Duration::from_secs(15))
-                    .read_timeout(Duration::from_secs(30))
-                    .build()
-                    .map_err(|e| why(&e))?;
-                state.client.get_or_init(|| c).clone()
-            }
-        }
-    };
     let (to, id) = (app.clone(), args.id.clone());
     let mut progress = move |done, total| {
         let _ = to.emit("iva-gui-download", Downloading { id: id.clone(), done, total });
     };
-    let d = match download(&client, &args, &part, &mut progress).await {
+    fetch_into(app.state::<Guis>().inner(), gui, args, &mut progress).await
+}
+
+/// gui_fetch's work: into the GUI's folder (`gui`), `progress` the bytes so far, of how many.
+async fn fetch_into(guis: &Guis, gui: PathBuf, args: FetchArgs, progress: &mut (impl FnMut(u64, Option<u64>) + Send)) -> Result<Fetched, String> {
+    let parsed = reqwest::Url::parse(&args.url).map_err(|e| format!("{}: {e}", args.url))?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err(format!("{}: not an http:// or https:// address", args.url));
+    }
+    fs::create_dir_all(&gui).map_err(|e| e.to_string())?;
+    let part = gui.join("kept.zip.part");
+    let _downloading = guis.downloading(&part).await;
+    let client = match guis.client.get() {
+        Some(c) => c.clone(),
+        None => {
+            let c = reqwest::Client::builder()
+                .connect_timeout(Duration::from_secs(15))
+                .read_timeout(Duration::from_secs(30))
+                .build()
+                .map_err(|e| why(&e))?;
+            guis.client.get_or_init(|| c).clone()
+        }
+    };
+    let d = match download(&client, &args, &part, progress).await {
         Ok(d) => d,
         Err(e) => {
             let _ = fs::remove_file(&part);
@@ -551,6 +568,16 @@ pub async fn gui_fetch<R: Runtime>(app: AppHandle<R>, args: FetchArgs) -> Result
         }
     }
     Ok(out)
+}
+
+/**
+ * The GUI's copy as the app keeps it now (kept.json: when it came, how large,
+ * its ETag) - perhaps another than the page knows: a download goes on past
+ * the page that asked for it, which never hears how it ended.
+ */
+#[tauri::command]
+pub async fn gui_kept<R: Runtime>(app: AppHandle<R>, id: String) -> Result<Option<Kept>, String> {
+    Ok(kept_in(&root(&app)?.join(hash(&id))).filter(|k| k.id == id))
 }
 
 /// The names in a GUI's copy (gui_fetch's zip), that copy (when it came).
@@ -938,6 +965,61 @@ mod tests {
         assert!(!dir.join("text.part").exists(), "a text: no file");
         let e = download(&client, &ask("/gone", None), &part, &mut |_: u64, _: Option<u64>| {}).await.err().unwrap();
         assert_eq!(e, format!("http://{at}/gone: HTTP 404"));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /**
+     * iva serve's live reload: the page asking for the GUI's archive (its
+     * check for a newer version) reloads, the app goes on downloading it, and
+     * the page after asks for the GUI's .gui - which waits for that download,
+     * then comes (it failed, "being downloaded already": the page ran the copy
+     * kept before, whose live script reloaded again, for good).
+     */
+    #[tokio::test]
+    async fn a_fetch_of_a_gui_while_another_goes_waits_for_it() {
+        use tokio::io::AsyncReadExt;
+        let zip = zip_of(&[("a.gui", b"<gui/>"), ("images/b.js", &[b'b'; 5000])]);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let at = listener.local_addr().unwrap();
+        let body = zip.clone();
+        tokio::spawn(async move {
+            loop {
+                let (mut s, _) = listener.accept().await.unwrap();
+                let body = body.clone();
+                tokio::spawn(async move {
+                    let mut buf = vec![0; 8192];
+                    let n = s.read(&mut buf).await.unwrap();
+                    if String::from_utf8_lossy(&buf[..n]).starts_with("GET /__iva/gui.zip") {
+                        // the archive, slowly: half, a while, the rest
+                        let _ = s.write_all(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).as_bytes()).await;
+                        let _ = s.write_all(&body[..body.len() / 2]).await;
+                        tokio::time::sleep(Duration::from_millis(400)).await;
+                        let _ = s.write_all(&body[body.len() / 2..]).await;
+                    } else {
+                        let _ = s.write_all(b"HTTP/1.1 200 OK\r\nServer: iva\r\nContent-Length: 11\r\nConnection: close\r\n\r\n<gui></gui>").await;
+                    }
+                });
+            }
+        });
+        let guis = Guis::default();
+        let dir = scratch("one-at-a-time");
+        let ask = |path: &str| FetchArgs { id: format!("http://{at}/"), url: format!("http://{at}{path}"), etag: None, last_modified: None };
+        let t0 = Instant::now();
+        let ((archive, archive_at), (gui, gui_at)) = tokio::join!(
+            async { (fetch_into(&guis, dir.clone(), ask("/__iva/gui.zip"), &mut |_: u64, _: Option<u64>| {}).await, t0.elapsed()) },
+            async {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                (fetch_into(&guis, dir.clone(), ask("/"), &mut |_: u64, _: Option<u64>| {}).await, t0.elapsed())
+            },
+        );
+        let gui = gui.expect("the .gui, once the archive is in");
+        assert_eq!(gui.text.as_deref(), Some("<gui></gui>"));
+        assert!(gui_at >= archive_at, "after the archive: {gui_at:?}, {archive_at:?}");
+        let archive = archive.unwrap().archive.expect("the archive kept");
+        assert_eq!(kept_in(&dir).map(|k| (k.saved_at, k.bytes)), Some((archive.saved_at, zip.len() as u64)));
+        // one after the other, each its own
+        let again = fetch_into(&guis, dir.clone(), ask("/__iva/gui.zip"), &mut |_: u64, _: Option<u64>| {}).await.unwrap();
+        assert!(again.same, "the very bytes kept");
         let _ = fs::remove_dir_all(dir);
     }
 }

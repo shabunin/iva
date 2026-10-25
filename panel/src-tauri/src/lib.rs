@@ -52,6 +52,7 @@ pub fn run() {
             unpack::gui_upload_begin,
             unpack::gui_upload,
             unpack::gui_fetch,
+            unpack::gui_kept,
             unpack::gui_archive,
             unpack::gui_archive_text,
             unpack::gui_unpack,
