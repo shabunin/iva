@@ -93,6 +93,15 @@ that keep a value (Slider, Stepper, Segmented, SceneBar) take an analog
 `join="volume"`. In scripts: `IvaUI.set(Joins.a.volume, 30, 0, 100)` sets
 it as a value in min..max.
 
+A `value` is what the join is set to at start. Without one, a Slider, a
+Stepper, WeekDays and an AlarmCard (`value` / `daysValue`) leave the join as
+it is (the controller's, a feedback's) and show what it holds; a Stepper and
+WeekDays follow it when it's set elsewhere (`IvaUI.set`, a feedback, a
+script, a Slider on the same join), the Stepper stepping from there.
+The one-of-several ones (Segmented, SceneBar, RadioGroup, SelectBox) pick
+theirs (default 0) once a join: a second one on it, or the other
+orientation's, doesn't pick it again.
+
 ## Components
 
 | Component | What | Key props |
@@ -147,6 +156,10 @@ Put `Header` and `SideMenu` on every page (a small `Shell` component, as
 the gallery does): the menu's subpages are defined the same each time, so
 iva keeps one definition.
 
+A PinPad is known by what it does (`code`, `onEnter`, `length`, `mask`,
+`placeholder`), not where it sits: the same pad on two pages is one, what's
+typed showing on both; two that differ are two, however alike their places.
+
 ## How the circular ones work
 
 iViewer draws nothing itself, so a Knob is two images iva draws at build
@@ -171,8 +184,13 @@ serves the page from a server of its own, the chart library inline.
 Pickers open as a sheet in the middle of the panel (`mode="sheet"`,
 dimmed behind) or a dropdown under the field (`mode="dropdown"`); a tap
 outside closes them. A drum is a list: drag it (it settles on a row) or tap
-a row. Two pickers on the same joins share their popup when they look the
-same, else each has its own.
+a row. Two TimePickers (DatePickers, NumberFields, SearchSelects) on the
+same joins with the same settings are one, whatever their size, look or
+`mode` (`w`, `h`, `fontSize`, `showIcon`): one field text, one open join, a
+sheet shared and a dropdown for each width; settings that differ
+(`minuteStep`, `title`...) make one each. So laid out both ways
+(`orientation="both"`), a picker is the same one turned: what it holds is
+kept, its `value` not written again.
 
 Two looks: `defaultTheme` (dark) and `lightTheme`. With
 `<Project themes={['dark', 'light']}>` (docs/components.md, "Runtime
@@ -185,3 +203,8 @@ iViewer can't colour a row from a script, so each tone's row (normal, every
 other, selected) and badge is an image iva draws (kept in a hidden subpage,
 so they ship with the .gui), and each row sets its own through a serial
 join. The search and the sorting run on the panel, over the rows it has.
+A table is one by all it's given (its columns, rows, words, `onSelect`,
+size): the same on two pages shares its rows, sort, search and pick; two
+with the same columns and rows of their own are two. Laid out at another
+size the other way (`orientation="both"`), it's a table each way: its rows
+and its `selected` row follow a turn, its sort and search start over.

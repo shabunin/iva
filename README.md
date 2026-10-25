@@ -202,6 +202,15 @@ decompiled .gui keeps its own layout this way). `iva build --zip` also writes
 `dist/my-panel.gui.zip`: the same files in one archive, a zipped GUI iViewer
 loads from a URL.
 
+A build empties its folder first (`dist/`, or `iva build -o <dir>`), so that
+has to be empty or a previous build: a `joins.json`, and beside it only the
+build's own files - the `.gui` and `.gui.zip`, what the `.gui` names as files
+(its image folder and scripts; without one, its images and sounds too, with
+their `@2x`), other sizes' builds (`1920w1080h/`). Anything else in it (a
+folder named like a page, say) and the build refuses, listing what is in the
+way. A script or drawing named out of the build's folder (`../`, or
+absolute), or with no file's name in it (`x/..`), is an error.
+
 ### Several screens
 
 `<Project sizes={['1920x1080', '1400x1400@3x']}>` builds a GUI per size
@@ -296,9 +305,10 @@ iva decompile "path/to/Project.gui" my-panel
 
 `my-panel/` gets `app.jsx`, `themes.jsx`, `systems.jsx`, `pages/*.jsx`,
 `subpages/*.jsx`, and the project's images and sounds (`assets/`) and scripts
-(`scripts/`). It is checked before it's handed over: decompile compiles it
-back, compares it with the original element by element, and fixes what comes
-out different. All 48 CommandFusion demos come back as the same `.gui`
+(`scripts/`; one named `../x.js` as `scripts/x.js`, its `<Script name>` kept).
+It is checked before it's handed over: decompile compiles it back, compares it
+with the original element by element, and fixes what comes out different. All
+48 CommandFusion demos come back as the same `.gui`
 (`npm run fixtures`, then `node --import tsx tools/roundtrip.ts fixtures/DemoUserInterfaces`).
 Attributes iva doesn't model are kept in `xml={{ ... }}`, elements it doesn't
 model (`<timer>`) as `<Raw xml={...} />`.

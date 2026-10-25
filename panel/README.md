@@ -137,8 +137,18 @@ exactly one, or none, at every moment:
   port go (a second at most), not on a port it still holds itself.
 - **Connections.** An Always On client connects again 3 s after a drop, then
   half as long again each time up to 30 s (a little jitter), and at once as
-  soon as a connection has held 5 s. Every connection asks for TCP keepalive
-  (10 s) and no delay, so a far end that went silent is found out in a minute.
+  soon as a connection has held 5 s. Every client connection asks for no
+  delay and TCP keepalive (TLS's too): a first probe after 10 s quiet, then
+  10 a second apart, so a far end that went silent is found out in about 20 s;
+  on Android (and Linux) a write it doesn't acknowledge fails as soon
+  (TCP_USER_TIMEOUT), not after the OS's minutes of resends. A far end that
+  stops reading holds up its own socket's writes only: other sockets go on,
+  and a close (the system's, a reload's) lets go of what it never took.
+- **First bytes.** A device that speaks first (a banner as it connects, a
+  server's client that sends at once) is heard: what the host tells of a
+  socket before the page has its connect's or listen's answer is kept for it
+  (10 s, at most 64 events each for TCP, TLS and servers) and given after
+  `connect`, or `connection` for a server's client.
 - **Sleep.** Screen off or the app in the background: every system closes
   (iViewer's "Disconnect on Sleep"; the View setting keeps them). A system a
   script enables meanwhile opens nothing until the wake. Awake again, the same
@@ -154,7 +164,10 @@ exactly one, or none, at every moment:
   again on start. Only persisted tokens survive.
 
 `test/socket-lifecycle.test.ts` runs these through sleep and wake, a server
-switched off and on, a link that keeps dropping, another network and a reload.
+switched off and on, a link that keeps dropping, another network and a reload;
+`test/host-early-events.test.ts` devices that speak first, and
+`cargo test --lib plugins::net` (in `src-tauri`) the keepalive and a peer that
+stops reading.
 
 ## Building
 

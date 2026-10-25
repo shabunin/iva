@@ -55,16 +55,16 @@ preview has a browser's battery and keeps what a script sets of the rest.
 | `CF.setToken(join, token, value)` | values evaluated | Yes | `[name]` and `name` are one token. |
 | `CF.addTag`, `CF.removeTag` (all three forms) | | Yes | |
 | `CF.getProperties(join or joins, cb)` | join, x, y, w, h, xrotation, yrotation, zrotation, scale, opacity, theme; null for none or join 0; list items `l1:3:s1` | Yes | Adds `xscale` and `yscale`. |
-| `CF.setProperties(changes [, delay, duration, curve, cb, ...args])` | seconds; theme after the delay, not animated; a null parameter refused | Yes | `w` and `h` make the element again at that size. A turn over 180 degrees in one call animates the way it is asked, which iViewer does not promise. |
+| `CF.setProperties(changes [, delay, duration, curve, cb, ...args])` | seconds; theme after the delay, not animated; a null parameter refused | Yes | `w` and `h` make the element again at that size; animated, it is drawn scaled meanwhile and made at that size when the animation ends (or a scale animation cuts it short), a later `w` / `h` winning. A turn over 180 degrees in one call animates the way it is asked, which iViewer does not promise. The device's reduced-motion setting (Android's Remove animations, iOS Reduce Motion) is not followed: animations play as given. |
 | `CF.getGuiDescription(cb)` | name, url, sizes, allJoins, pages with objects, subpages | Yes | |
 | PreloadingCompleteEvent | | Yes | |
 | JoinChangeEvent | (join, value, tokens, tags) | Yes | Delivered once the script that set the join has moved on (a microtask later), as iViewer does - the script's own `setJoin` included, each change in its turn; a watcher writing the join it watches runs again the next turn, not inside `setJoin`. A watcher set up right after a `setJoin` hears of it. Fire-now is immediate. |
 | InputFieldEditedEvent | (join, value, tokens, tags) | Yes | |
 | KeyboardUpEvent | (editedField) | Yes | |
 | KeyboardDownEvent | (editedField, fieldText) | Yes | |
-| ObjectPressedEvent | (join, value, tokens); buttons and sliders | Yes | Buttons as documented, with advanced actions too; a slider's value is its raw 0..65535 as a string, and the tags follow the tokens. |
-| ObjectDraggedEvent | sliders only; (join, value, tokens, tags) | Yes | The value a string. |
-| ObjectReleasedEvent | (join, value, tokens, tags) | Yes | Buttons "1"/"0", sliders the raw value as a string. |
+| ObjectPressedEvent | (join, value, tokens); buttons and sliders | Yes | Buttons as documented, with advanced actions too; a slider's value is its raw 0..65535 as a string, and the tags follow the tokens. A button follows one finger at a time (touch, pen or mouse, on any device); a right mouse button presses nothing. |
+| ObjectDraggedEvent | sliders only; (join, value, tokens, tags) | Yes | The value a string. A slider follows the finger that last pressed it; other fingers' moves and lifts don't touch it. |
+| ObjectReleasedEvent | (join, value, tokens, tags) | Yes | Buttons "1"/"0", sliders the raw value as a string. A touch the device takes back (a swipe in from the screen's edge, the notification shade, the app paused mid-touch) is a release off the object: its release actions or command, its flip and this event all run, and a slider's or list's drag ends. |
 | GUISuspendedEvent, GUIResumedEvent | app to background and back | Yes | From page visibility in the preview; the panel app's activity drives it on Android. Systems close while asleep unless `disconnectOnSuspend` is false. |
 
 ## Lists API
@@ -83,22 +83,22 @@ preview has a browser's battery and keeps what a script sets of the rest.
 
 | Member | iva | Notes |
 |---|---|---|
-| `CF.flipToPage(name)`, PageFlipEvent (from, to, orientation), OrientationChangeEvent (page, orientation) | Yes | `from` is null on a fire-now, as documented. |
+| `CF.flipToPage(name)`, PageFlipEvent (from, to, orientation), OrientationChangeEvent (page, orientation) | Yes | `from` is null on a fire-now, as documented. Both are told once the new page is made (its elements on their joins) and its flip has begun: what a handler does - an element moved, a list scrolled, a subpage shown or hidden (playing its transition) - is done to the page shown. A handler that flips again wins; when that page can be made at once (its images in), the watchers after it hear only of that flip. |
 | `CF.playSound`, `CF.stopSound`, `CF.muteSound`, `CF.unmuteSound` | No | Stubs. `<sound>` joins play nothing either. |
 
 ## Network API
 
 | Member | Documented | iva | Notes |
 |---|---|---|---|
-| `CF.setSystemProperties(name, { enabled, address, port, localPort, connect, disconnect })` | restarts a changed system | Yes | |
+| `CF.setSystemProperties(name, { enabled, address, port, localPort, connect, disconnect })` | restarts a changed system | Yes | `port` and `localPort` take a number or a numeric string (a text field's, a serial join's); `localPort` -1 is any port. A value that isn't a port (text, a fraction, out of range, empty) is ignored with a console warning, and the system is not restarted for it. |
 | `CF.send(system, data [, CF.BINARY or CF.UTF8])` | no EOM added; past the send handler; a server's every client | Yes | In `userMain` a UDP send is queued until the socket is up, where iViewer drops it. |
 | `CF.runCommand(system, command)`, `CF.runMacro`, `CF.stopMacro(name, "" or null)` | | Yes | Command JavaScript gets `system` and `data`, as documented. |
 | `CF.request` forms 1 to 4 | GET, headers, method, body (string as UTF-8, object as a form) | Yes | Headers come back under their usual names and match in any case. |
 | `CF.request` form 5 (timeout) | seconds, default 30 | Yes | Nothing back in time: the request is given up and the callback told once, status 0 (as for a failed connection). iva also takes an options object `{ method, headers, body, rejectUnauthorized, timeout }`. |
 | `CF.startLookup`, `CF.stopLookup`, `CF.startPublishing`, `CF.stopPublishing` | Bonjour; callbacks as documented | Yes | iva's own mDNS engine; checked against a simulated network and once against official iViewer on the LAN. |
 | NetworkStatusChangeEvent | object with hasNetwork and the addresses; on changes and on resume | Yes | Looked at on resume, on the page's online / offline and every 15 s awake; on a change the systems connect anew before scripts hear it. |
-| ConnectionStatusChangeEvent | (system, connected, remote) for TCP and UDP, none for HTTP | Yes | HTTP systems do raise it when a request first answers or fails, which iViewer does not. |
-| FeedbackMatchedEvent | (feedback, matchedString), watched per system | Yes | |
+| ConnectionStatusChangeEvent | (system, connected, remote) for TCP and UDP, none for HTTP | Yes | HTTP systems do raise it when a request first answers or fails, which iViewer does not. A TCP or SSL system's device that stops answering is told disconnected about 20 s after it was last heard (keepalive: 10 s, then 10 probes 1 s apart), in `iva dev` and the panel app alike. |
+| FeedbackMatchedEvent | (feedback, matchedString), watched per system | Yes | A device's first bytes - a banner as it connects, a server system's client's request as it is taken - are heard too, though the host may tell of them before it answers the connect or the listen: the page keeps them till then. |
 
 ## Video, sensors and utilities
 
@@ -141,7 +141,8 @@ too; scripts should not rely on it.
 Anything only a device shows: exactly when iViewer delivers JoinChangeEvent
 (iva: a microtask after the set, which is "after the script moved on" as
 iViewer is known to do it), the CCITT CRC variant, `listInfo` units on a
-scaled GUI, when iViewer's `interceptHardwareKey` callback runs, and the
+scaled GUI, when iViewer's `interceptHardwareKey` callback runs, whether a
+subpage a PageFlipEvent handler shows plays its transition there too, and the
 sound and sensor calls. The panel app's device side is tested against a fake device
 (`test/cf-device.test.ts`) and was run on an Android 16 phone (Unihertz Titan 2) on
 18 October 2026: CF.device's values, the window brightness, the status bar

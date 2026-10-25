@@ -36,19 +36,33 @@ const rooms = panel.options.rooms;                       // the options, as JSON
 ## How it works
 
 ```
-web view http://127.0.0.1:8900/house/
+web view http://127.0.0.1:8900/house/?k=<key>
    ──GET /house/──────────────▶ the panel's web server (iva-http.js): the boot page
    ──GET iva/boot─────────────▶ the app's settings and script (the boot page runs it)
    ──GET iva/poll?v=N─────────▶ held until one of its joins changes, then the values
-   ──GET iva/set?k=v──────────▶ CF.setJoin
+   ──GET iva/set?name=v───────▶ CF.setJoin
    ──GET iva/call?fn=f────────▶ a panel function's answer
    ──GET iva/asset/x.glb──────▶ a project file (CF.loadAsset), as base64
+   each with k=<key>, from the page's address - without it: 403
 ```
 
 - **One port for everything.** The panel has one web server (a TCP system,
   `IvaWeb`, on `<Project httpPort>` - default the first port free from 8900):
   every `<WebApp>` at `/<name>/`, the ColorPicker's swatches at
   `/iva-color/RRGGBB`, any `<Web url="panel:/path">`.
+- **A key in every address.** The server listens on every network the panel
+  is on, so each address it gives a web view carries a key, new each start
+  (`?k=`, `IvaHttp.url(path)`). A request without it gets 403 - only
+  `/iva/ping` and the swatches answer anyone. **A web view given
+  `http://127.0.0.1:8900/...` by hand no longer works** (but a swatch): it
+  shows "iva: not an address the panel gave". Use `<Web url="panel:/path">`,
+  or `IvaHttp.url(path)` for its URL join. A link from one page of the
+  project to another (`<a href="other.html">`) loses the key too, and shows
+  the same.
+  The key stops another device setting joins, calling handlers, reading
+  files or writing the log, not listening: an answer goes to every client
+  connected (below), so one that holds a connection open gets the web views'
+  (join values, an app's script).
 - **An answer can be another's.** iViewer sends what a server system sends
   to *every* client it has (CF.send: "the string will be sent to each
   connected system") and doesn't say which client asked. So every answer of
@@ -62,7 +76,9 @@ web view http://127.0.0.1:8900/house/
   for news gives way to a set or a call (a new request of an app ends its poll
   held). A poll that gets another app's answer simply asks again.
 - **Files through `panel.asset(name)` / `panel.url(name)`**, not `<img src>`
-  / CSS urls: a file the browser fetches itself can't check its answer.
+  / CSS urls: a file the browser fetches itself can't check its answer. A
+  name stays inside the project: one with a `..`, a URL or a drive (`C:`),
+  or a path from the root gets 400 - a page of the project's too.
 - **Relative URLs.** `iva/web` asks `iva/poll`, not `/iva/poll`: an app is at
   `/<name>/` (the preview serves it under `/__iva/loop/<port>/<name>/`).
 - **The panel side** (`iva-http.js`, added once) watches the app's joins
@@ -103,7 +119,8 @@ web view http://127.0.0.1:8900/house/
 | `panel.asset(name)` / `panel.url(name, type)` | a project file: an ArrayBuffer / a blob: URL |
 
 Values are what the panel has: analog joins 0..65535 (scale them to what they
-stand for), serial joins text.
+stand for), serial joins text. A join named `r` or `k` can't be set: a
+request uses those names (its number, the key).
 
 ## `IvaHttp` (panel side)
 
@@ -122,7 +139,14 @@ function api(req, res) {          // req: method, path, query, headers
 `res.json(v)`, `res.html(text)`, `res.text(text, status)`,
 `res.bytes(type, bytes)`, `res.asset(name)` (a project file) - now or later,
 once. An `<HttpServer>` has its own port: answers are only sure to reach the
-client that asked while it is the only one connected.
+client that asked while it is the only one connected. It listens on every
+network too, with no key: its handler checks what it needs (`res.asset(name)`
+doesn't check the name).
+
+`IvaHttp.url(path)`: an address of the panel's web server, its key in it
+(`http://127.0.0.1:<port>/<path>?k=<key>`, before any `#`) - for a web view
+of your own, its URL join set in `IvaHttp.ready(fn)` (once the server
+answers).
 
 ## Bundling
 

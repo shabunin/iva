@@ -83,8 +83,13 @@ in official iViewer as well as in iva's runtime and the iva panel):
   logs in again on `CF.watch(CF.ConnectionStatusChangeEvent, system, cb)` -
   one watch a system (iViewer takes no list of names there).
 - **No echo.** iViewer fires a join's change event for a script's own
-  `CF.setJoin` too: a driver remembers what it last wrote to each join and
-  swallows that one event, so what a device reported isn't sent back to it.
+  `CF.setJoin` too: a driver remembers what it wrote to each join and
+  swallows those events, so what a device reported isn't sent back to it.
+  The MQTT driver keeps every write still waiting for its event, in order
+  (the last 32 a join): an event drops its write and those before it (iva's
+  runtime fires none for a write that left the join as it was), any other
+  clears them and is published - so several messages for one join in one
+  read aren't sent back either. The Matter driver keeps the last value.
 - **Where it lives.** `lib/drivers/<name>/index.tsx` is `iva/drivers/<name>`
   (the compiler resolves any folder there; `iva types` declares each in a
   project's `iva.d.ts`); the panel script beside it (`runtime.ts` as a
@@ -224,6 +229,11 @@ mode; no BLE, no Thread credentials). With an address given, PASE goes there
 and the node's operational name is announced at that address too, so the
 CASE step after PASE needs no Bonjour either. A subscription sets a device's
 joins; a join's change (not the driver's own echo) sends the command.
+Commands go one at a time for each of `devices`: what changes while one is
+out (a slider dragged) goes as one more once it's answered, with the newest
+values, and changes in one turn (a pick's hue and saturation) make one
+command; a failed one is logged (`command failed: ...`) and doesn't hold up
+the next.
 
 Tests without a device: `test/matter.test.ts` - the pool, the Network, the
 DNS-SD source through matter.js's own scanner, the storage, the compile
@@ -252,7 +262,7 @@ together.
 | `system` | topics on a broker another `<Mqtt name>` brings - several elements, one connection (no host, port or credentials here) |
 | `host`, `port` | the broker (port: 1883, 8883 with `ssl`) |
 | `ssl` | MQTT over TLS, where the runtime has it (iva's: any certificate, as a system's Enable SSL) |
-| `clientId`, `user`, `password`, `keepalive`, `cleanSession` | the CONNECT: `iva`, none, none, 60 s (0: no pings), true |
+| `clientId`, `user`, `password`, `keepalive`, `cleanSession` | the CONNECT: `iva` and this device's id (each panel its own, below), none, none, 60 s (0: no pings), true |
 | `status` | serial join: `Connecting`, `Connected`, `Disconnected`, `Refused (code N)` |
 | `log`, `logLines` | serial join with the last messages, a line each: `< topic: payload` in, `> topic: payload` out (8 lines) |
 | `subscribe` | `{ 'home/lamp': d('lamp'), 'home/temp': { join: a('temp'), path: 'value', range: [0, 50], qos: 1 } }`: a topic filter (`+` a level, `#` the rest) into a join |
@@ -284,6 +294,14 @@ is started over (`CF.setSystemProperties` enabled off, then on) and connects
 afresh. A refused CONNACK shows its code in the status (4: bad user name or
 password, 5: not authorised, 2: identifier rejected); the broker closes the
 connection and the system tries again in 3 s.
+
+**The client id**, with no `clientId`: `iva` and the device's id
+(`CF.device.uniqueIdentifier`, else `uuid`), letters and digits, 23 at most
+(what every broker takes), so each panel is a client of its own; with no
+device id, one made up, kept for as long as the GUI runs. A `clientId` given
+is the same on every panel running the GUI, and a broker drops a client when
+another connects with its id, so panels sharing one keep knocking each
+other off. Give one only for a single panel (a broker's ACLs by client id).
 
 **From a script** (iva-mqtt.js, `IvaMqtt`):
 

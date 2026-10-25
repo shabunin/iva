@@ -11,7 +11,7 @@ injected); `import { Button } from 'iva'` works too.
 | `<Project>` | `<gui>` + `<properties>` | `name`; `device` (`iPad`, `iPad Pro 11`, `iPad Pro 12.9`, `iPad Air 10.5`, `iPhone X`, `iPhone XS Max`, `iPhone 8`, `iPhone 8 Plus`, `iPhone 5`, `iPhone 4`) + `orientation`, or `width` / `height` (wider than tall → landscape is the main orientation); `otherSize`, `autoposition`, `joinBase`, `assets` (a folder shipped whole; images found there by bare name; default `./assets`), `properties` (raw XML after `<size>`), `licenses` (the devices licensed to run it, iViewer's registration data: `{ 'Kitchen iPad': '0123456789AB…' }`, the code iViewer shows on the device), `themes` + `theme` (looks switched at runtime, below), `folders` (default true: the build's assets/ - the .gui's image folder: iva's drawings in a folder per component type - knobs/<its label>/, pickers/, buttons/, boxes/, rows/, banners/, sliders/, backgrounds/, icons/ - readably named, and scripts/, where iViewer looks for the .gui's scripts; false: everything beside the .gui, in the image folder its `properties` name, if any), `httpPort` (the panel's web server: web apps, swatches; default the first free from 8900), `sizes` (other screens it's built for, `'1920x1080'`, a phone's `'1400x1400@3x'`: [Screen sizes](#screen-sizes)) |
 | `<Page>` | `<page>` + `<portrait>`/`<landscape>` | `name`, `start`, `bg`, `image`, `theme`, `tags`, `transition` (how it comes when flipped to: `{ type: 'fade'\|'moveIn'\|'push'\|'reveal', from, time, ease }`; none: at once). Items go into the main orientation (the other is written empty, as GUI Designer does) |
 | `<Landscape>` / `<Portrait>` | `<landscape>` / `<portrait>` | `bg`, `image`, `theme`. With these, the page has exactly the orientations given, in that order |
-| `<Subpage>` | `<subpage name w h>` (definition) + placement | `name`, `w`, `h`, `clip`, `bg`/`image`/`theme`, `radius` / `borderWidth` / `borderColor` (drawn). Inside a page it is defined *and* placed (`x`, `y`, `join`, `visible`, `in`, `out`, `topmost` (above everything: placed last), `fixed` (at x / y whatever `<Group>` it is in), `clickthrough`), or only defined with `define`; in `<Project>` it is only defined |
+| `<Subpage>` | `<subpage name w h>` (definition) + placement | `name`, `w`, `h`, `clip`, `bg`/`image`/`theme`, `radius` / `borderWidth` / `borderColor` (drawn). Inside a page it is defined *and* placed (`x`, `y`, `join`, `visible`, `in`, `out`, `topmost` (above everything: placed last), `fixed` (at x / y whatever `<Group>` it is in), `clickthrough`), or only defined with `define`; in `<Project>` it is only defined. Made again under its name (a component on several pages) it must be the same, named joins too (`d('kitchen')` vs `d('hall')` is an error, as `d(5)` vs `d(6)`): place it again with `<SubpageRef>`, or name each its own |
 | `<SubpageRef>` | `<subpage name x y j …>` | `name` + the placement props: places a subpage defined elsewhere |
 
 ## Items
@@ -36,9 +36,9 @@ All items take `x`, `y` (default 0), `w`, `h` (required), `tags` and `motion` ([
 
 | JSX | `.gui` | Key props |
 |---|---|---|
-| `<System>` | `<systems><system>` | `name`, `host`, `port`, `protocol` (`tcp`·`udp`·`http`), `localPort`, `mode` (`alwaysOn`·`transitory`·`dialog`) + `idleTimeout` / `dialogTimeout`, `accept` (TCP: server; UDP: incoming), `acceptBroadcasts`, `eom`, `offlineQueue`, `connectJoin` / `disconnectJoin`, `heartbeat={{ mode: 'reply'\|'initiate', tx, rx }}`, `ssl`, `textEncoding`, `sendHandler`, `startupCmd`, `startupMacro`, `maxConnections`; children `<Command>`, `<Feedback>`. Defaults are GUI Designer's for a new system of the protocol. Anywhere (a component can bring one): lifted to the project, the same system once |
+| `<System>` | `<systems><system>` | `name`, `host`, `port`, `protocol` (`tcp`·`udp`·`http`), `localPort`, `mode` (`alwaysOn`·`transitory`·`dialog`) + `idleTimeout` / `dialogTimeout`, `accept` (TCP: server; UDP: incoming), `acceptBroadcasts`, `eom`, `offlineQueue`, `connectJoin` / `disconnectJoin`, `heartbeat={{ mode: 'reply'\|'initiate', tx, rx }}`, `ssl`, `textEncoding`, `sendHandler`, `startupCmd`, `startupMacro`, `maxConnections`; children `<Command>`, `<Feedback>`. Defaults are GUI Designer's for a new system of the protocol. Anywhere (a component can bring one): lifted to the project, the same system once; two of one name that differ (in named joins too) are an error |
 | `<HttpServer>` | a TCP `<system accept>` + its request feedback | `name`, `port`, `handler`: a panel function (name or `function (req, res) {…}`) answering each request with `res.json` / `html` / `text` / `bytes` / `asset` ([docs/web.md](web.md)) |
-| `<Command>` | `<cmd>` | `name`, `send` (or children; `\xNN`, `[tokens]`), `js` + `jsSendsCommand`, `target` + `value` (set a join), `folder` |
+| `<Command>` | `<cmd>` | `name`, `send` (or children; `\xNN`, `[tokens]`; its control characters are written as `\xNN`), `js` + `jsSendsCommand`, `target` + `value` (set a join), `folder` |
 | `<Feedback>` | `<fb>` | `name`, `regex` (`(?ims)` flags allowed); children `<Capture>`, `<OnMatch>` |
 | `<Capture>` | `<group>` | `join` (`d(5)`, `'s12'`, `'a:level'`), `type` (how it's read, default: the join's type: `type="a" join="s2"` = a number, transformed, into a serial join), `index`, `name`, `onVal` / `offVal`, `transform`, `min` / `max`, `unit`, `setToken` |
 | `<OnMatch>` | `<onmatch>` | `target`, `value`, `cmd`, `token` |
@@ -71,6 +71,12 @@ comes is that, and a command with characters past a byte sent as UTF-8.
 `sendHandler`: what commands send goes to this code (`system`, `data`),
 which `CF.send()`s it (or not) - `CF.send()` never goes through it. UDP:
 `localPort` 0 is the remote's port (-1: any).
+
+A command's control characters (`send={'PWR\r'}`, a template literal's
+`\r\n`) are written in iViewer's `\xNN` (`\x0D`). Anywhere else in the .gui -
+a text, `js`, `eom`, `heartbeat`, `onVal`, `xml={{…}}` - one other than tab,
+LF and CR (those are kept) is an error: XML can't hold it. `eom`,
+`heartbeat` and `onVal` / `offVal` read `\xNN` too: `eom="\x03"`.
 
 ## Style props → themes
 
@@ -269,7 +275,10 @@ Subpages animate on their own: `in` / `out` on `<Subpage>` / `<SubpageRef>`
 An element can move by itself, with no script of yours: `motion={...}` on
 any item (a subpage's placement too) says how. It needs no join - iva gives
 the element one (`iva_motion0` ...) when it has none - and ships one small
-script, `iva-motion.js`, that does it with `CF.setProperties`.
+script, `iva-motion.js`, that does it with `CF.setProperties`. That join goes
+by the element's place (its page or subpage, its order there, its box): a page
+laid out the same both ways (`orientation="both"`) is one block, its motion
+run either way; an element laid out elsewhere turned has one of its own.
 
 ```jsx
 // in as the page shows: from 40 px lower and invisible to where it is laid out
