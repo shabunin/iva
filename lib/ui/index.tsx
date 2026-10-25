@@ -1183,7 +1183,7 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
     );
   }
 
-  function Stepper({ join, value = 0, min = 0, max = 100, step = 1, decimals = 0, unit = '', x = 0, y = 0, w = 200, h = 56 }: StepperProps): VNode {
+  function Stepper({ join, value, min = 0, max = 100, step = 1, decimals = 0, unit = '', x = 0, y = 0, w = 200, h = 56 }: StepperProps): VNode {
     const id = JSON.stringify(keyOf(join));
     const text: JoinRef = s(`ui_${keyOf(join)}_value`);
     const btn = { radius: t.radius, bg: shade(t.raised, 0.08), active: { bg: t.accent }, font };
@@ -1669,7 +1669,7 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
 
   // ── schedule & security ─────────────────────────────────────────
 
-  function WeekDays({ join, value = 31, first = 'mon', labels = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'], textJoin, size = 48, gap = 8, x = 0, y = 0 }: WeekDaysProps): VNode {
+  function WeekDays({ join, value, first = 'mon', labels = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'], textJoin, size = 48, gap = 8, x = 0, y = 0 }: WeekDaysProps): VNode {
     const key = keyOf(join);
     const order = first === 'sun' ? [6, 0, 1, 2, 3, 4, 5] : [0, 1, 2, 3, 4, 5, 6];
     const day = (i: number): JoinRef => d(`ui_${key}_day${i}`);
@@ -1680,14 +1680,15 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
                   bg={t.raised} color={t.muted} active={{ bg: t.accent, color: t.text }} font={font} fontSize={Math.round(size * 0.4)} />
         ))}
         {runtime}
-        <OnStart js={`IvaUI.days(${JSON.stringify(key)}, { mask: ${jsJoin('a', join)}, joins: [${order.map((_, i) => jsJoin('d', day(i))).join(', ')}], order: ${JSON.stringify(order)}, value: ${value}${textJoin ? `, text: ${jsJoin('s', textJoin)}` : ''} });`}
+        <OnStart js={`IvaUI.days(${JSON.stringify(key)}, { mask: ${jsJoin('a', join)}, joins: [${order.map((_, i) => jsJoin('d', day(i))).join(', ')}], order: ${JSON.stringify(order)}${value !== undefined ? `, value: ${value}` : ''}${textJoin ? `, text: ${jsJoin('s', textJoin)}` : ''} });`}
                  joins={[typeof join === 'object' ? join : a(join), ...(textJoin && typeof textJoin === 'object' ? [textJoin] : [])]} />
       </Group>
     );
   }
 
   function PinPad({ code, onEnter, length = 8, mask = true, placeholder = 'Enter code', size = 72, gap = 12, x = 0, y = 0 }: PinPadProps): VNode {
-    const id = JSON.stringify(`pin_${hash(`${x}|${y}|${placeholder}`)}`);
+    // named for what it does, not where it sits (x / y are its group's: two cards laid out alike would share one)
+    const id = JSON.stringify(`pin_${hash(JSON.stringify([code === undefined ? null : keyOf(code), onEnter ?? null, length, mask, placeholder]))}`);
     const display: JoinRef = s(`ui_${JSON.parse(id)}_display`);
     const w = 3 * size + 2 * gap;
     const key = (k: string, i: number) => {
@@ -1711,7 +1712,7 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
   }
 
   /** An alarm: its title, on / off, the time (a TimePicker: a tap opens the drums), the days and their summary. */
-  function AlarmCard({ title, on, onValue, hour, minute, value = '07:00', minuteStep = 1, ampm = false, timeTitle, days, daysValue = 31,
+  function AlarmCard({ title, on, onValue, hour, minute, value, minuteStep = 1, ampm = false, timeTitle, days, daysValue,
                        x = 0, y = 0, w = 620, h = 210 }: AlarmCardProps): VNode {
     const summary: JoinRef = s(`ui_${keyOf(days)}_summary`);
     const dy = Math.max(0, Math.round((h - 210) / 2));
@@ -1988,7 +1989,8 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
         <Subpage name={`${name}_away`} fixed topmost w={W} h={H} join={open}>
           <Button w={W} h={H} feedback="none" js={close} />
         </Subpage>
-        <Subpage name={name} topmost y={fieldH + 6} w={pw} h={bh + 16} join={open} bg={t.surface} radius={t.radius}
+        {/* named for its width too: the same picker elsewhere narrower, or as a sheet, has its own */}
+        <Subpage name={`${name}_${pw}`} topmost y={fieldH + 6} w={pw} h={bh + 16} join={open} bg={t.surface} radius={t.radius}
                  borderWidth={1} borderColor={t.raised} in={fade} out={fade}>
           <Button w={pw} h={bh + 16} feedback="none" />
           <Group y={8}>{body}</Group>
@@ -2050,8 +2052,9 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
   /** A time field and its drums (see the runtime's IvaUI.picker). */
   function TimePicker({ hour, minute, value, minuteStep = 1, ampm = false, now, mode = 'sheet', title = 'Time', ok = 'OK', cancel = 'Cancel',
                         fontSize = 20, showIcon = true, x = 0, y = 0, w = 332, h = 48 }: TimePickerProps): VNode {
-    // two pickers on the same joins that look different: a popup each
-    const key = `${keyOf(hour)}_${hash(JSON.stringify([minuteStep, ampm, now, mode, title, ok, cancel, w])).slice(0, 4)}`;
+    // two pickers on the same joins that differ (their drums, their popup's words): one each - not by the width or the
+    // popup's kind, which the other orientation's layout may change: turned, the same picker (its value kept, not written again)
+    const key = `${keyOf(hour)}_${hash(JSON.stringify([minuteStep, ampm, now, title, ok, cancel])).slice(0, 4)}`;
     const id = JSON.stringify(`time_${key}`);
     const open: JoinRef = d(`ui_${key}_tp_open`);
     const label: JoinRef = s(`ui_${key}_tp_text`);
@@ -2096,7 +2099,7 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
   function DatePicker({ day, month, year, value, format = 'DD.MM.YYYY', order = 'dmy', minYear, maxYear, months = MONTHS, today = 'Today',
                         placeholder = 'Pick a date', mode = 'sheet', title = 'Date', ok = 'OK', cancel = 'Cancel', fontSize = 20, showIcon = true,
                         x = 0, y = 0, w = 332, h = 48 }: DatePickerProps): VNode {
-    const key = `${keyOf(day)}_${hash(JSON.stringify([format, order, minYear, maxYear, months, today, placeholder, mode, title, ok, cancel, w])).slice(0, 4)}`;
+    const key = `${keyOf(day)}_${hash(JSON.stringify([format, order, minYear, maxYear, months, today, placeholder, title, ok, cancel])).slice(0, 4)}`;
     const id = JSON.stringify(`date_${key}`);
     const open: JoinRef = d(`ui_${key}_dp_open`);
     const label: JoinRef = s(`ui_${key}_dp_text`);
@@ -2142,7 +2145,7 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
   /** A number field: a tap opens a keypad on the value; OK checks it's min..max. */
   function NumberField({ join, value, min = 0, max = 100, decimals = 0, digits, unit = '', words = {}, mode = 'sheet', title = 'Value', ok = 'OK',
                          cancel = 'Cancel', fontSize = 20, showIcon = true, x = 0, y = 0, w = 332, h = 48 }: NumberFieldProps): VNode {
-    const key = `${keyOf(join)}_${hash(JSON.stringify([min, max, decimals, digits, unit, words, mode, title, ok, cancel, w])).slice(0, 4)}`;
+    const key = `${keyOf(join)}_${hash(JSON.stringify([min, max, decimals, digits, unit, words, title, ok, cancel])).slice(0, 4)}`;
     const id = JSON.stringify(key);
     const open: JoinRef = d(`ui_${key}_nf_open`);
     const label: JoinRef = s(`ui_${key}_nf_text`);
@@ -2191,7 +2194,7 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
    */
   function SearchSelect({ options, source, join, value, placeholder = 'Pick one', empty = 'Nothing found', rows = 6, rowH = 52, mode = 'sheet', title = '',
                           fontSize = 20, showIcon = true, x = 0, y = 0, w = 340, h = 48 }: SearchSelectProps): VNode {
-    const key = `${keyOf(join)}_${hash(JSON.stringify([options, source, placeholder, empty, rows, rowH, mode, title, w])).slice(0, 4)}`;
+    const key = `${keyOf(join)}_${hash(JSON.stringify([options, source, placeholder, empty, rows, rowH, title])).slice(0, 4)}`;
     const id = JSON.stringify(key);
     const open: JoinRef = d(`ui_${key}_ss_open`);
     const label: JoinRef = s(`ui_${key}_ss_text`);
@@ -2389,7 +2392,8 @@ export function createUi(theme: Partial<UiTheme> = {}, looks: Record<string, Par
    */
   function DataTable({ columns, data, source, keyField, selected, toneKey, search = true, placeholder = 'Search…', onSelect, words = {},
                        rowH = 40, fontSize = 18, x = 0, y = 0, w = 900, h = 360 }: DataTableProps): VNode {
-    const key = `dt_${hash(JSON.stringify([columns, keyField, toneKey, w, h, rowH, source ?? null, selected ?? null]))}`;
+    // everything a table differs by: two with the same columns and their own rows (or onSelect) aren't one
+    const key = `dt_${hash(JSON.stringify([columns, data ?? null, keyField, toneKey, search, placeholder, onSelect ?? null, words, w, h, rowH, fontSize, source ?? null, selected ?? null]))}`;
     const id = JSON.stringify(key);
     const input: JoinRef = s(`ui_${key}_q`);
     const hint: JoinRef = s(`ui_${key}_hint`);
