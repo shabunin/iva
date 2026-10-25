@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 (25 October 2026)
+
+A fix release. The iva panel could get stuck reloading a GUI from `iva serve`,
+and `iva serve` built twice for drawings a project makes and could leave a
+panel on an older build. 0.1.0 is withdrawn: use these downloads. What iva is
+and does, and its known limits, are under 0.1.0 below.
 
 ### Fixed
 
@@ -10,8 +15,50 @@
   another now"). A download of a GUI now waits for the one going instead of
   failing, and a copy the app kept after a reload is the one the next start
   runs. Clear and Load in the settings is no longer needed to get out of it.
+- `iva serve` / `iva dev`: a project that writes files while it builds (pictures
+  it draws as it evaluates, read back as build inputs) no longer builds a second
+  time for them - also when it is evaluated once a look (`<Project themes>`) and
+  the files are seen while the build still runs. A save made during a build
+  still builds again.
+- `iva serve`: a rebuild between a panel's fetch of the `.gui` and of its
+  scripts gave that `.gui` the newer build's live script, and the panel stayed
+  on the older build until the next save (iViewer and the iva panel alike). The
+  `.gui` now names its own build's live script (`iva-live-<version>.js`), so the
+  panel sees the newer build and reloads.
+
+### Downloads
+
+The panel app; the CLI comes from the repository (below).
+
+| System | File | Notes |
+|---|---|---|
+| Android 7 and newer | `iva-panel-0.1.1-android.apk` | Signed with the release key: installs over 0.1.0, its kept GUIs and settings kept. A panel signed with the development key (a CI or local build from before 0.1.0) has to be uninstalled first; its kept GUIs and settings go with it. Needs an up-to-date Android System WebView. |
+| Linux x86_64 | `iva-panel-0.1.1-linux-x86_64.AppImage` | `chmod +x` and run. Built on Ubuntu 22.04: glibc 2.35 or newer. |
+| Windows 10 and 11, x64 | `iva-panel-0.1.1-windows-x64.exe` | The app alone, nothing to install. Needs the WebView2 runtime (Windows 11 has it; Windows 10 with an up-to-date Edge does). Not code signed: SmartScreen may warn. |
+| macOS, Apple silicon and Intel | `iva-panel-0.1.1-macos-universal.zip` | Not signed by a developer: the first open is refused. On macOS 15 and newer, allow it in System Settings, Privacy & Security, Open Anyway; before, right click the app, Open. |
+
+iOS: not yet.
+
+### Install the CLI
+
+Node.js 22 or newer:
+
+```bash
+git clone https://github.com/shabunin/iva.git
+cd iva
+npm install
+npm link        # puts `iva` on your PATH
+```
+
+Then `iva create my-panel --template demo`, `iva dev` in it, and http://127.0.0.1:5180/.
+
+Updating a clone of 0.1.0: `git fetch --depth 1 origin tag v0.1.1` and `git checkout v0.1.1` (or `git pull` on main), then `iva types` in each project, which rewrites its `iva.d.ts` and the copied docs.
 
 ## 0.1.0 (25 October 2026)
+
+Withdrawn: its panel could get stuck reloading a GUI from `iva serve` (fixed
+in 0.1.1), and its downloads are no longer published - use 0.1.1's. What
+follows still describes iva.
 
 iva's first release: CommandFusion iViewer GUIs written as JSX, built into
 `.gui` files that GUI Designer opens and iViewer runs, previewed live on iva's
