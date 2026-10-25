@@ -125,6 +125,13 @@ page's side is [device.ts](device.ts), the app's
 Each GUI starts with the panel's own: the system's brightness, both bars
 hidden, no keys watched.
 
+The page's channel to the app's Rust side (Tauri's IPC: sockets, HTTP, the
+kept GUIs) is the panel's own page's too: wry offers it to every frame, so
+[PanelWebView.kt](src-tauri/gen/android/app/src/main/java/tech/bobalus/iva/panel/PanelWebView.kt)
+swaps it for a message channel of the same name taken from the panel's
+origin and main frame only. Another site's page in a GUI's web view can't
+run the app's commands.
+
 ## Sockets
 
 A system's socket lives on the app's Rust side; the system in the page owns
@@ -162,6 +169,11 @@ exactly one, or none, at every moment:
   whatever a page before left on the host and lists it in the settings'
   errors. An app restart loses every connection, by design: the GUI connects
   again on start. Only persisted tokens survive.
+- **The web view's renderer gone.** When Android's web view loses its
+  renderer (a crash, or Android takes its memory back), the panel makes a new
+  web view and starts the page again - at once, or when the app is next in
+  front - as a reload does: the page's start closes what the last one left,
+  and the settings' errors say why. Without this Android would end the app.
 
 `test/socket-lifecycle.test.ts` runs these through sleep and wake, a server
 switched off and on, a link that keeps dropping, another network and a reload;

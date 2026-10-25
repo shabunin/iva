@@ -4,12 +4,18 @@ import android.content.Context
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.view.KeyEvent
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.WebView
 import androidx.activity.BackEventCompat
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.Lifecycle
+import org.json.JSONObject
+import java.text.DateFormat
+import java.util.Date
 
 class MainActivity : TauriActivity() {
   private var multicastLock: WifiManager.MulticastLock? = null
@@ -26,6 +32,46 @@ class MainActivity : TauriActivity() {
     this.webView = webView
     // (before its first page: the page's channel to the device)
     device.attach(webView)
+    // the timers are the process's: a web view before this one (its renderer gone) may have left them paused
+    if (!asleep) webView.resumeTimers()
+    // once wry has given it its client and IPC (next in this turn of the main thread), before its page loads
+    webView.post {
+      PanelWebView.ownIpc(webView)
+      PanelWebView.watchRenderer(webView, ::rendererGone, ::pageLoaded)
+    }
+  }
+
+  // The web view's renderer gone (a crash, or Android took its memory back): the page again in a new web
+  // view - the activity made again as for a configuration change, which wry and tao live through (the
+  // window, the web view's Rust side kept; the page's start closes the sockets the last one left). Not
+  // in the background: a page started there would run awake, its servers holding their ports.
+  /** why the page starts again, for its error list: kept across the activity made again */
+  private var renewal: String? = null
+  /** this activity's web view dead, the activity not made again yet (in the background: when it's back) */
+  private var dead = false
+
+  private fun rendererGone(view: WebView, crashed: Boolean) {
+    val why = if (crashed) "crashed" else "was ended by Android (low on memory)"
+    Log.e(TAG, "the web view's renderer $why: the page again in a new one")
+    // a dead renderer's web view is never used again: out of the window, destroyed
+    (view.parent as? ViewGroup)?.removeView(view)
+    view.destroy()
+    if (webView === view) webView = null
+    dead = true
+    renewal = "the panel's web view $why at ${DateFormat.getTimeInstance().format(Date())}: its page started again"
+    if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) recreate()
+  }
+
+  private fun pageLoaded(view: WebView) {
+    val note = renewal ?: return
+    renewal = null
+    // (main.ts keeps what console.error says)
+    view.evaluateJavascript("console.error(${JSONObject.quote(note)})", null)
+  }
+
+  override fun onSaveInstanceState(outState: Bundle) {
+    super.onSaveInstanceState(outState)
+    renewal?.let { outState.putString(RENEWAL, it) }
   }
 
   // In the background the GUI sleeps, as iViewer's does: the page is told first (GUISuspended - its
@@ -46,6 +92,11 @@ class MainActivity : TauriActivity() {
 
   override fun onResume() {
     super.onResume()
+    // its renderer went while in the background: the page again now
+    if (dead) {
+      recreate()
+      return
+    }
     asleep = false
     device.touched()
     webView?.resumeTimers()
@@ -55,6 +106,7 @@ class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+    renewal = savedInstanceState?.getString(RENEWAL)
     // a panel on the wall: the screen stays on while it shows (unless a GUI's autoLockDelay says
     // for how long without a touch), the GUI takes all of it
     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -107,6 +159,11 @@ class MainActivity : TauriActivity() {
   override fun onUserInteraction() {
     super.onUserInteraction()
     device.touched()
+  }
+
+  companion object {
+    private const val TAG = "iva-panel"
+    private const val RENEWAL = "tech.bobalus.iva.panel.renewal"
   }
 
   override fun onDestroy() {
