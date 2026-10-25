@@ -326,3 +326,100 @@ test('Bonjour: 5353 taken by another program - lookups ask from a port of their 
     mock.timers.reset();
   }
 });
+
+test('Bonjour: the looking device asleep a few seconds, the service still up - awake, it is neither removed nor found again', async () => {
+  mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
+  try {
+    const net = new FakeNet();
+    const a = device(net, '10.0.0.2', 'Hall panel', 'aa11');
+    const b = device(net, '10.0.0.3', 'Kitchen panel', 'bb22');
+    void b.engine.publish('_http._tcp.', '', 8900, null);
+    await pass(800);
+    const w = watcher();
+    void a.engine.lookup('_http._tcp.', '', w.cb);
+    await pass(500);
+    assert.equal(w.calls.length, 1);
+    a.engine.suspend();
+    await pass(10000);
+    const from = net.sent.length;
+    void a.engine.resume();
+    await pass(10000);
+    // the wake's queries say nothing of what it knows (a responder would keep quiet), and the service answers them
+    const asked = net.sent.slice(from).filter((x) => x.from.startsWith('10.0.0.2:') && !x.m.response && x.m.questions.some((q) => q.type === TYPE.PTR));
+    assert.ok(asked.length >= 3, `${asked.length} queries`);
+    assert.deepEqual(asked.slice(0, 3).map((x) => x.m.answers.length), [0, 0, 0]);
+    assert.equal(w.calls.length, 1, JSON.stringify(w.calls.slice(1)));
+    a.engine.dispose();
+    b.engine.dispose();
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test('Bonjour: a second lookup of a type minutes after the first gets the addresses (a found host asked again near its TTL)', async () => {
+  mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
+  try {
+    const net = new FakeNet();
+    const a = device(net, '10.0.0.2', 'Hall panel', 'aa11');
+    const b = device(net, '10.0.0.3', 'Kitchen panel', 'bb22');
+    void b.engine.publish('_http._tcp.', '', 8900, null);
+    await pass(800);
+    const first = watcher();
+    void a.engine.lookup('_http._tcp.', '', first.cb);
+    await pass(200_000);
+    const second = watcher();
+    void a.engine.lookup('_http._tcp.', '', second.cb);
+    await settle();
+    assert.deepEqual(second.calls.map((c) => c.added.map((s) => [s.name, s.port, s.addresses])), [[['Kitchen panel', 8900, ['10.0.0.3']]]]);
+    assert.equal(first.calls.length, 1);
+    a.engine.dispose();
+    b.engine.dispose();
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("Bonjour: a host's addresses in one answer, each marked cache-flush: all kept, not only the last", async () => {
+  mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
+  try {
+    const net = new FakeNet();
+    const a = device(net, '10.0.0.2', 'Hall panel', 'aa11');
+    const w = watcher();
+    void a.engine.lookup('_smb._tcp.', '', w.cb);
+    await pass(100);
+    const raw = new FakeUdp(net, '10.0.0.9');
+    raw.bind(5353);
+    raw.addMembership();
+    await settle();
+    const answer = encode({
+      id: 0, response: true, authoritative: true, questions: [],
+      answers: [{ name: '_smb._tcp.local', type: TYPE.PTR, ttl: 4500, data: 'nas._smb._tcp.local' }],
+      authorities: [],
+      additionals: [
+        { name: 'nas._smb._tcp.local', type: TYPE.SRV, ttl: 120, flush: true, data: { priority: 0, weight: 0, port: 445, target: 'nas.local' } },
+        { name: 'nas.local', type: TYPE.A, ttl: 120, flush: true, data: '10.0.0.9' },
+        { name: 'nas.local', type: TYPE.A, ttl: 120, flush: true, data: '192.168.5.9' },
+        { name: 'nas.local', type: TYPE.AAAA, ttl: 120, flush: true, data: 'fe80::9' },
+        { name: 'nas.local', type: TYPE.AAAA, ttl: 120, flush: true, data: 'fd00::9' },
+      ],
+    });
+    raw.send(answer, 0, answer.length, 5353, '224.0.0.251');
+    await pass(100);
+    assert.deepEqual(w.calls[0].added[0].addresses, ['10.0.0.9', 'fe80::9', 'fd00::9']);
+    await pass(3000);
+    const later = watcher();
+    void a.engine.lookup('_smb._tcp.', '', later.cb);
+    await settle();
+    assert.deepEqual(later.calls[0].added[0].addresses, ['10.0.0.9', 'fe80::9', 'fd00::9']);
+    // the same answer again later: still all of them (each flushes the others it didn't bring - it brought them all)
+    raw.send(answer, 0, answer.length, 5353, '224.0.0.251');
+    await pass(3000);
+    const again = watcher();
+    void a.engine.lookup('_smb._tcp.', '', again.cb);
+    await settle();
+    assert.deepEqual(again.calls[0].added[0].addresses, ['10.0.0.9', 'fe80::9', 'fd00::9']);
+    a.engine.dispose();
+  } finally {
+    mock.timers.reset();
+  }
+});

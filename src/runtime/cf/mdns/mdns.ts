@@ -73,6 +73,8 @@ interface Instance {
   full: string;
   name: string;
   ptrExpires: number;
+  /** its PTR's TTL (s) */
+  ptrTtl: number;
   srv?: Srv;
   srvExpires?: number;
   txt?: Record<string, string>;
@@ -94,6 +96,13 @@ interface Lookup {
   sent: number;
 }
 
+/** a host's address: until when, its TTL (s), when it came */
+interface Address {
+  until: number;
+  ttl: number;
+  at: number;
+}
+
 interface Published {
   type: string;
   fq: string;
@@ -113,14 +122,18 @@ export class Mdns {
   private ready: Promise<boolean> | null = null;
   private lookups: Lookup[] = [];
   private published: Published[] = [];
-  /** host name → its addresses, until when */
-  private hosts = new Map<string, Map<string, number>>();
+  /** host name → its addresses */
+  private hosts = new Map<string, Map<string, Address>>();
+  /** host name → when its addresses were last asked for again (near their end) */
+  private refreshed = new Map<string, number>();
   private ticker: ReturnType<typeof setInterval> | null = null;
   private asleep = false;
   /** a close after a goodbye: a moment later, so the goodbye goes out first */
   private closing: ReturnType<typeof setTimeout> | null = null;
   /** when a record was last sent by multicast (not again within a second) */
   private lastSent = new Map<string, number>();
+  /** after a wake: until the services not heard again are gone, the queries say nothing of what we know */
+  private recheck: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private host: MdnsHost) {}
 
@@ -281,9 +294,10 @@ export class Mdns {
     clearTimeout(l.timer);
     if (this.asleep || !this.lookups.includes(l)) return;
     const now = Date.now();
-    // known answers: what we have, not to be told again (RFC 6762 §7.1)
-    const known: DnsRecord[] = [...l.instances.values()]
-      .filter((i) => i.ptrExpires - now > (TTL_OTHER * 1000) / 2)
+    // known answers: what we have, not to be told again (RFC 6762 §7.1) - none while a wake's recheck waits to hear
+    // them again (a responder keeps quiet about what we say we know)
+    const known: DnsRecord[] = this.recheck ? [] : [...l.instances.values()]
+      .filter((i) => i.ptrExpires - now > (i.ptrTtl * 1000) / 2)
       .map((i) => ({ name: l.fq, type: TYPE.PTR, ttl: Math.round((i.ptrExpires - now) / 1000), data: i.full }));
     this.send({ id: 0, response: false, questions: [{ name: l.fq, type: TYPE.PTR, unicast: !this.shared && l.sent === 0 }], answers: known, authorities: [], additionals: [] },
       this.shared ? undefined : { address: GROUP, port: PORT });
@@ -306,7 +320,26 @@ export class Mdns {
   private addressesOf(host: string): string[] {
     const now = Date.now();
     const known = this.hosts.get(host.toLowerCase());
-    return known ? [...known].filter(([, until]) => until > now).map(([a]) => a) : [];
+    return known ? [...known].filter(([, x]) => x.until > now).map(([a]) => a) : [];
+  }
+
+  /**
+   * A found service's host addresses asked for again near their end (80%
+   * of their TTL, then every 5% more - RFC 6762 §5.2): the browse queries
+   * name the service as known, so nothing else brings them again.
+   */
+  private refresh(host: string) {
+    const now = Date.now();
+    const key = host.toLowerCase();
+    const addrs = [...(this.hosts.get(key)?.values() ?? [])].filter((x) => x.ttl > 0 && x.until > now);
+    const ending = addrs.filter((x) => x.until - now <= x.ttl * 200);
+    if (!ending.length) return;
+    const step = Math.min(...ending.map((x) => x.ttl * 50));
+    if (now - (this.refreshed.get(key) ?? -Infinity) < step) return;
+    this.refreshed.set(key, now);
+    const v6 = [...(this.hosts.get(key)?.keys() ?? [])].some((a) => a.includes(':'));
+    const qs: Question[] = [{ name: host, type: TYPE.A }, ...(v6 ? [{ name: host, type: TYPE.AAAA }] : [])];
+    this.send({ id: 0, response: false, questions: qs, answers: [], authorities: [], additionals: [] });
   }
 
   /** a found instance as the callback gets it: IPv4 first, those not on our subnet left out (if any are on it) */
@@ -360,9 +393,12 @@ export class Mdns {
       }
     }
     for (const [host, addrs] of this.hosts) {
-      for (const [a, until] of addrs) if (until <= now) addrs.delete(a);
-      if (!addrs.size) this.hosts.delete(host);
+      for (const [a, x] of addrs) if (x.until <= now) addrs.delete(a);
+      if (addrs.size) continue;
+      this.hosts.delete(host);
+      this.refreshed.delete(host);
     }
+    for (const l of this.lookups) for (const i of l.instances.values()) if (i.reported && i.srv) this.refresh(i.srv.target);
     this.report(changes);
   }
 
@@ -372,10 +408,14 @@ export class Mdns {
     for (const r of records) {
       if (r.type !== TYPE.A && r.type !== TYPE.AAAA) continue;
       const key = r.name.toLowerCase();
-      const addrs = this.hosts.get(key) ?? new Map<string, number>();
-      if (r.flush) for (const [a] of addrs) if (a.includes(':') === (r.type === TYPE.AAAA) && a !== r.data) addrs.set(a, Math.min(addrs.get(a)!, now + 1000));
-      if (r.ttl === 0) addrs.set(String(r.data), now + 1000);
-      else addrs.set(String(r.data), now + r.ttl * 1000);
+      const addrs = this.hosts.get(key) ?? new Map<string, Address>();
+      // cache-flush: the host's other addresses (of that family) go in a second - not those that came within the
+      // last second, the same answer's (RFC 6762 §10.2: a host with several sends them all, each marked so)
+      if (r.flush) {
+        for (const [a, x] of addrs) if (a.includes(':') === (r.type === TYPE.AAAA) && a !== r.data && now - x.at > 1000) x.until = Math.min(x.until, now + 1000);
+      }
+      if (r.ttl === 0) addrs.set(String(r.data), { until: now + 1000, ttl: 0, at: -Infinity });
+      else addrs.set(String(r.data), { until: now + r.ttl * 1000, ttl: r.ttl, at: now });
       this.hosts.set(key, addrs);
     }
     const changes = new Map<Lookup, { added: FoundService[]; removed: GoneService[] }>();
@@ -402,8 +442,9 @@ export class Mdns {
           }
           if (i) {
             i.ptrExpires = now + r.ttl * 1000;
+            i.ptrTtl = r.ttl;
             i.heardAt = now;
-          } else l.instances.set(key, { full, name, ptrExpires: now + r.ttl * 1000, reported: false, heardAt: now, askedAt: -Infinity });
+          } else l.instances.set(key, { full, name, ptrExpires: now + r.ttl * 1000, ptrTtl: r.ttl, reported: false, heardAt: now, askedAt: -Infinity });
         }
       }
       for (const r of records) {
@@ -612,6 +653,7 @@ export class Mdns {
       p.state = 'asleep';
     }
     for (const l of this.lookups) clearTimeout(l.timer);
+    this.endRecheck();
     this.asleep = true;
     if (this.published.length || this.lookups.length) this.log(`asleep: ${this.published.length} service(s) said goodbye, ${this.lookups.length} lookup(s) paused`);
     if (this.ticker) clearInterval(this.ticker);
@@ -648,11 +690,9 @@ export class Mdns {
       else answer(false, `Bonjour can't publish here: port ${PORT} is taken`);
     }
     const since = Date.now();
-    for (const l of this.lookups) {
-      l.sent = 0;
-      this.query(l);
-    }
-    setTimeout(() => {
+    this.endRecheck();
+    this.recheck = setTimeout(() => {
+      this.recheck = null;
       const changes = new Map<Lookup, { added: FoundService[]; removed: GoneService[] }>();
       for (const l of this.lookups) {
         for (const [key, i] of l.instances) {
@@ -666,6 +706,15 @@ export class Mdns {
       }
       this.report(changes);
     }, RECHECK_MS);
+    for (const l of this.lookups) {
+      l.sent = 0;
+      this.query(l);
+    }
+  }
+
+  private endRecheck() {
+    if (this.recheck) clearTimeout(this.recheck);
+    this.recheck = null;
   }
 
   /** Everything stopped (a new GUI): no goodbyes kept for later. */
@@ -675,6 +724,7 @@ export class Mdns {
       if (p.state === 'published') this.goodbye(p);
     }
     for (const l of this.lookups) clearTimeout(l.timer);
+    this.endRecheck();
     this.published = [];
     this.lookups = [];
     this.closeSoon();
