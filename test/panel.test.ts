@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeZip } from '../src/server/zip.ts';
-import { PARSED_STAMP, folderManifest, layoutOf, loadManifest, savedManifest, toSave, unpackPlan, unzip, useFetch, useTurn } from '../panel/loader.ts';
+import { PARSED_STAMP, appArchive, fetchGui, folderManifest, layoutOf, loadManifest, manifestOf, newerVersion, savedManifest, toSave, unpackPlan, unzip, useArchives, useFetch, useTurn, type Fetched } from '../panel/loader.ts';
 
 const GUI = '<gui><properties><project>Kept</project><imagefolder>images</imagefolder></properties><scripts><script name="scripts/main.js" /></scripts></gui>';
 const MAIN = 'var answer = 42;\n'.repeat(40);
@@ -269,4 +269,83 @@ test('the orientations a .gui is laid out in: a page with something in its <port
   assert.deepEqual([...one.has], ['landscape']);
   // no page laid out either way (none yet): either way
   assert.deepEqual([...layoutOf('<gui />').has].sort(), ['landscape', 'portrait']);
+});
+
+test("in the app a zip never comes to the page: the app downloads and keeps it, says what's in it; its next version asked for by ETag, the same bytes not newer", async () => {
+  const sized = (w: number, h: number) => `<gui><properties><project>${w}x${h}</project><size><portrait width="${h}" height="${w}" /><landscape width="${w}" height="${h}" /></size></properties></gui>`;
+  const asked: string[] = [];
+  let answer: Fetched = { status: 200, etag: '"v1"', archive: { savedAt: 100, bytes: 30_000_000 } };
+  useArchives({
+    async fetch(id, url, known) {
+      asked.push(`fetch ${id} ${url} ${known?.etag ?? '-'}`);
+      if (url.endsWith(':8019/')) return { status: 200, text: GUI, server: 'iva' };
+      return known?.etag && known.etag === answer.etag ? { status: 304 } : answer;
+    },
+    async names(id, savedAt) {
+      asked.push(`names ${id} ${savedAt}`);
+      return ['app.gui', 'images/a.png', 'images/scripts/main.js', '1400w1400h/app.gui', '1400w1400h/images/a.png', 'iva-atlas/atlas.json'];
+    },
+    async text(_, savedAt, name) {
+      asked.push(`text ${name} ${savedAt}`);
+      return name.startsWith('1400w1400h/') ? sized(467, 467) : sized(1280, 800);
+    },
+  });
+  // through the page: a script, and a zip only when the app couldn't unpack it
+  const zip = writeZip([['app.gui', Buffer.from(GUI)], ['images/scripts/main.js', Buffer.from(MAIN)]]);
+  const page: string[] = [];
+  useFetch((async (url: string) => {
+    page.push(url);
+    const body = url.endsWith('.js') ? new TextEncoder().encode(MAIN) : new Uint8Array(zip);
+    return { ok: true, status: 200, headers: { get: () => null }, arrayBuffer: async () => body.buffer };
+  }) as any);
+  const g = globalThis as { screen?: { width: number; height: number } };
+  g.screen = { width: 1920, height: 1080 };
+  const url = 'http://10.0.0.2/app.gui.zip';
+  try {
+    const got = await fetchGui(url);
+    assert.equal(got.bytes, undefined, 'no bytes in the page');
+    const saved = await toSave(got);
+    assert.deepEqual(saved, { url, etag: '"v1"', lastModified: undefined, savedAt: 100, appZip: true, bytes: 30_000_000 });
+    // the plan from what the app reads of its copy: the names, the .gui of each size (the one shaped like the screen)
+    const plan = await unpackPlan(await appArchive(url, 100), url);
+    assert.equal(plan.size, '');
+    assert.deepEqual([...plan.files].sort(), ['app.gui', 'images/a.png', 'images/scripts/main.js']);
+    assert.ok(asked.includes('text 1400w1400h/app.gui 100') && asked.includes('text app.gui 100'), asked.join('\n'));
+    await assert.rejects(savedManifest(saved), /the app's/);
+    // its next version: asked with its ETag (304: none); the same bytes under another ETag: none either
+    asked.length = 0;
+    assert.equal(await newerVersion(saved), null);
+    assert.deepEqual(asked, [`fetch ${url} ${url} "v1"`]);
+    answer = { ...answer, etag: '"v2"', same: true };
+    assert.equal(await newerVersion(saved), null);
+    // ... unless the copy the app has isn't the one the page knew (a reload cut a check short): that one
+    assert.equal((await newerVersion({ ...saved, savedAt: 99 }))?.savedAt, 100);
+    // a new one: kept by the app, its version the app's
+    answer = { status: 200, etag: '"v3"', archive: { savedAt: 200, bytes: 31_000_000 } };
+    assert.deepEqual(await newerVersion(saved), { url, etag: '"v3"', lastModified: undefined, savedAt: 200, appZip: true, bytes: 31_000_000 });
+    // a copy an older panel kept in the page (its zip there): the app's own from the server, once - no If-None-Match
+    asked.length = 0;
+    const older = await newerVersion({ url, zip: new Uint8Array(zip), etag: '"v3"', savedAt: 5, bytes: zip.length });
+    assert.deepEqual(asked, [`fetch ${url} ${url} -`]);
+    assert.equal(older?.appZip, true);
+    assert.equal(older?.zip, undefined);
+    // iva serve: its .gui comes as text, its whole build's archive is kept by the app as that GUI's copy
+    asked.length = 0;
+    const live = await fetchGui('http://10.0.0.2:8019/');
+    const m = await manifestOf(live);
+    assert.equal(m.scriptMap['scripts/main.js'], MAIN);
+    const copy = await toSave(live, m);
+    assert.deepEqual(asked, ['fetch http://10.0.0.2:8019/ http://10.0.0.2:8019/ -', 'fetch http://10.0.0.2:8019/ http://10.0.0.2:8019/__iva/gui.zip -']);
+    assert.equal(copy.gui, GUI);
+    assert.equal(copy.appZip, true);
+    assert.equal(copy.savedAt, 200);
+    assert.ok(!page.some((u) => u.endsWith('.zip')), `no zip through the page: ${page.join(', ')}`);
+    // an archive the app couldn't unpack, read here after all: from its server again, through the page
+    const here = await manifestOf(got);
+    assert.equal(here.scriptMap['scripts/main.js'], MAIN);
+    assert.deepEqual(page.filter((u) => u.endsWith('.zip')), [url]);
+  } finally {
+    useArchives(undefined);
+    delete g.screen;
+  }
 });

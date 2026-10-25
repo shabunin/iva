@@ -3,8 +3,10 @@
  * a .gui, a zipped GUI, iva serve's address - the way iViewer fetches it:
  * its images and scripts in its image folder. Files come through the app's
  * HTTP client (Rust: no CORS); images load from their server (it must allow
- * other origins - iva serve does), or from the archive (blob URLs).
- * src/server/project.ts does the same for iva dev, on the server side.
+ * other origins - iva serve does), or from the archive (blob URLs). In the
+ * app a zip never comes here: the app downloads it to the device and keeps
+ * it there (useArchives). src/server/project.ts does the same for iva dev,
+ * on the server side.
  */
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { fetch as hostFetch } from '@tauri-apps/plugin-http';
@@ -108,15 +110,59 @@ export const guiUrl = (url: string) => {
   return /^[a-z][a-z0-9+.-]*:\/\//i.test(u) ? u : `http://${u}`;
 };
 
+/** A zip the app downloaded and keeps on the device as a GUI's copy (src-tauri/src/unpack.rs): when it came - its version - and how large. */
+export interface AppArchive {
+  savedAt: number;
+  bytes: number;
+}
+
 /** What a server gave: the bytes, and what tells this version from its next one. */
 export interface Download {
   url: string;
-  bytes: Uint8Array<ArrayBuffer>;
+  /** what came - but a zip the app kept (`archive`): not here */
+  bytes?: Uint8Array<ArrayBuffer>;
+  /** a zip, downloaded by the app and kept by it as the GUI's copy (no bytes here) ... */
+  archive?: AppArchive;
+  /** ... the very bytes of the copy it kept before (that one stays, its version too) */
+  same?: boolean;
   etag?: string;
   lastModified?: string;
   /** its Server header (iva serve has the whole build in one archive) */
   server?: string;
 }
+
+/** What the app's download answers (gui_fetch). */
+export interface Fetched {
+  status: number;
+  etag?: string;
+  lastModified?: string;
+  server?: string;
+  /** not a zip: what came, as text (a .gui; a web page) */
+  text?: string;
+  /** a zip: the GUI's copy now */
+  archive?: AppArchive;
+  /** that zip the very bytes of the copy kept before (it stays, its version too) */
+  same?: boolean;
+}
+
+/**
+ * The app's side of a GUI's zip (src-tauri/src/unpack.rs): downloaded
+ * straight to the device and kept there as the GUI's copy (`id`'s) - none
+ * of it through the page - and what's in it read there. A browser has none.
+ */
+export interface Archives {
+  /** GET url (a GUI's own file), with the copy's ETag and Last-Modified if it's only wanted when another */
+  fetch(id: string, url: string, known?: { etag?: string; lastModified?: string }): Promise<Fetched>;
+  /** the names in the GUI's copy - that copy (when it came) */
+  names(id: string, savedAt: number): Promise<string[]>;
+  /** a file of the GUI's copy as text (a .gui) */
+  text(id: string, savedAt: number, name: string): Promise<string>;
+}
+let archives: Archives | undefined;
+/** the app's side, where there is one (the panel's page sets it); a test's stand-in */
+export const useArchives = (a: Archives | undefined) => {
+  archives = a;
+};
 
 /** what fetches: the app's HTTP client (Rust); a test's stand-in through useFetch */
 let fetching: typeof hostFetch = hostFetch;
@@ -131,8 +177,19 @@ export const ownFile = (url: string) => {
   return u.protocol === location.protocol && u.host === location.host;
 };
 
-/** GET url - with `known` (a saved copy's ETag, Last-Modified): null when the server says it's the same */
-async function download(url: string, known?: { etag?: string; lastModified?: string }): Promise<Download | null> {
+/**
+ * GET url - with `known` (a saved copy's ETag, Last-Modified): null when the
+ * server says it's the same. `id`: a GUI's own file (its .gui or zip, iva
+ * serve's archive) - in the app a zip goes straight to the device, kept as
+ * that GUI's copy.
+ */
+async function download(url: string, known?: { etag?: string; lastModified?: string }, id?: string): Promise<Download | null> {
+  if (id !== undefined && archives && !ownFile(url)) {
+    const r = await archives.fetch(id, url, known && { etag: known.etag, lastModified: known.lastModified });
+    if (r.status === 304) return null;
+    const bytes = r.text === undefined ? undefined : (new TextEncoder().encode(r.text) as Uint8Array<ArrayBuffer>);
+    return { url, bytes, archive: r.archive, same: r.same, etag: r.etag, lastModified: r.lastModified, server: r.server };
+  }
   const headers: Record<string, string> = {};
   if (known?.etag) headers['If-None-Match'] = known.etag;
   if (known?.lastModified) headers['If-Modified-Since'] = known.lastModified;
@@ -144,8 +201,10 @@ async function download(url: string, known?: { etag?: string; lastModified?: str
   return { url, bytes: new Uint8Array(await res.arrayBuffer()), etag: header('etag'), lastModified: header('last-modified'), server: header('server') };
 }
 
-const get = async (url: string) => (await download(url))!.bytes;
+const get = async (url: string) => (await download(url))!.bytes!;
 export const isZip = (b: Uint8Array) => b[0] === 0x50 && b[1] === 0x4b && b[2] === 3 && b[3] === 4;
+/** what came is a zipped GUI: kept by the app, or here */
+export const zipped = (got: Download) => !!got.archive || (!!got.bytes && isZip(got.bytes));
 
 function decodeXml(b: Uint8Array): string {
   // GUI Designer writes UTF-8 with a BOM; tolerate UTF-16 too
@@ -171,8 +230,8 @@ function scriptNames(xml: string): string[] {
 const folderOf = (xml: string) => (xml.match(/<imagefolder>([^<]*)<\/imagefolder>/)?.[1] ?? '').trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
 const titleOf = (xml: string, fallback: string) => xml.match(/<project>([^<]*)<\/project>/)?.[1]?.trim() || fallback;
 
-/** The GUI at `url` from its server, as it came: a .gui, or a zip (by what comes, whatever the URL says). */
-export const fetchGui = async (url: string) => (await download(guiUrl(url)))!;
+/** The GUI at `url` from its server, as it came: a .gui, or a zip (by what comes, whatever the URL says) - in the app, a zip kept by it. */
+export const fetchGui = async (url: string) => (await download(guiUrl(url), undefined, guiUrl(url)))!;
 
 /** The GUI at `url` from its server - a .gui, or a zip (by what comes, whatever the URL says) - and what came. */
 export async function loadManifest(url: string): Promise<{ manifest: Manifest; got: Download }> {
@@ -182,15 +241,18 @@ export async function loadManifest(url: string): Promise<{ manifest: Manifest; g
 
 /** The GUI that came from its server (fetchGui). */
 export async function manifestOf(got: Download): Promise<Manifest> {
-  if (isZip(got.bytes)) return zipManifest(openZip(got.bytes), got.url);
-  const xml = decodeXml(got.bytes);
+  // a zip the app kept, read here after all (the app couldn't unpack it): its bytes from the server again
+  const bytes = got.bytes ?? (await download(got.url))!.bytes!;
+  if (isZip(bytes)) return zipManifest(openZip(bytes), got.url);
+  const xml = decodeXml(bytes);
   // a web page, a wrong address: say so, not an empty screen
   if (!/<gui[\s>]/.test(xml)) throw new Error(`${got.url}: not a GUI (a .gui, a zipped GUI or iva serve's address)`);
   return remoteManifest(got.url, xml);
 }
 
-/** A GUI from its copy on the device. */
+/** A GUI from its copy on the device, read here (not a zip the app keeps: the app unpacks that, src-tauri/src/unpack.rs). */
 export async function savedManifest(saved: SavedGui): Promise<Manifest> {
+  if (saved.appZip && !saved.zip) throw new Error("the copy is the app's, and it couldn't unpack it");
   return zipManifest(saved.zip ? openZip(saved.zip) : filesArchive(new Map(Object.entries(saved.files ?? {}))), saved.url);
 }
 
@@ -216,19 +278,23 @@ async function each<T>(items: T[], n: number, work: (item: T) => Promise<void>) 
  */
 export async function toSave(got: Download, m?: Manifest): Promise<SavedGui> {
   const base = { url: got.url, etag: got.etag, lastModified: got.lastModified, savedAt: Date.now() };
-  if (isZip(got.bytes)) return { ...base, zip: got.bytes, bytes: got.bytes.length };
+  // a zip the app keeps: its version the app's (when it came)
+  if (got.archive) return { ...base, appZip: true, savedAt: got.archive.savedAt, bytes: got.archive.bytes };
+  const bytes = got.bytes!;
+  if (isZip(bytes)) return { ...base, zip: bytes, bytes: bytes.length };
   m ??= await manifestOf(got);
-  const gui = decodeXml(got.bytes);
+  const gui = decodeXml(bytes);
   if (got.server?.startsWith('iva')) {
-    // the whole build in one archive (asked for twice: a flaky link)
+    // the whole build in one archive (asked for twice: a flaky link) - in the app, kept by it as this GUI's copy
     const at = new URL('/__iva/gui.zip', got.url).href;
-    const zip = await download(at).catch(() => download(at)).catch(() => null);
-    if (zip && isZip(zip.bytes)) return { ...base, gui, zip: zip.bytes, bytes: zip.bytes.length };
+    const zip = await download(at, undefined, got.url).catch(() => download(at, undefined, got.url)).catch(() => null);
+    if (zip?.archive) return { ...base, gui, appZip: true, savedAt: zip.archive.savedAt, bytes: zip.archive.bytes };
+    if (zip?.bytes && isZip(zip.bytes)) return { ...base, gui, zip: zip.bytes, bytes: zip.bytes.length };
   }
   const folder = folderOf(gui);
   const inFolder = (name: string) => (folder ? `${folder}/` : '') + name.replace(/\\/g, '/');
   const own = decodeURIComponent(new URL(got.url).pathname.split('/').pop() ?? '');
-  const files: Record<string, Uint8Array<ArrayBuffer>> = { [/\.gui$/i.test(own) ? own : 'gui.gui']: got.bytes };
+  const files: Record<string, Uint8Array<ArrayBuffer>> = { [/\.gui$/i.test(own) ? own : 'gui.gui']: bytes };
   const names = [...new Set([...imageNames(gui), ...webPages(gui)].map((n) => n.replace(/\\/g, '/')))];
   await each(names, 6, async (name) => {
     const href = m.fileUrl(name);
@@ -255,11 +321,20 @@ export async function toSave(got: Download, m?: Manifest): Promise<SavedGui> {
   return { ...base, gui, files, bytes: Object.values(files).reduce((n, f) => n + f.length, 0) };
 }
 
-/** The server's version of a saved GUI, to keep - null if it's the one saved (or the same bytes again). */
+/**
+ * The server's version of a saved GUI, to keep - null if it's the one saved
+ * (or the same bytes again). A zipped GUI's copy in the app: asked for by the
+ * app, a new one kept by it. A copy an older panel kept here, its zip in the
+ * page's storage: the app's own from the server, once (no If-None-Match).
+ */
 export async function newerVersion(saved: SavedGui): Promise<SavedGui | null> {
-  const got = await download(saved.url, saved);
+  const older = !!archives && !!saved.zip;
+  const got = await download(saved.url, older ? undefined : saved, archives && !saved.gui ? saved.url : undefined);
   if (!got) return null;
-  if (isZip(got.bytes) ? !saved.gui && !!saved.zip && same(saved.zip, got.bytes) : saved.gui === decodeXml(got.bytes)) return null;
+  // the bytes kept already: not newer - unless the copy kept isn't the one this page knew (a reload cut its check short)
+  if (got.archive) return got.same && got.archive.savedAt === saved.savedAt ? null : toSave(got);
+  const bytes = got.bytes!;
+  if (!older && (isZip(bytes) ? !saved.gui && !!saved.zip && same(saved.zip, bytes) : saved.gui === decodeXml(bytes))) return null;
   return toSave(got, await manifestOf(got));
 }
 
@@ -431,6 +506,22 @@ export function openZip(z: Uint8Array<ArrayBuffer>): Archive {
   };
 }
 
+/**
+ * A GUI's copy the app keeps (a zip it downloaded, `id`'s, from `savedAt`)
+ * as an Archive: its names, and a file read by the app - as text, re-encoded
+ * (what a plan reads of it: its .gui).
+ */
+export async function appArchive(id: string, savedAt: number): Promise<Archive> {
+  const a = archives;
+  if (!a) throw new Error('no app to keep an archive');
+  const names = await a.names(id, savedAt);
+  return {
+    names,
+    stored: () => undefined,
+    read: async (name) => new TextEncoder().encode(await a.text(id, savedAt, name)) as Uint8Array<ArrayBuffer>,
+  };
+}
+
 /** Files by their path (a copy kept as files beside its .gui) as an Archive. */
 function filesArchive(files: Map<string, Uint8Array<ArrayBuffer>>): Archive {
   return {
@@ -462,10 +553,10 @@ const RETINA = /@2x\.(png|jpe?g|gif)$/i;
  * What the app unpacks of a zipped GUI (src-tauri/src/unpack.rs): the size
  * run's files - but for sheets of its own (the app's go there) - the folder
  * its sheets go in, beside its .gui, and which size it is (the one for each
- * orientation, of several).
+ * orientation, of several). From its bytes, or the app's copy (appArchive).
  */
-export async function unpackPlan(zip: Uint8Array<ArrayBuffer>, id: string): Promise<{ files: string[]; atlas: string; size: string; sizes?: Record<Turn, string> }> {
-  const { dir, names, sizes } = await sizeRun(openZip(zip), id);
+export async function unpackPlan(zip: Uint8Array<ArrayBuffer> | Archive, id: string): Promise<{ files: string[]; atlas: string; size: string; sizes?: Record<Turn, string> }> {
+  const { dir, names, sizes } = await sizeRun(zip instanceof Uint8Array ? openZip(zip) : zip, id);
   const sheets = `${dir}${ATLAS_DIR}`;
   return { files: names.filter((n) => !n.toLowerCase().startsWith(sheets.toLowerCase())), atlas: sheets.replace(/\/$/, ''), size: dir, sizes };
 }

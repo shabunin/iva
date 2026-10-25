@@ -2,12 +2,15 @@
  * The GUIs kept on this device (IndexedDB), by the URL each came from: what
  * starts one without its server - a zipped GUI's archive, or a .gui's files -
  * and what tells the server's next version from it (its ETag, Last-Modified,
- * the .gui's text). The ones used last are kept (KEEP).
+ * the .gui's text). The ones used last are kept (KEEP). In the app a zip is
+ * the app's, on the device (src-tauri/src/unpack.rs): here only what it is.
  */
 export interface SavedGui {
   url: string;
   /** a zip archive: a zipped GUI as it came, iva serve's whole build ... */
   zip?: Uint8Array<ArrayBuffer>;
+  /** ... that the app keeps (it downloaded it to the device: savedAt its version, bytes its size) ... */
+  appZip?: true;
   /** ... or the files a .gui names, by their path beside it (the .gui among them) */
   files?: Record<string, Uint8Array<ArrayBuffer>>;
   /** a .gui's text as its server gave it: another text, another version */
@@ -67,8 +70,8 @@ export const savedGui = (url: string) => run<SavedGui | undefined>('readonly', (
 /** when it was saved and how large, if it is */
 export const keptGui = (url: string) => run<Kept | undefined>('readonly', (_, kept) => kept.get(url));
 
-/** keep it (the one before for its URL goes); the ones used longest ago beyond KEEP go too */
-export async function saveGui(g: SavedGui) {
+/** keep it (the one before for its URL goes); the ones used longest ago beyond KEEP go too: their URLs */
+export async function saveGui(g: SavedGui): Promise<string[]> {
   const before = await keptGui(g.url);
   await run('readwrite', (guis, kept) => {
     guis.put(g);
@@ -77,6 +80,7 @@ export async function saveGui(g: SavedGui) {
   const all = await run<Kept[]>('readonly', (_, kept) => kept.getAll());
   const old = all.sort((a, b) => b.usedAt - a.usedAt).slice(KEEP);
   if (old.length) await run('readwrite', (guis, kept) => old.forEach((k) => (guis.delete(k.url), kept.delete(k.url))));
+  return old.map((k) => k.url);
 }
 
 /** started from it (the ones used last are the ones kept) */
