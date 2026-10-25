@@ -271,6 +271,14 @@ served as it is - every file by its path, a page at `/` listing its GUIs -
 for GUIs that link to one another (`examples/browse`: one build each in
 `dist/<name>/`); no live reload there.
 
+`/` is one size: the project's own, or `--size`'s. The iva panel takes the
+whole build as one archive (`/__iva/gui.zip`), and for a project with
+`<Project sizes>` that archive has every size, laid out as `iva build --zip`
+does (the size at `/` at its root, each other in its `<W>w<H>h/` folder): the
+panel runs the one shaped like its screen. The other sizes are built when the
+archive is asked for, once a build, so saving rebuilds only the size at `/`.
+`--size 1400x1400@3x` serves that size only, in the archive too.
+
 The same script brings the panel's log to the console - `CF.log`, script
 errors, what the panel's servers get and send, whether they answer, and what
 its web pages meet (their size, their errors) - no remote debugger needed:

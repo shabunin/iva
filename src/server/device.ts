@@ -15,6 +15,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { compile, IvaError, scriptsDir, slug, type CompileResult } from '../compiler/index.js';
+import { sizeFolder, sizeLabel, type ScreenSize } from '../compiler/components.js';
 import { watchInputs, watchTree } from './watch.js';
 import { writeZip } from './zip.js';
 
@@ -25,7 +26,11 @@ export interface DeviceServerOptions {
   host: string;
   /** reload the panel on the device after each build (default true) */
   live: boolean;
-  /** build a JSX project for this screen instead of its own size ('1400x1400') */
+  /**
+   * build a JSX project for this screen instead of its own size ('1400x1400'):
+   * that size only, at / and in the panel's archive (as iva build --size); without
+   * it the archive has every size of <Project sizes> too, for the panel to choose
+   */
   size?: string;
   log?: (msg: string) => void;
 }
@@ -46,10 +51,24 @@ interface Served {
   /** a folder served: what's at / is that page (HTML), there's no one build */
   html?: boolean;
   /** other files by lower-cased path: `path` as served (images/x.png) */
-  files: Map<string, { name: string; path: string; data?: Buffer; file?: string }>;
+  files: Map<string, ServedFile>;
+  /** a JSX project's other sizes (<Project sizes>; none with --size): built for the panel's archive when it's asked for */
+  sizes?: ScreenSize[];
+  /** the build's warnings (another size's that differ are logged when it's built) */
+  warnings?: string[];
   version: string;
   modified: Date;
 }
+
+interface ServedFile {
+  name: string;
+  path: string;
+  data?: Buffer;
+  file?: string;
+}
+
+/** One size's build as served: its .gui (the live script added when live), its files by lower-cased path. */
+type SizeBuild = Pick<Served, 'name' | 'gui' | 'files'>;
 
 export interface Address {
   address: string;
@@ -233,6 +252,20 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
   // what's being served (replaced on each good build) and the last build error
   const state: { served: Served | null; error: string | null; inputs: CompileResult['inputs'] | null } = { served: null, error: null, inputs: null };
   const waiting = new Set<(v: string) => void>();
+  const failure = (e: unknown) => (e instanceof IvaError ? e.format(path.dirname(target)) : String((e as Error)?.stack ?? e));
+  const live = (gui: Buffer) => (opts.live ? Buffer.from(withLiveScript(gui.toString('utf8'))) : gui);
+  /** A build as served: where writeBuild puts its files, iViewer asks for them (images/..., images/scripts/...). */
+  const sizeBuild = (r: CompileResult): SizeBuild => {
+    const files = new Map<string, ServedFile>();
+    const at = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
+    for (const a of r.assets) files.set(at(r.layout.images, a.name).toLowerCase(), { ...a, path: at(r.layout.images, a.name) });
+    for (const s of r.scripts) {
+      const where = at(scriptsDir(r.layout), s.name);
+      files.set(where.toLowerCase(), { name: s.name, path: where, file: s.file, data: s.code !== undefined ? Buffer.from(s.code) : undefined });
+    }
+    files.set('joins.json', { name: 'joins.json', path: 'joins.json', data: Buffer.from(JSON.stringify(r.joins, null, 2) + '\n') });
+    return { name: `${slug(r.name)}.gui`, gui: Buffer.from('\ufeff' + r.xml), files };
+  };
 
   const load = async (): Promise<void> => {
     const t0 = Date.now();
@@ -257,27 +290,18 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
       try {
         r = await compile(target, { size: opts.size });
       } catch (e) {
-        state.error = e instanceof IvaError ? e.format(path.dirname(target)) : String((e as Error)?.stack ?? e);
+        state.error = failure(e);
         log(`build failed (the device keeps the last good build):\n${state.error}`);
         return;
       }
       for (const w of r.warnings) log(`warning: ${w}`);
       state.inputs = r.inputs;
-      // where writeBuild puts them, iViewer asks for them: images/..., images/scripts/...
-      const files = new Map<string, { name: string; path: string; data?: Buffer; file?: string }>();
-      const at = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
-      for (const a of r.assets) files.set(at(r.layout.images, a.name).toLowerCase(), { ...a, path: at(r.layout.images, a.name) });
-      for (const s of r.scripts) {
-        const where = at(scriptsDir(r.layout), s.name);
-        files.set(where.toLowerCase(), { name: s.name, path: where, file: s.file, data: s.code !== undefined ? Buffer.from(s.code) : undefined });
-      }
-      files.set('joins.json', { name: 'joins.json', path: 'joins.json', data: Buffer.from(JSON.stringify(r.joins, null, 2) + '\n') });
-      next = { name: `${slug(r.name)}.gui`, gui: Buffer.from('﻿' + r.xml), files };
+      next = { ...sizeBuild(r), sizes: opts.size ? [] : r.sizes, warnings: r.warnings };
       log(`built ${path.basename(target)} in ${Date.now() - t0} ms`);
     }
     state.error = null;
     const version = `${Date.now().toString(36)}`;
-    if (opts.live && !next.html) next.gui = Buffer.from(withLiveScript(next.gui.toString('utf8')));
+    if (!next.html) next.gui = live(next.gui);
     state.served = { ...next, version, modified: new Date() };
     for (const w of waiting) w(version);
     waiting.clear();
@@ -286,25 +310,77 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
   if (!state.served) throw new Error(`can't serve: ${state.error}`);
 
   /**
-   * The GUI as served, in one archive: the .gui, its files at their paths, the
-   * live script - what the iva panel keeps on the device (the web pages and
-   * assets a script loads too, which the .gui doesn't name). Made once a build.
+   * The other sizes of a build (<Project sizes>), each as served: built once a
+   * version, when the panel's archive is asked for - a rebuild on save builds
+   * the one size served at / only. A size that fails is left out (logged): the
+   * panel picks from the rest.
    */
-  let zipped: { key: string; data: Buffer } | null = null;
+  let others: { version: string; built: Promise<(SizeBuild & { folder: string })[]> } | null = null;
+  const othersOf = (s: Served) => {
+    if (others?.version === s.version) return others.built;
+    const built = (async () => {
+      const out: (SizeBuild & { folder: string })[] = [];
+      const read: CompileResult['inputs'][] = [];
+      for (const size of s.sizes ?? []) {
+        const t0 = Date.now();
+        try {
+          const r = await compile(target, { size });
+          for (const w of r.warnings) if (!s.warnings?.includes(w)) log(`warning: ${sizeLabel(size)}: ${w}`);
+          const b = sizeBuild(r);
+          out.push({ ...b, gui: live(b.gui), folder: sizeFolder(size) });
+          read.push(r.inputs);
+          log(`built ${sizeLabel(size)} for the panel's archive in ${Date.now() - t0} ms`);
+        } catch (e) {
+          log(`build at ${sizeLabel(size)} failed (not in the panel's archive):\n${failure(e)}`);
+        }
+      }
+      // what those builds read is watched too, while this build is the one served
+      if (inputs && state.inputs && state.served?.version === s.version && read.length) {
+        const all = [state.inputs, ...read];
+        inputs.set({ files: [...new Set(all.flatMap((i) => i.files))], dirs: [...new Set(all.flatMap((i) => i.dirs))] });
+      }
+      return out;
+    })();
+    others = { version: s.version, built };
+    return built;
+  };
+
+  /** One size's entries in the archive, in its folder ('' or '1400w1400h/'): the .gui, its files at their paths, the live script. */
+  const entriesOf = (b: SizeBuild, folder: string, version: string, host: string): [string, Buffer][] => {
+    const entries: [string, Buffer][] = [[folder + b.name, b.gui]];
+    for (const f of b.files.values()) {
+      const data = f.data ?? (f.file && fs.existsSync(f.file) ? fs.readFileSync(f.file) : undefined);
+      if (data) entries.push([folder + f.path, data]);
+    }
+    if (opts.live) {
+      const xml = b.gui.toString('utf8');
+      entries.push([folder + LIVE_SCRIPT, Buffer.from(liveScript(`http://${host}`, version, panelServers(xml), systemNames(xml)))]);
+    }
+    return entries;
+  };
+
+  /**
+   * The GUI as served, in one archive - what the iva panel keeps on the device
+   * (the web pages and assets a script loads too, which the .gui doesn't name):
+   * the size served at / at the root, each other size of <Project sizes> in its
+   * <W>w<H>h/ folder, as iva build --zip lays them out, for the panel to unpack
+   * the one shaped like its screen. Made once a build.
+   */
+  let zipped: { key: string; data: Promise<Buffer> } | null = null;
   const zipOf = (s: Served, host: string) => {
     const key = `${s.version} ${host}`;
     if (zipped?.key === key) return zipped.data;
-    const entries: [string, Buffer][] = [[s.name, s.gui]];
-    for (const f of s.files.values()) {
-      const data = f.data ?? (f.file && fs.existsSync(f.file) ? fs.readFileSync(f.file) : undefined);
-      if (data) entries.push([f.path, data]);
-    }
-    if (opts.live) {
-      const xml = s.gui.toString('utf8');
-      entries.push([LIVE_SCRIPT, Buffer.from(liveScript(`http://${host}`, s.version, panelServers(xml), systemNames(xml)))]);
-    }
-    zipped = { key, data: writeZip(entries) };
-    return zipped.data;
+    const data = othersOf(s).then((built) => writeZip([
+      ...entriesOf(s, '', s.version, host),
+      ...built.flatMap((b) => entriesOf(b, `${b.folder}/`, s.version, host)),
+    ]));
+    const made = { key, data };
+    zipped = made;
+    // not kept if it failed: the next ask tries again
+    data.catch(() => {
+      if (zipped === made) zipped = null;
+    });
+    return data;
   };
 
   const server = http.createServer((req, res) => {
@@ -369,7 +445,8 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
       if (s.html) return send(404, 'a folder of GUIs: no one build', 'text/plain');
       if (unchanged) return send(304, '', 'application/zip');
       const host = req.headers.host ?? `${lanAddresses()[0]?.address ?? '127.0.0.1'}:${opts.port}`;
-      return send(200, zipOf(s, host), 'application/zip');
+      zipOf(s, host).then((zip) => send(200, zip, 'application/zip'), (e) => send(500, `no archive: ${(e as Error)?.message ?? e}`, 'text/plain'));
+      return;
     }
 
     let name: string;
