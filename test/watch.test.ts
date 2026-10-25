@@ -37,3 +37,58 @@ test('watchInputs: the files a build read and the assets folder, nothing else', 
     w.close();
   }
 });
+
+test("watchInputs: what a build writes while it runs (and then reads) doesn't build again; a later edit of it does", async () => {
+  const dir = tmpDir('iva-watch-');
+  const app = path.join(dir, 'app.jsx');
+  const drawn = path.join(dir, '.neu');
+  const old = path.join(drawn, 'neu-a.png');
+  const made = path.join(drawn, 'neu-b.png');
+  fs.mkdirSync(drawn);
+  fs.writeFileSync(app, 'x');
+  fs.writeFileSync(old, 'a');
+  let builds = 0;
+  // a build as neu/paint.js runs in one: it draws a new picture into a folder already watched (synchronously, as the
+  // build evaluates), and the picture is one of the files the build read
+  const w = watchInputs(() => {
+    builds++;
+    if (!fs.existsSync(made)) {
+      fs.writeFileSync(`${made}.tmp`, 'b');
+      fs.renameSync(`${made}.tmp`, made);
+    }
+    w.set({ files: [app, old, made], dirs: [] });
+  });
+  w.set({ files: [app, old], dirs: [] });
+  await wait(100);
+  try {
+    fs.writeFileSync(app, 'y');
+    await wait(800);
+    assert.equal(builds, 1);
+    fs.writeFileSync(made, 'bb'); // the picture changed after the build: build again
+    await wait(800);
+    assert.equal(builds, 2);
+  } finally {
+    w.close();
+  }
+});
+
+test('watchInputs: an edit while a build runs (after the build read the file) builds again after it', async () => {
+  const dir = tmpDir('iva-watch-');
+  const app = path.join(dir, 'app.jsx');
+  fs.writeFileSync(app, 'x');
+  let builds = 0;
+  const w = watchInputs(() => {
+    // the build reads app.jsx, then it's saved again before the build ends
+    if (++builds === 1) fs.writeFileSync(app, 'zzz');
+    w.set({ files: [app], dirs: [] });
+  });
+  w.set({ files: [app], dirs: [] });
+  await wait(100);
+  try {
+    fs.writeFileSync(app, 'yy');
+    await wait(1200);
+    assert.equal(builds, 2);
+  } finally {
+    w.close();
+  }
+});
