@@ -42,7 +42,17 @@ const TYPES: Record<string, string> = {
   // GUI Designer sends scripts as text/html; iViewer takes them so
   '.js': 'text/html', '.html': 'text/html', '.htm': 'text/html',
 };
-const LIVE_SCRIPT = 'iva-live.js';
+/**
+ * The live script's name in a build's .gui: the build's version in it. A page
+ * that got a .gui before a rebuild asks for its scripts after; by its name, the
+ * script it gets waits on that .gui's build (it sees the newer one, and reloads)
+ * - not on the build served when it asks (it would wait on that, and stay on
+ * the older .gui). It also makes each build's .gui another text, and its
+ * script a file no cache has.
+ */
+const liveName = (version: string) => `iva-live-${version}.js`;
+/** a live script asked for, its version (none: an older iva serve's .gui, iva-live.js - it sees the build served now at once) */
+const LIVE_SCRIPT = /^iva-live(?:-([a-z0-9]+))?\.js$/;
 
 interface Served {
   name: string;
@@ -94,9 +104,9 @@ export function lanAddresses(): Address[] {
   return out.sort((x, y) => Number(!!x.kind) - Number(!!y.kind));
 }
 
-/** The .gui with one more script: the live-reload one, last. */
-function withLiveScript(xml: string): string {
-  const tag = `<script name="${LIVE_SCRIPT}" />`;
+/** The .gui with one more script: the live-reload one of this build, last. */
+function withLiveScript(xml: string, version: string): string {
+  const tag = `<script name="${liveName(version)}" />`;
   if (/<\/scripts>/.test(xml)) return xml.replace(/(\s*)<\/scripts>/, `$1  ${tag}$1</scripts>`);
   if (/<scripts\s*\/>/.test(xml)) return xml.replace(/<scripts\s*\/>/, `<scripts>${tag}</scripts>`);
   return xml.replace(/(\r?\n?\s*)<(page|subpage)\b/, `$1<scripts>${tag}</scripts>$1<$2`);
@@ -253,7 +263,9 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
   const state: { served: Served | null; error: string | null; inputs: CompileResult['inputs'] | null } = { served: null, error: null, inputs: null };
   const waiting = new Set<(v: string) => void>();
   const failure = (e: unknown) => (e instanceof IvaError ? e.format(path.dirname(target)) : String((e as Error)?.stack ?? e));
-  const live = (gui: Buffer) => (opts.live ? Buffer.from(withLiveScript(gui.toString('utf8'))) : gui);
+  const live = (gui: Buffer, version: string) => (opts.live ? Buffer.from(withLiveScript(gui.toString('utf8'), version)) : gui);
+  /** what the live script of the last few builds at / has from its .gui (its servers, its systems), by version */
+  const recent = new Map<string, { servers: PanelServer[]; systems: string[] }>();
   /** A build as served: where writeBuild puts its files, iViewer asks for them (images/..., images/scripts/...). */
   const sizeBuild = (r: CompileResult): SizeBuild => {
     const files = new Map<string, ServedFile>();
@@ -301,7 +313,12 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
     }
     state.error = null;
     const version = `${Date.now().toString(36)}`;
-    if (!next.html) next.gui = live(next.gui);
+    if (!next.html) {
+      next.gui = live(next.gui, version);
+      const xml = next.gui.toString('utf8');
+      recent.set(version, { servers: panelServers(xml), systems: systemNames(xml) });
+      for (const v of recent.keys()) if (recent.size > 8) recent.delete(v);
+    }
     state.served = { ...next, version, modified: new Date() };
     for (const w of waiting) w(version);
     waiting.clear();
@@ -327,7 +344,7 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
           const r = await compile(target, { size });
           for (const w of r.warnings) if (!s.warnings?.includes(w)) log(`warning: ${sizeLabel(size)}: ${w}`);
           const b = sizeBuild(r);
-          out.push({ ...b, gui: live(b.gui), folder: sizeFolder(size) });
+          out.push({ ...b, gui: live(b.gui, s.version), folder: sizeFolder(size) });
           read.push(r.inputs);
           log(`built ${sizeLabel(size)} for the panel's archive in ${Date.now() - t0} ms`);
         } catch (e) {
@@ -354,7 +371,7 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
     }
     if (opts.live) {
       const xml = b.gui.toString('utf8');
-      entries.push([folder + LIVE_SCRIPT, Buffer.from(liveScript(`http://${host}`, version, panelServers(xml), systemNames(xml)))]);
+      entries.push([folder + liveName(version), Buffer.from(liveScript(`http://${host}`, version, panelServers(xml), systemNames(xml)))]);
     }
     return entries;
   };
@@ -463,11 +480,15 @@ export async function startDeviceServer(opts: DeviceServerOptions) {
       if (unchanged) return send(304, '', type);
       return send(200, s.gui, type);
     }
-    // the live script: in the image folder, as iViewer looks for scripts (images/iva-live.js)
-    if (opts.live && !s.html && name.toLowerCase().split('/').pop() === LIVE_SCRIPT) {
+    // the live script: in the image folder, as iViewer looks for scripts (images/iva-live-<version>.js) - the one of
+    // the build its name says, whatever is served now (a build it isn't: its .gui's servers and systems, else these)
+    const liveAsked = opts.live && !s.html ? LIVE_SCRIPT.exec(name.toLowerCase().split('/').pop()!) : null;
+    if (liveAsked) {
       const host = req.headers.host ?? `${lanAddresses()[0]?.address ?? '127.0.0.1'}:${opts.port}`;
+      const version = liveAsked[1] ?? '';
       const xml = s.gui.toString('utf8');
-      return send(200, liveScript(`http://${host}`, s.version, panelServers(xml), systemNames(xml)), TYPES['.js']);
+      const of = recent.get(version) ?? { servers: panelServers(xml), systems: systemNames(xml) };
+      return send(200, liveScript(`http://${host}`, version, of.servers, of.systems), TYPES['.js']);
     }
     // only what the map has: a path is a key, never a file system path
     const f = s.files.get(name.toLowerCase());
