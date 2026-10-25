@@ -154,6 +154,8 @@ export function renderSliderOrGauge(
     
     let currentRawValue = node.j ? ((joinStore.get(node.j, "a") as number) || 0) : 0;
     let isDraggingGauge = false;
+    /** the finger dragging it (the latest on it): another's moves and lifting aren't its - two faders at once, a tap elsewhere */
+    let dragId: number | undefined;
     
     const updateVisuals = (rawVal: number, isPressed: boolean) => {
         rawVal = Math.max(0, Math.min(65535, rawVal));
@@ -229,7 +231,7 @@ export function renderSliderOrGauge(
     };
     
     const handlePointerMove = (e: any) => {
-        if (!isDraggingGauge) return;
+        if (!isDraggingGauge || e.pointerId !== dragId) return;
         const localPos = sliderContainer.toLocal(e.global);
         let progress = 0;
         if (isVertical) {
@@ -249,8 +251,8 @@ export function renderSliderOrGauge(
         if (node.d && node.d !== "0") joinStore.set(node.d, "d", down);
     };
 
-    const handleUp = () => {
-        if (!isDraggingGauge) return;
+    const handleUp = (e: any) => {
+        if (!isDraggingGauge || e?.pointerId !== dragId) return;
         isDraggingGauge = false;
         pressed(false);
 
@@ -269,6 +271,9 @@ export function renderSliderOrGauge(
         if (node.type === "gauge") return; // Gauges are usually read-only
         // the drag moves the slider, not a list it's in
         e.stopPropagation?.();
+        dragId = e.pointerId;
+        // another finger on it while it's dragged: that one drags it now, still the one press
+        if (isDraggingGauge) return handlePointerMove(e);
         isDraggingGauge = true;
         pressed(true);
 

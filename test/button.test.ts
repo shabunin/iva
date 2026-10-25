@@ -22,8 +22,8 @@ const GUI = `
 
 /** the button's view (what a finger touches), by its join */
 const view = (renderer: any, join: string) => renderer.nodesMap[join][0].children[0];
-/** a touch as the view hears it (pixi/ui binds mouse events where Pixi sees no mobile device: here) */
-const touch = (v: any, type: 'down' | 'up') => v.emit(`mouse${type}`, { type: `mouse${type}` });
+/** a touch as the view hears it */
+const touch = (v: any, type: 'down' | 'up') => v.emit(`pointer${type}`, { type: `pointer${type}`, pointerId: 1 });
 
 test('ObjectPressedEvent (join, "1" / "0", tokens) / ObjectReleasedEvent (those, tags), for a button with <actions> too; a watcher of a join hears that join only', async () => {
   const { CF, renderer } = await runGui(GUI);

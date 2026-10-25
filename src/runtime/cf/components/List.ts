@@ -157,8 +157,9 @@ export function renderList(
         }
         // its images, if no row left shows them: let go in a moment (a long list scrolled through)
         renderer.scheduleCollect();
-        if (row.kind !== 'item') return;
+        // its listeners, a header's and a footer's too (a page's ScrollArea: the page's whole content)
         joinStore.clearScope(row.scope);
+        if (row.kind !== 'item') return;
         const prefix = `l${listId}:${row.idx}:`;
         for (const key of Object.keys(renderer.nodesMap)) {
             if (!key.startsWith(prefix)) continue;

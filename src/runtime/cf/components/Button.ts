@@ -1,7 +1,6 @@
 import { Container, Sprite, Graphics, Text, NineSliceSprite, Assets, type FederatedPointerEvent } from "pixi.js";
 import { fitText, placeText, textLayout, underline } from './textStyle';
 import { TokenEngine } from "../tokenEngine";
-import { Button } from '@pixi/ui';
 import { CFNode } from '../parser';
 import { joinStore, normalizeJoinString } from '../joinStore';
 import { CFRenderer } from '../renderer';
@@ -145,8 +144,10 @@ export function renderButton(
     btnContainer.addChild(txtObj);
     if (layout0.underline || layout1.underline) underline(txtObj, btnContainer);
     container.addChild(btnContainer);
-
-    const btn = new Button(btnContainer);
+    // a finger, a pen, a mouse: Pixi's pointer events (pixi/ui's Button hears only a mouse where Pixi
+    // sees no phone - a touch PC's finger, a touch laptop's, did nothing)
+    btnContainer.eventMode = 'static';
+    btnContainer.cursor = 'pointer';
 
     let isBtnDown = false;
     let localToggled = false;
@@ -467,7 +468,12 @@ export function renderButton(
         from = null;
         window.removeEventListener('pointermove', moved, true);
     };
-    btn.onDown.connect((_b: unknown, e?: FederatedPointerEvent) => {
+    /** the pointer pressing it: one at a time (another finger's touch, its lifting, aren't this press's) */
+    let downId: number | null = null;
+    btnContainer.on('pointerdown', (e: FederatedPointerEvent) => {
+        // (a mouse's right button presses nothing, as ever)
+        if (downId !== null || e.button === 2) return;
+        downId = e.pointerId;
         settle();
         if (!inList()) {
             pressed = true;
@@ -475,7 +481,7 @@ export function renderButton(
             return;
         }
         pressed = false;
-        if (e) {
+        if (e.client) {
             from = { x: e.client.x, y: e.client.y, id: e.pointerId };
             window.addEventListener('pointermove', moved, true);
         }
@@ -547,8 +553,16 @@ export function renderButton(
         if (href && renderer.cfApi?.openURL) renderer.cfApi.openURL(href);
     };
 
-    // (a release off the button comes as onUp too, then onUpOut: once, told by its type)
-    btn.onUp.connect((_b: unknown, e?: FederatedPointerEvent) => handleUp(!/outside/i.test(e?.type ?? '')));
+    // let go on it, or off it (a touch the device took back too: releaseOnCancel); a list's drag taking
+    // the touch - pixi/ui's ScrollBox tells it as an upoutside of no pointer, a mouse's where Pixi sees no phone
+    const up = (inside: boolean) => (e: FederatedPointerEvent) => {
+        if (e.pointerId !== undefined && e.pointerId !== downId) return;
+        downId = null;
+        handleUp(inside);
+    };
+    btnContainer.on('pointerup', up(true));
+    btnContainer.on('pointerupoutside', up(false));
+    btnContainer.on('mouseupoutside', up(false));
 
     const checkSJoin = (jName: string | undefined) => {
         if (jName && jName !== "0") {

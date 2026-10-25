@@ -1,4 +1,4 @@
-import { Application } from 'pixi.js';
+import { Application, FederatedPointerEvent, type EventSystem } from 'pixi.js';
 import { parseGUI, type CFProject } from './parser';
 import { CFRenderer, stopAllAnimations, type ImageAtlas } from './renderer';
 import { DomLayer } from './domLayer';
@@ -77,8 +77,34 @@ export async function createApp(canvas: HTMLCanvasElement, choice?: RendererChoi
     antialias: true,
     ...rendererOptions(choice),
   });
+  releaseOnCancel(app.renderer.events);
   console.info(`[iva] drawing with ${rendererLabel(app)}${choice && choice !== 'auto' ? ` (${choice} asked for)` : ''}`);
   return app;
+}
+
+/**
+ * A touch the device takes back (pointercancel: a swipe in from the screen's
+ * edge, the notification shade, the app paused mid-touch) told to Pixi as a
+ * release off whatever it pressed (pointerupoutside) - Pixi hears no
+ * cancels: a button held stayed down (its momentary join high, its press
+ * repeating), a slider's or a list's drag went on with the next touch. Once
+ * per app (createApp's): it listens for good.
+ */
+export function releaseOnCancel(events: EventSystem) {
+  window.addEventListener('pointercancel', (e: PointerEvent) => {
+    const up = new FederatedPointerEvent(events.rootBoundary);
+    up.type = 'pointerupoutside';
+    up.pointerId = e.pointerId;
+    up.pointerType = e.pointerType;
+    up.isPrimary = e.isPrimary;
+    // what it pressed is kept by its button (a cancel's is none: -1)
+    up.button = 0;
+    up.nativeEvent = e;
+    up.client.set(e.clientX, e.clientY);
+    events.mapPositionToPoint(up.screen, e.clientX, e.clientY);
+    up.global.copyFrom(up.screen);
+    events.rootBoundary.mapEvent(up);
+  }, true);
 }
 
 /** What an app draws with, as a person would say it: 'WebGL 2', 'WebGL 1', 'WebGPU', 'Canvas 2D'. */

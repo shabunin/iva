@@ -7,8 +7,8 @@ import { isShown } from '../shown';
 
 /** How an image gets a URL's picture: its bytes, then a texture of them (tests give their own). */
 export interface ImageIo {
-    /** the bytes at a URL; fresh: past any cache on the way (a camera's next snapshot) */
-    download(url: string, fresh: boolean): Promise<Blob>;
+    /** the bytes at a URL; fresh: past any cache on the way (a camera's next snapshot); timeout: ms it may take, if any */
+    download(url: string, fresh: boolean, timeout?: number): Promise<Blob>;
     decode(blob: Blob): Promise<Texture>;
 }
 
@@ -54,13 +54,14 @@ const contentType = (headers: Record<string, string> = {}) =>
     Object.entries(headers).find(([k]) => k.toLowerCase() === 'content-type')?.[1] ?? '';
 
 /** The bytes from the host's HTTP (no CORS, self-signed certificates do), else the web view's fetch. */
-async function download(url: string, fresh: boolean): Promise<Blob> {
+async function download(url: string, fresh: boolean, timeout?: number): Promise<Blob> {
     const mode = (globalThis as any).CF?.imageRequestMode || 'custom';
     if (getHost()?.http && mode === 'custom') {
         const http = (await import('../../stdlib/http')).default;
         return new Promise<Blob>((resolve, reject) => {
             const headers: Record<string, string> = fresh ? { 'Cache-Control': 'no-cache', Pragma: 'no-cache' } : {};
-            const req = http.get({ url, headers }, (res: any) => {
+            // the connection within the timeout (the host's own; the rest is renderImage's)
+            const req = http.get({ url, headers, connectTimeout: timeout }, (res: any) => {
                 const status = res.statusCode || 200;
                 if (status < 200 || status >= 300) return reject(new Error(`HTTP ${status}`));
                 const chunks: Uint8Array[] = [];
@@ -70,7 +71,7 @@ async function download(url: string, fresh: boolean): Promise<Blob> {
             req.on('error', reject);
         });
     }
-    const res = await fetch(url, { cache: fresh ? 'no-store' : 'default' });
+    const res = await fetch(url, { cache: fresh ? 'no-store' : 'default', signal: timeout ? AbortSignal.timeout(timeout) : undefined });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.blob();
 }
@@ -188,12 +189,26 @@ export function renderImage(node: CFNode, container: Container, renderer: CFRend
         if (before && before !== texture) drop(before);
     };
 
+    /**
+     * how long a refreshing image's download may take: past it, given up (a camera that stalls, a
+     * request that never ends) and the next snapshot tried - else none would come again
+     */
+    const limit = refresh > 0 ? Math.max(10000, 4 * refresh) : 0;
+    const downloaded = (url: string, fresh: boolean): Promise<Blob> => {
+        if (!limit) return how.download(url, fresh);
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const late = new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error(`no answer in ${limit} ms`)), limit);
+        });
+        return Promise.race([how.download(url, fresh, limit), late]).finally(() => clearTimeout(timer));
+    };
+
     const load = (url: string, fresh: boolean) => {
         clearTimeout(next);
         const n = ++loading;
         const keptBlob = fresh || noCache ? undefined : imageCache.get(url);
         if (indicator && !current) spinning(true);
-        (keptBlob ? Promise.resolve(keptBlob) : how.download(url, fresh || noCache))
+        (keptBlob ? Promise.resolve(keptBlob) : downloaded(url, fresh || noCache))
             .then(async (blob) => {
                 if (!noCache) imageCache.set(url, blob);
                 const t = await how.decode(blob);
