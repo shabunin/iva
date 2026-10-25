@@ -204,26 +204,55 @@ export class MatterDriver {
     const endpoint = node.getDeviceById(spec.endpoint ?? 1);
     if (!endpoint) throw new Error(`no endpoint ${spec.endpoint ?? 1} on node ${spec.node}`);
     const say = (what: string) => this.me.log(`${name}: ${what}`);
-    const watch = (join: string | undefined, onChange: (value: number) => Promise<unknown>) => {
+    const watch = (join: string | undefined, onChange: (value: number) => void) => {
       if (!join) return;
       this.cf.watch(this.cf.JoinChangeEvent, join, (j: string, v: string) => {
-        if (this.written.get(j) === String(v)) return;
-        onChange(Number(v) || 0).catch((e) => say(`command failed: ${(e as Error)?.message ?? e}`));
+        if (this.written.get(j) !== String(v)) onChange(Number(v) || 0);
       });
+    };
+    // the command for the latest values: one at a time (a slider dragged changes its join dozens of times a second),
+    // what changes while it's out sent once after it; changes in one turn (a pick's hue and saturation) make one
+    const latest = (command: () => Promise<unknown>) => {
+      let busy = false;
+      let again = false;
+      const run = () => {
+        again = false;
+        new Promise((r) => r(command())).catch((e) => say(`command failed: ${(e as Error)?.message ?? e}`)).then(() => {
+          if (again) run();
+          else busy = false;
+        });
+      };
+      return () => {
+        if (busy) again = true;
+        else {
+          busy = true;
+          setTimeout(run, 0);
+        }
+      };
     };
     if (spec.cluster === 'OnOff') {
       const c = endpoint.getClusterClient(OnOff.Complete);
       if (!c) throw new Error(`no OnOff cluster on endpoint ${spec.endpoint ?? 1}`);
       c.addOnOffAttributeListener((on) => this.setJoin(spec.join!, on ? 1 : 0));
       void c.getOnOffAttribute().then((on) => this.setJoin(spec.join!, on ? 1 : 0)).catch(() => {});
-      watch(spec.join, (v) => (v ? c.on() : c.off()));
+      let on = false;
+      const send = latest(() => (on ? c.on() : c.off()));
+      watch(spec.join, (v) => {
+        on = !!v;
+        send();
+      });
       say('OnOff bound');
     } else if (spec.cluster === 'LevelControl') {
       const c = endpoint.getClusterClient(LevelControl.Complete);
       if (!c) throw new Error(`no LevelControl cluster on endpoint ${spec.endpoint ?? 1}`);
       c.addCurrentLevelAttributeListener((level) => level !== null && this.setJoin(spec.join!, fromLevel(level)));
       void c.getCurrentLevelAttribute().then((level) => level !== null && level !== undefined && this.setJoin(spec.join!, fromLevel(level))).catch(() => {});
-      watch(spec.join, (v) => c.moveToLevelWithOnOff({ level: toLevel(v), transitionTime: 0, optionsMask: {}, optionsOverride: {} }));
+      let to = 0;
+      const move = latest(() => c.moveToLevelWithOnOff({ level: to, transitionTime: 0, optionsMask: {}, optionsOverride: {} }));
+      watch(spec.join, (v) => {
+        to = toLevel(v);
+        move();
+      });
       say('LevelControl bound');
     } else if (spec.cluster === 'ColorControl') {
       const c = endpoint.getClusterClient(ColorControl.Complete);
@@ -238,24 +267,23 @@ export class MatterDriver {
         sat = s;
         if (spec.saturation) this.setJoin(spec.saturation, fromLevel(s));
       });
-      // a pick sets both joins at once: one command for the two (the second change finds it pending)
-      let pending: Promise<unknown> | undefined;
-      const move = () => {
-        if (!pending) {
-          pending = new Promise((r) => setTimeout(r, 0)).then(() => {
-            pending = undefined;
-            return c.moveToHueAndSaturation({ hue, saturation: sat, transitionTime: 0, optionsMask: {}, optionsOverride: {} });
-          });
-        }
-        return pending;
-      };
+      // a pick sets both joins at once: one command for the two; what the joins ask for kept till it's sent (the
+      // light's report of the last command, coming meanwhile, doesn't undo it)
+      const asked: { hue?: number; sat?: number } = {};
+      const move = latest(() => {
+        hue = asked.hue ?? hue;
+        sat = asked.sat ?? sat;
+        delete asked.hue;
+        delete asked.sat;
+        return c.moveToHueAndSaturation({ hue, saturation: sat, transitionTime: 0, optionsMask: {}, optionsOverride: {} });
+      });
       watch(spec.hue, (v) => {
-        hue = toLevel(v);
-        return move();
+        asked.hue = toLevel(v);
+        move();
       });
       watch(spec.saturation, (v) => {
-        sat = toLevel(v);
-        return move();
+        asked.sat = toLevel(v);
+        move();
       });
       say('ColorControl bound');
     } else {

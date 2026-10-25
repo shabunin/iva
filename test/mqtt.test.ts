@@ -408,10 +408,10 @@ test('<Mqtt> compiles to one system with the catch-all feedback, its script once
   assert.ok(start.includes('IvaMqtt.add("mqtt", { subscribe: { "home/other": { join: "d5", type: "d" } } });'), start);
   // joins no element has get numbers too: the script reads them by name
   for (const [t, name] of [['serial', 'mqttStatus'], ['serial', 'mqttLog'], ['analog', 'temp'], ['serial', 'text'], ['analog', 'dim'], ['serial', 'say']]) assert.ok(r.joins[t][name], `${t} ${name}`);
-  // the defaults: port 1883, 8883 with ssl, client id iva, keepalive 60
+  // the defaults: port 1883, 8883 with ssl, keepalive 60; no client id (the panel makes its own)
   const plain = await compile(project(`<Mqtt name="m" host="h" />`));
   assert.match(plain.xml, /<system name="m" ip="h" port="1883" /);
-  assert.ok(plain.scripts.find((x) => x.name === 'iva-start.js')!.code!.includes('IvaMqtt.add("m", { clientId: "iva", keepalive: 60 });'));
+  assert.ok(plain.scripts.find((x) => x.name === 'iva-start.js')!.code!.includes('IvaMqtt.add("m", { keepalive: 60 });'));
   const tls = await compile(project(`<Mqtt name="m" host="h" ssl />`));
   assert.match(tls.xml, /<system name="m" ip="h" port="8883" [^>]*ssl="1"/);
 });

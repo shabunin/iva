@@ -49,7 +49,7 @@ export default (
       </ui.ScrollArea>
 
       {/* the broker: its system, its feedback, its script - once; the topics bound to joins */}
-      <Mqtt name="mqtt" host={BROKER} port={1883} clientId="iva-example" keepalive={30} status={s('mqttStatus')} log={s('mqttLog')} logLines={10}
+      <Mqtt name="mqtt" host={BROKER} port={1883} keepalive={30} status={s('mqttStatus')} log={s('mqttLog')} logLines={10}
             subscribe={{ 'home/lamp': d('lamp'), 'home/dim': { join: a('dim'), range: [0, 100] }, 'home/text': s('text') }}
             publish={{ 'home/lamp/set': { join: d('lamp'), on: 'ON', off: 'OFF', retain: true, qos: 1 }, 'home/dim/set': { join: a('dim'), range: [0, 100] } }} />
       <Script src="./scripts/example.js" />

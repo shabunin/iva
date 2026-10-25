@@ -55,7 +55,7 @@ export interface MqttProps {
   port?: number;
   /** MQTT over TLS (where the runtime has it: iva's does, with any certificate) */
   ssl?: boolean;
-  /** default 'iva' */
+  /** default 'iva' and this device's id, each panel its own (one given here is the same on every panel the GUI runs on: a broker drops a client when another connects with its id) */
   clientId?: string;
   user?: string;
   password?: string;
@@ -148,7 +148,7 @@ export function Mqtt(props: MqttProps): VNode {
     ])}`);
   }
   const options = literal([
-    ['clientId', own ? JSON.stringify(clientId ?? 'iva') : undefined], ['user', user === undefined ? undefined : JSON.stringify(user)],
+    ['clientId', clientId === undefined ? undefined : JSON.stringify(clientId)], ['user', user === undefined ? undefined : JSON.stringify(user)],
     ['password', password === undefined ? undefined : JSON.stringify(password)], ['keepalive', own ? String(keepalive) : undefined],
     ['clean', cleanSession === false ? 'false' : undefined], ['status', statusJoin?.code], ['log', logJoin?.code],
     ['logLines', logLines === undefined ? undefined : String(logLines)],

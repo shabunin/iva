@@ -230,8 +230,19 @@ var IvaMqtt = (function () {
 
   // ── the brokers, one a system ────────────────────────────────────
   var brokers = {};
-  /** what the driver last wrote to each join: its change event isn't published back */
+  /** what the driver wrote to each join, in order, its change events still to come: those aren't published back */
   var written = {};
+  /** the client id when none is given: this device's (a broker drops a client when another connects with its id) */
+  var deviceId;
+  function clientId(b) {
+    if (b.o.clientId) return b.o.clientId;
+    if (!deviceId) {
+      var d = CF.device || {};
+      // what any broker takes: up to 23 letters and digits (no device id: one made up, for as long as the GUI runs)
+      deviceId = 'iva' + (String(d.uniqueIdentifier || d.uuid || '').replace(/[^0-9a-zA-Z]/g, '').slice(0, 20) || Math.random().toString(36).slice(2, 12));
+    }
+    return deviceId;
+  }
   function log(b, line) {
     if (!b.o.log) return;
     b.lines.push(line);
@@ -318,7 +329,9 @@ var IvaMqtt = (function () {
       if (sub.handler) { sub.handler(p.topic, payload, p); continue; }
       var v = toJoin(sub, payload);
       if (v === undefined) continue;
-      written[sub.join] = String(v);
+      // (the last 32: writes no event answers, or on a join nothing publishes, don't pile up)
+      var w = written[sub.join] || (written[sub.join] = []);
+      if (w.push(String(v)) > 32) w.shift();
       CF.setJoin(sub.join, v);
     }
   }
@@ -349,7 +362,7 @@ var IvaMqtt = (function () {
     b.connected = false;
     stopPing(b);
     status(b, 'Connecting');
-    send(b, encode.connect({ clientId: b.o.clientId || 'iva', user: b.o.user, password: b.o.password, keepalive: Number(b.o.keepalive) || 0, clean: b.o.clean }));
+    send(b, encode.connect({ clientId: clientId(b), user: b.o.user, password: b.o.password, keepalive: Number(b.o.keepalive) || 0, clean: b.o.clean }));
   }
   function down(b) {
     b.rx = '';
@@ -369,9 +382,10 @@ var IvaMqtt = (function () {
   /** a publish binding: the join's changes to the topic (the driver's own writes to it skipped) */
   function bind(b, pub) {
     CF.watch(CF.JoinChangeEvent, pub.join, function (j, v) {
-      var w = written[j];
+      // one of the driver's writes coming back: it and those before it gone (a write the join had already brings no event)
+      var w = written[j] || [], at = w.indexOf(String(v));
+      if (at >= 0) { w.splice(0, at + 1); return; }
       delete written[j];
-      if (w !== undefined && w === String(v)) return;
       publish(b, pub.topic, toPayload(pub, v), pub);
     });
   }
