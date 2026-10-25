@@ -520,6 +520,10 @@ export class CFAPI implements CFContext {
         
         if (!this.watchers[eventName]) return;
         this.watchers[eventName].forEach(w => {
+            // a flip (a turn) told while it's what's shown: one watcher showing another page (a login guard), the
+            // rest are told of that one - not of this one after it
+            if (eventName === this.PageFlipEvent && args[1] !== this.currentPage) return;
+            if (eventName === this.OrientationChangeEvent && (args[0] !== this.currentPage || args[1] !== this.currentOrientation)) return;
             if (eventName === this.JoinChangeEvent && w.joins && args.length >= 2) {
                 const joinArg = args[0];
                 if (Array.isArray(w.joins) && !w.joins.includes(joinArg)) return;

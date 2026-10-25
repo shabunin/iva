@@ -24,6 +24,18 @@ import { bindGestures } from './components/Gestures';
 // teardown" — track it ourselves, same as GSAP did internally.
 const activeAnimations = new Set<AnimationPlaybackControlsWithThen>();
 const animsByTarget = new WeakMap<object, Set<AnimationPlaybackControlsWithThen>>();
+/**
+ * Each animation's end (animateFrom's), however it comes: run its course,
+ * stopped, or cut short by a newer animation of a value - motion's `finished`
+ * comes only for the first.
+ */
+const endOf = new WeakMap<object, Promise<void>>();
+/** the animations stopped here (killTweensOf, stopAllAnimations): not cut short by a newer one */
+const stopped = new WeakSet<object>();
+/** a test's: how many animations are tracked */
+export const trackedForTest = () => activeAnimations.size;
+/** the elements' listener scopes made so far (each element its own: see createNode) */
+let elementScopes = 0;
 
 /** CF's animation curve (CF.AnimationCurveEaseIn is "ANIMATION_CURVE_EASE_IN"; "easeIn" too) as an ease. */
 export function easeOf(curve: unknown): 'linear' | 'easeIn' | 'easeOut' | 'easeInOut' {
@@ -106,8 +118,25 @@ export function animTarget<T extends object>(target: T, owner: { destroyed?: boo
  */
 export function animateFrom<T extends object>(target: T, to: Record<string, number>, options: Record<string, unknown>, owner?: { destroyed?: boolean }) {
   const keyframes: Record<string, [number, number]> = {};
-  for (const [k, v] of Object.entries(to)) keyframes[k] = [Number((target as Record<string, unknown>)[k]), v];
-  return animate(animTarget(target, owner) as any, keyframes as any, options as any) as AnimationPlaybackControlsWithThen;
+  // each value's own options, to be told its end whichever way (motion tells it per value: complete, stop, cancel);
+  // the device's reduced motion not followed - motion would put x, y and scale at their ends at once, these
+  // options dropped (the ends never told, the delay gone): the GUI's animations as it gives them, on any device
+  const transition: Record<string, unknown> = { ...options, reduceMotion: false };
+  const ends: Promise<void>[] = [];
+  for (const [k, v] of Object.entries(to)) {
+    keyframes[k] = [Number((target as Record<string, unknown>)[k]), v];
+    ends.push(new Promise<void>((over) => {
+      transition[k] = { ...options, onComplete: over, onStop: over, onCancel: over };
+    }));
+  }
+  const a = animate(animTarget(target, owner) as any, keyframes as any, transition as any) as AnimationPlaybackControlsWithThen;
+  endOf.set(a, Promise.all(ends).then(() => undefined));
+  return a;
+}
+
+/** An animation over, however it ended: whether it wasn't stopped here - it ran its course, or a newer one of a value took over. */
+function ended(a: AnimationPlaybackControlsWithThen): Promise<boolean> {
+  return (endOf.get(a) ?? a.finished).then(() => !stopped.has(a), () => false);
 }
 
 export function trackAnimation<T extends object>(target: T, a: AnimationPlaybackControlsWithThen) {
@@ -119,19 +148,26 @@ export function trackAnimation<T extends object>(target: T, a: AnimationPlayback
     activeAnimations.delete(a);
     set!.delete(a);
   };
-  a.finished.then(untrack, untrack);
+  // however it ends: one stopped or cut short (a value animated again, each feedback) isn't kept for good
+  void ended(a).then(untrack);
   return a;
 }
 
 /** Stop whatever is currently animating this target (container, or its .scale point). */
 export function killTweensOf(target: object) {
-  animsByTarget.get(target)?.forEach((a) => a.stop());
+  animsByTarget.get(target)?.forEach((a) => {
+    stopped.add(a);
+    a.stop();
+  });
   animsByTarget.delete(target);
 }
 
 /** Stop everything — call before tearing down/reloading a project. */
 export function stopAllAnimations() {
-  activeAnimations.forEach((a) => a.stop());
+  activeAnimations.forEach((a) => {
+    stopped.add(a);
+    a.stop();
+  });
   activeAnimations.clear();
 }
 
@@ -915,8 +951,10 @@ export class CFRenderer {
               y: look.scale.y * (size.h !== undefined && now.h ? size.h / now.h : 1),
             };
             const standIn = drawnScale(grown, look.rotation);
-            trackAnimation(c.scale, animateFrom(c.scale, { x: standIn.x, y: standIn.y }, { duration, delay, ease }, c)).finished
-              .then(() => { if (!c.destroyed) this.resize(c, size.w, size.h); }, () => {});
+            const a = trackAnimation(c.scale, animateFrom(c.scale, { x: standIn.x, y: standIn.y }, { duration, delay, ease }, c));
+            // made at that size once it's over - cut short too (its scale animated meanwhile), unless a later size took over
+            (c as any).cfSizing = a;
+            void ended(a).then((ran) => { if (ran && (c as any).cfSizing === a && !c.destroyed) this.resize(c, size.w, size.h); });
           } else if (scaled) {
             trackAnimation(c.scale, animateFrom(c.scale, { x: to.x, y: to.y }, { duration, delay, ease }, c));
           }
@@ -971,7 +1009,20 @@ export class CFRenderer {
     parent.addChildAt(fresh, at);
     parent.removeChild(c);
     c.destroy({ children: true });
+    this.forgetGone();
     this.scheduleCollect();
+  }
+
+  /** What each join and tag reaches, less what's gone (an element made again in its place: its old self, all in it). */
+  private forgetGone() {
+    for (const map of [this.nodesMap, this.tagsMap]) {
+      for (const [key, list] of Object.entries(map)) {
+        if (!list.some((c) => c.destroyed)) continue;
+        const live = list.filter((c) => !c.destroyed);
+        if (live.length) map[key] = live;
+        else delete map[key];
+      }
+    }
   }
 
   /** An element's size as made: its node's w / h (a subpage placement's: its definition's where it gives none). */
@@ -1010,6 +1061,7 @@ export class CFRenderer {
     parent.addChildAt(fresh, at);
     parent.removeChild(c);
     c.destroy({ children: true });
+    this.forgetGone();
   }
 
   /** A loaded image by the name the .gui gives it: a path in its image folder (icons/x.png), else its file name. */
@@ -1246,28 +1298,39 @@ export class CFRenderer {
     const cssState0 = theme ? theme.states["0"] : null;
     const cssState1 = theme ? theme.states["1"] : null;
 
-    if (node.type === "btn") {
-      renderButton(node, container, this, getNormJoin, cssState0, cssState1, listPrefix, listIndex);
-    } else if (node.type === "img") {
-      renderImage(node, container, this);
-    } else if (node.type === "txt") {
-      renderText(node, container, this, getNormJoin, cssState0);
-    } else if (node.type === "list") {
-      renderList(node, container, this);
-    } else if (node.type === "subpage") {
-      renderSubpage(node, container, this);
-    } else if (node.type === "gauge") {
-      renderGauge(node, container, this, getNormJoin);
-    } else if (node.type === "slider") {
-      renderSlider(node, container, this, getNormJoin);
-    } else if (node.type === "video") {
-      renderVideo(node, container, this);
-    } else if (node.type === "web") {
-      renderWeb(node, container, this);
-    } else if (node.type === "input") {
-      renderInput(node, container, this, cssState0, listPrefix, listIndex);
-    } else if (node.type === "timer") {
-      renderTimer(node, container, this);
+    // its listeners in a scope of its own, gone with it: made again (another size, another theme), the old
+    // one's don't stay till the page goes - and with the page, as ever (navigate)
+    const outer = this.currentScope;
+    const scope = (this.currentScope = `${outer ?? ''}#${++elementScopes}`);
+    (container as any).cfScope = scope;
+    container.on('destroyed', () => joinStore.clearScope(scope));
+
+    try {
+      if (node.type === "btn") {
+        renderButton(node, container, this, getNormJoin, cssState0, cssState1, listPrefix, listIndex);
+      } else if (node.type === "img") {
+        renderImage(node, container, this);
+      } else if (node.type === "txt") {
+        renderText(node, container, this, getNormJoin, cssState0);
+      } else if (node.type === "list") {
+        renderList(node, container, this);
+      } else if (node.type === "subpage") {
+        renderSubpage(node, container, this);
+      } else if (node.type === "gauge") {
+        renderGauge(node, container, this, getNormJoin);
+      } else if (node.type === "slider") {
+        renderSlider(node, container, this, getNormJoin);
+      } else if (node.type === "video") {
+        renderVideo(node, container, this);
+      } else if (node.type === "web") {
+        renderWeb(node, container, this);
+      } else if (node.type === "input") {
+        renderInput(node, container, this, cssState0, listPrefix, listIndex);
+      } else if (node.type === "timer") {
+        renderTimer(node, container, this);
+      }
+    } finally {
+      this.currentScope = outer;
     }
 
     // Apply actual dimensions unconditionally
@@ -1564,6 +1627,12 @@ export class CFRenderer {
     if (this.currentPageName) {
       joinStore.clearScope(this.currentPageName);
     }
+    // and its elements' (each in a scope of its own: see createNode)
+    const unscope = (c: Container) => {
+      if ((c as any).cfScope) joinStore.clearScope((c as any).cfScope);
+      for (const k of c.children) unscope(k as Container);
+    };
+    if (this.currentContainer) unscope(this.currentContainer);
     // the same page again (the device turned): no flip to animate
     const again = this.currentPageName === pageName;
     this.currentPageName = pageName;
@@ -1598,6 +1667,8 @@ export class CFRenderer {
         this.onOrientationChange('landscape');
       }
     }
+    // the host turned to it and showed the page again itself (the preview does): that one stands, not made twice
+    if (token !== this.navToken) return;
 
     // Set hitArea so gestures are caught everywhere
     const pageWidth = isLandscape
@@ -1609,17 +1680,19 @@ export class CFRenderer {
     newContainer.hitArea = new Rectangle(0, 0, pageWidth, pageHeight);
 
     // Sync global CF orientation state and currentPage
+    let tell: (() => void) | undefined;
     if (this.cfApi) {
-      const turned = this.cfApi.currentOrientation;
-      this.cfApi.currentOrientation = isLandscape
-        ? this.cfApi.LandscapeOrientation
-        : this.cfApi.PortraitOrientation;
+      const cf = this.cfApi;
+      const turned = cf.currentOrientation;
+      const orientation = (cf.currentOrientation = isLandscape ? cf.LandscapeOrientation : cf.PortraitOrientation);
       // as iViewer: (the page left - none at first -, the page shown, the orientation); the same page
-      // shown again in the other orientation (the device turned): OrientationChangeEvent (the page, the orientation)
-      const from = this.cfApi.currentPage === 'CURRENT_PAGE' ? null : this.cfApi.currentPage;
-      this.cfApi.currentPage = pageName;
-      if (from !== pageName) this.cfApi.dispatchEvent(this.cfApi.PageFlipEvent, from, pageName, this.cfApi.currentOrientation);
-      else if (turned !== this.cfApi.currentOrientation) this.cfApi.dispatchEvent(this.cfApi.OrientationChangeEvent, pageName, this.cfApi.currentOrientation);
+      // shown again in the other orientation (the device turned): OrientationChangeEvent (the page, the orientation) -
+      // told once the page is there (its elements, their joins, its flip begun): a flip of a script's own then, an
+      // element moved, a list scrolled, is done to it
+      const from = cf.currentPage === 'CURRENT_PAGE' ? null : cf.currentPage;
+      cf.currentPage = pageName;
+      if (from !== pageName) tell = () => cf.dispatchEvent(cf.PageFlipEvent, from, pageName, orientation);
+      else if (turned !== orientation) tell = () => cf.dispatchEvent(cf.OrientationChangeEvent, pageName, orientation);
     }
 
     const nodes = (isLandscape && pageObj.landscape) ? pageObj.landscape : (pageObj.portrait || pageObj.landscape || []);
@@ -1667,6 +1740,8 @@ export class CFRenderer {
       console.info(`[cf navigate] ${pageName}: images ${waited ? Math.round(waited.loaded - waited.at) : 0} ms (${waited?.images ?? 0} in ${waited?.files ?? 0} files), made ${Math.round(made - making)} ms, shown ${Math.round(shown - making)} ms`);
     if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => report(performance.now()));
     else report(made);
+    // (another page shown meanwhile - while this one was made - told its own)
+    if (token === this.navToken) tell?.();
   }
 
   /** a gesture action's transition: for the subpages it shows or hides as it runs */
