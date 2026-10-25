@@ -1,0 +1,64 @@
+name: test
+
+# The compiler, the runtime, the libraries and the panel: the type check, the
+# lint and every test (node --test) on each push to main and pull request, and
+# before a release (release.yml calls it); the panel's Rust tests (its sockets,
+# its GUI unpacking) as a desktop build.
+on:
+  push:
+    branches: [main, 'release/**']
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  node:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npx tsc --noEmit -p tsconfig.json
+      - run: npm run lint
+      - run: npm test
+
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # what a Tauri desktop build links against on Linux
+      - name: WebKitGTK and friends
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: panel/src-tauri -> target
+
+      # the page the app embeds (tauri's generate_context! wants panel/dist)
+      - run: npm ci
+      - run: npm run panel:build
+
+      - name: cargo test
+        working-directory: panel/src-tauri
+        run: cargo test --lib
