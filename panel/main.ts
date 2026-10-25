@@ -18,6 +18,7 @@ import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import { openUrl as openOutside } from '@tauri-apps/plugin-opener';
 import type { Application } from 'pixi.js';
 import { installHost } from '../src/runtime/stdlib';
+import { dgram } from '../src/runtime/stdlib/dgram';
 import { createApp, loadProject, rendererLabel, type LoadProgress, type LoadProjectResult, type Orientation, type RendererChoice } from '../src/runtime/cf';
 import { createIvaHost } from '../src/runtime/host';
 import { closeHostSockets } from '../src/runtime/host/net/provider';
@@ -26,6 +27,7 @@ import { formatLocation, History, isGuiUrl, parseLocation, type GuiLocation } fr
 import { PARSED_STAMP, type KeptParse, appArchive, asTheAppKeeps, fetchGui, folderManifest, guiUrl, manifestOf, newerInApp, newerVersion, ownFile, savedManifest, toSave, unpackPlan, useArchives, useTurn, zipped, type AppKept, type Download, type Fetched, type Manifest } from './loader';
 import { forgetAllGuis, forgetGui, keptGui, keptGuis, saveGui, savedGui, usedGui, type Kept, type SavedGui } from './store';
 import { androidDevice } from './device';
+import { browse, type Network, type Served as FoundServe } from './discover';
 
 // ── what the panel keeps: between starts (localStorage), across a GUI change (sessionStorage) ──
 /** the GUI shown last: what the next start runs (it follows GUI links) */
@@ -337,6 +339,7 @@ async function goTo(loc: GuiLocation, o: { once?: boolean; fresh?: boolean; quie
   else sessionStorage.removeItem(PAGE);
   if (o.fresh) sessionStorage.setItem(FRESH, '1');
   if (o.quiet) sessionStorage.setItem(QUIET, '1');
+  stopFinding();
   await letGo();
   location.reload();
 }
@@ -1033,10 +1036,89 @@ function openSettings() {
   void showCopies();
   form.hidden = false;
   input.focus();
+  void startFinding();
 }
 function closeSettings() {
   form.hidden = true;
+  stopFinding();
   retryLater();
+}
+
+// ── found on the network: the iva serves this device reaches (DNS-SD), looked for while the settings are open ──
+
+const foundOn = $<HTMLElement>('found-on');
+const foundList = $<HTMLDivElement>('found');
+const foundHint = $<HTMLParagraphElement>('found-hint');
+// the app's sockets: none in a browser
+foundOn.hidden = !native;
+const LOOKING = 'Looking for iva serve on this device\'s networks...';
+const NONE_FOUND = 'None found yet. iva serve answers on the networks it prints (unless started with --no-mdns). A network that keeps multicast from it - a Wi-Fi with client isolation, a VPN that doesn\'t carry multicast (ZeroTier does) - hides it: type its address above.';
+let finding: { stop(): void } | null = null;
+/** a while with nothing found: why there may be nothing */
+let findingLong = false;
+let findingTimer = 0;
+
+async function startFinding() {
+  if (finding || !native) return;
+  foundList.replaceChildren();
+  foundHint.textContent = LOOKING;
+  let networks: Network[];
+  try {
+    networks = await invoke<Network[]>('net_interfaces');
+  } catch (e) {
+    foundHint.textContent = `No networks to look on: ${message(e)}`;
+    return;
+  }
+  // closed meanwhile, or opened twice
+  if (form.hidden || finding) return;
+  if (!networks.length) {
+    foundHint.textContent = 'This device is on no network to look on (Wi-Fi, a wired LAN, a VPN).';
+    return;
+  }
+  findingLong = false;
+  finding = browse({ networks, createSocket: () => dgram.createSocket({ type: 'udp4' }), onChange: showFound, log: (m) => console.debug(`[found] ${m}`) });
+  clearTimeout(findingTimer);
+  findingTimer = window.setTimeout(() => {
+    findingLong = true;
+    if (finding && !foundList.childElementCount) foundHint.textContent = NONE_FOUND;
+  }, 6000);
+}
+function stopFinding() {
+  clearTimeout(findingTimer);
+  finding?.stop();
+  finding = null;
+}
+
+function showFound(list: FoundServe[]) {
+  foundList.replaceChildren(...list.map(foundRow));
+  foundHint.textContent = list.length ? 'Tap one to load it.' : findingLong ? NONE_FOUND : LOOKING;
+}
+
+/** a found iva serve: its project, where it is; a tap loads it, as its address typed and Load */
+function foundRow(s: FoundServe): HTMLElement {
+  // at an address the panel has loaded it from before (its copy kept under that), else at its main network's
+  const known = new Set([shown?.gui, localStorage.getItem(GUI), localStorage.getItem(DEFAULT_GUI), ...history.entries().map((e) => e.gui)]
+    .filter((u): u is string => !!u).map(canonical));
+  const url = s.urls.find((u) => known.has(canonical(u))) ?? s.urls[0];
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = 'found';
+  const name = document.createElement('span');
+  name.className = 'found-name';
+  name.textContent = s.name;
+  const info = document.createElement('span');
+  info.className = 'hint';
+  const host = s.host || s.hostname.replace(/\.local\.?$/, '');
+  const tags = [canonical(url) === shown?.gui ? 'shown now' : '', s.kind === 'folder' ? 'a folder of GUIs: one\'s path after the address' : ''].filter(Boolean);
+  info.textContent = [host, new URL(url).host, s.sizes.join(', '), s.version ? `iva ${s.version}` : '', ...tags].filter(Boolean).join(' \u00b7 ');
+  row.append(name, info);
+  row.addEventListener('click', () => {
+    input.value = url;
+    // a folder's / is a page listing its GUIs: the path is the user's to add
+    if (s.kind === 'folder') input.focus();
+    else form.requestSubmit();
+  });
+  return row;
 }
 const toggleSettings = () => (form.hidden ? openSettings() : closeSettings());
 
@@ -1198,6 +1280,7 @@ addEventListener('keydown', (e) => {
 
 // the systems' sockets closed with the page (a reload, CF.loadGUI)
 addEventListener('pagehide', () => {
+  stopFinding();
   try {
     (window as any).CF?.stopSystems?.();
   } catch {

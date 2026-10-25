@@ -253,6 +253,11 @@ export class TauriUdpSocket extends EventEmitter {
             else this.bind(0, undefined, retry);
             return;
         }
+        if (this.interfaceSet) {
+            const retry = () => this.send(msg, ...args);
+            void this.interfaceSet.then(retry);
+            return;
+        }
 
         let offset: number = 0;
         let length: number = 0;
@@ -421,6 +426,19 @@ export class TauriUdpSocket extends EventEmitter {
         if (!this.socketId) throw new Error("Socket not bound");
         invoke('udp_set_multicast_loopback', { id: this.socketId, flag })
             .catch(err => this.emit('error', new Error(String(err))));
+    }
+
+    /** a multicast interface being set: the sends after it wait for it (each is an invoke of its own, in no set order) */
+    private interfaceSet: Promise<unknown> | null = null;
+
+    setMulticastInterface(multicastInterface: string): void {
+        if (!this.socketId) throw new Error("Socket not bound");
+        const set: Promise<unknown> = invoke('udp_set_multicast_interface', { id: this.socketId, multicastInterface })
+            .catch(err => this.emit('error', new Error(String(err))))
+            .then(() => {
+                if (this.interfaceSet === set) this.interfaceSet = null;
+            });
+        this.interfaceSet = set;
     }
 
     getRecvBufferSize(): number {

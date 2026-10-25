@@ -5,6 +5,10 @@
  * responder (the port reused). The callbacks as CommandFusion's docs have
  * them: a lookup's (added, removed, error), a publication's (type, name,
  * port, published, error).
+ *
+ * The same engine, pinned to one network, runs once per network where one
+ * machine is on several: iva serve's advertisement (src/server/mdns.ts),
+ * the panel's settings looking for it (panel/discover.ts).
  */
 import { dgram } from '../../stdlib/dgram';
 import type { IUdpSocket } from '../../stdlib/net/types';
@@ -18,6 +22,8 @@ const TTL_OTHER = 4500;
 const ENUM = '_services._dns-sd._udp.local';
 /** after a wake: a service not heard again in this long is gone */
 const RECHECK_MS = 5000;
+/** asking from a port of its own: the answers hold 10 s at most (RFC 6762 §6.7), so it asks this often */
+const ASK_ONLY_MS = 4000;
 
 /** A service a lookup found, as CF.startLookup's callback gets it. */
 export interface FoundService {
@@ -47,6 +53,21 @@ export interface MdnsHost {
   /** a UDP socket (default: the runtime's dgram) */
   createSocket?(): IUdpSocket;
   log?(message: string): void;
+  /**
+   * Pinned to the network of network()'s address: multicast out of it (else
+   * the OS picks), asking only from that address, and what comes from
+   * another subnet left alone - one engine per network, each answering there
+   * with its own address (CF's engine: not pinned)
+   */
+  pinned?: boolean;
+  /**
+   * never on port 5353: lookups by one-shot queries from a port of its own
+   * (RFC 6762 §5.1), which every responder answers by unicast - straight
+   * back, over a VPN that carries multicast out but none in
+   */
+  askOnly?: boolean;
+  /** our host name (default: iva-<a few letters of the device's id>.local) */
+  hostName?(): string;
 }
 
 /** "_http._tcp." (a script's) → "_http._tcp.local" (the wire's) */
@@ -143,7 +164,13 @@ export class Mdns {
 
   /** our host name: iva-<id>.local */
   private hostName() {
-    return `iva-${this.host.deviceId().replace(/[^a-z0-9-]/gi, '').slice(0, 8).toLowerCase() || 'panel'}.local`;
+    return this.host.hostName?.() ?? `iva-${this.host.deviceId().replace(/[^a-z0-9-]/gi, '').slice(0, 8).toLowerCase() || 'panel'}.local`;
+  }
+
+  /** a pinned engine's network: whether an address is on it */
+  private onOurs(addr: string) {
+    const { ipv4address, ipv4netmask } = this.host.network();
+    return onSubnet(addr, ipv4address, ipv4netmask);
   }
 
   // ── the socket ─────────────────────────────────────────────────
@@ -173,10 +200,17 @@ export class Mdns {
           }
           this.log(`socket: ${e?.message ?? e}`);
         });
-        sock.bind(port, () => {
+        const bound = () => {
           done = true;
           this.socket = sock;
           this.shared = port === PORT;
+          if (this.host.pinned && pinnedTo) {
+            try {
+              sock.setMulticastInterface?.(pinnedTo);
+            } catch (e: any) {
+              this.log(`multicast out of ${pinnedTo}: ${e?.message ?? e}`);
+            }
+          }
           if (this.shared) {
             const ip = this.host.network().ipv4address;
             try {
@@ -199,10 +233,15 @@ export class Mdns {
           const ip = this.host.network().ipv4address;
           this.log(`on ${this.shared ? `${GROUP}:${PORT}` : 'a port of its own (asking only)'}${ip ? `, this device ${ip}` : ''}`);
           resolve(true);
-        });
+        };
+        // 5353 is everyone's (multicast comes to it whatever it's bound to); a port of its own, pinned: on its network's address
+        if (port === 0 && pinnedTo) sock.bind(0, pinnedTo, bound);
+        else sock.bind(port, bound);
       };
+      const ip = this.host.network().ipv4address;
+      const pinnedTo = this.host.pinned && ip && ip !== '0.0.0.0' ? ip : undefined;
       try {
-        start(make(), PORT);
+        start(make(), this.host.askOnly ? 0 : PORT);
       } catch (e: any) {
         this.log(`no UDP here: ${e?.message ?? e}`);
         resolve(false);
@@ -296,13 +335,14 @@ export class Mdns {
     const now = Date.now();
     // known answers: what we have, not to be told again (RFC 6762 §7.1) - none while a wake's recheck waits to hear
     // them again (a responder keeps quiet about what we say we know)
-    const known: DnsRecord[] = this.recheck ? [] : [...l.instances.values()]
+    // (asking only: one-shot queries, whose answers say nothing more if we tell them what we know)
+    const known: DnsRecord[] = this.recheck || !this.shared ? [] : [...l.instances.values()]
       .filter((i) => i.ptrExpires - now > (i.ptrTtl * 1000) / 2)
       .map((i) => ({ name: l.fq, type: TYPE.PTR, ttl: Math.round((i.ptrExpires - now) / 1000), data: i.full }));
     this.send({ id: 0, response: false, questions: [{ name: l.fq, type: TYPE.PTR, unicast: !this.shared && l.sent === 0 }], answers: known, authorities: [], additionals: [] },
       this.shared ? undefined : { address: GROUP, port: PORT });
     l.sent++;
-    l.timer = setTimeout(() => this.query(l), Math.min(60000, 1000 * 2 ** Math.min(l.sent - 1, 6)));
+    l.timer = setTimeout(() => this.query(l), Math.min(this.shared ? 60000 : ASK_ONLY_MS, 1000 * 2 ** Math.min(l.sent - 1, 6)));
   }
 
   /** what we don't know yet of an instance (its SRV, TXT; its host's address) */
@@ -629,6 +669,8 @@ export class Mdns {
 
   private receive(msg: Uint8Array, rinfo: { address: string; port: number }) {
     if (this.asleep) return;
+    // pinned on 5353: another network's multicast (the OS hands it to every socket there) is another engine's
+    if (this.host.pinned && this.shared && !this.onOurs(rinfo.address)) return;
     let m: Message;
     try {
       m = decode(msg);

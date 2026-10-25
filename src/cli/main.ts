@@ -38,7 +38,9 @@ Usage:
                        Upload Service does (port 8019); rebuilds on save and
                        reloads the panel on the device (--no-live: don't); the
                        iva panel's archive has every <Project sizes> size
-                       (--size: that one only)
+                       (--size: that one only); advertised on the network
+                       (mDNS: _iva._tcp) for the iva panel's settings to find
+                       (--no-mdns: not)
   iva designer [entry | file.gui]
                        build and open in CommandFusion GUI Designer (Wine on
                        Linux / macOS: $IVA_DESIGNER, $IVA_WINEPREFIX)
@@ -58,6 +60,12 @@ Options (dev):
   -p, --port <n>       port (default 5180)
       --host <addr>    address to listen on (default 127.0.0.1; 0.0.0.0 for LAN)
   -v, --verbose        log socket activity
+
+Options (serve):
+  -p, --port <n>       port (default 8019)
+      --host <addr>    address to listen on (default 0.0.0.0: every network)
+      --no-live        no live reload (and no panel log in the console)
+      --no-mdns        not advertised on the network (mDNS / DNS-SD)
 `;
 
 async function main(argv: string[]) {
@@ -96,16 +104,17 @@ async function main(argv: string[]) {
       allowPositionals: true,
       options: {
         port: { type: 'string', short: 'p', default: '8019' }, host: { type: 'string', default: '0.0.0.0' }, 'no-live': { type: 'boolean', default: false },
-        size: { type: 'string' },
+        'no-mdns': { type: 'boolean', default: false }, size: { type: 'string' },
       },
     });
     const target = positionals[0] ?? (fs.existsSync('app.jsx') ? 'app.jsx' : undefined);
     if (!target || !fs.existsSync(target)) throw new Error('serve what? iva serve app.jsx | iva serve project.gui');
-    const server = await startDeviceServer({ target, port: Number(values.port), host: values.host!, live: !values['no-live'], size: values.size });
+    const server = await startDeviceServer({ target, port: Number(values.port), host: values.host!, live: !values['no-live'], size: values.size, mdns: !values['no-mdns'] });
     if (!server.addresses.length) process.stdout.write('no network address found: is this machine on a network?\n');
     process.stdout.write(`\nServing ${server.name} for iViewer. On the device, set iViewer's GUI File URL to:\n\n`);
     for (const a of server.addresses) process.stdout.write(`    ${a.url.padEnd(28)} ${a.iface}${a.kind ? ` (${a.kind})` : ''}\n`);
     process.stdout.write('\n(the device must reach that address: same network, or the same VPN / ZeroTier network)\n');
+    if (server.advertisedAs) process.stdout.write(`\nOn the network as "${server.advertisedAs}" (mDNS): the iva panel's settings list it under Found on the network.\n`);
     if (server.addresses[0]) {
       // a cf:// link opens iViewer (iOS camera / Android scanner)
       const link = server.addresses[0].url.replace(/^http:/, 'cf:');

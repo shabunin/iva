@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `iva serve` is advertised on the network while it runs (mDNS / DNS-SD): an
+  `_iva._tcp` service named after the project, on each address it prints (a
+  LAN, ZeroTier; with `--host`, that one), each network answered with its own
+  address. The TXT record has the path to load, iva's version, the project's
+  name, what is served (a project, a `.gui`, a folder), the sizes and the
+  machine's name. A name someone else serves on the network becomes
+  `Name (2)`, and goodbyes go out when it stops. `--no-mdns` turns it off.
+- Panel: the settings list the `iva serve`s the device reaches under
+  **Found on the network** (the project, the machine, address and port,
+  sizes, iva's version); a tap loads one, as typing its address and Load
+  would. The panel asks on each of the device's networks (Wi-Fi, a wired LAN,
+  a VPN) and `iva serve` answers by unicast, so it works over the ZeroTier app
+  on Android, which carries the panel's multicast query out but may bring
+  none in. A network that doesn't carry multicast from the device to the
+  computer (a Wi-Fi with client isolation, many guest networks, Tailscale)
+  hides it: type the address there.
+
+### Fixed
+
+- `CF.startLookup` with port 5353 taken by another program (the lookup then
+  asks from a port of its own): the answers to such queries hold 10 s, and the
+  lookup now asks every 4 s, so a service found no longer drops out and comes
+  back between its queries.
+
 ## 0.1.1 (25 October 2026)
 
 A fix release. The iva panel could get stuck reloading a GUI from `iva serve`,

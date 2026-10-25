@@ -244,6 +244,7 @@ export class HostSession {
     udp_set_ttl: ({ id, ttl }: Args) => { this.get(this.udp, id).setTTL(ttl); return null; },
     udp_set_multicast_ttl: ({ id, ttl }: Args) => { this.get(this.udp, id).setMulticastTTL(ttl); return null; },
     udp_set_multicast_loopback: ({ id, flag }: Args) => { this.get(this.udp, id).setMulticastLoopback(!!flag); return null; },
+    udp_set_multicast_interface: ({ id, multicastInterface }: Args) => { this.get(this.udp, id).setMulticastInterface(multicastInterface); return null; },
     udp_get_recv_buffer_size: ({ id }: Args) => this.get(this.udp, id).getRecvBufferSize(),
     udp_get_send_buffer_size: ({ id }: Args) => this.get(this.udp, id).getSendBufferSize(),
     udp_set_recv_buffer_size: ({ id, size }: Args) => { this.get(this.udp, id).setRecvBufferSize(size); return null; },
