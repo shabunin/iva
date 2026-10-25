@@ -1,0 +1,98 @@
+name: panel-desktop
+
+# The panel app (panel/) for computers, as artifacts of the run - nothing to
+# install: Linux an AppImage, Windows the app's .exe alone (it needs the
+# WebView2 runtime Windows 10 and 11 have), macOS the .app zipped (universal:
+# Apple silicon and Intel; signed ad hoc, not by a developer - the first open
+# is a right click, Open). On every change to it or to what it runs; a
+# release's too (release.yml calls it). The Android APK: panel.yml.
+on:
+  push:
+    branches: [main, 'release/**']
+    paths:
+      - 'panel/**'
+      - 'src/runtime/**'
+      - 'src/preview/fonts.ts'
+      - 'src/compiler/fonts.json'
+      # the built-in demo (scripts/demo.mjs): the gallery and iva/ui
+      - 'examples/gallery/**'
+      - 'lib/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/panel-desktop.yml'
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: panel-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  desktop:
+    name: desktop (${{ matrix.name }})
+    strategy:
+      # each OS's errors, not just the first one's
+      fail-fast: false
+      matrix:
+        include:
+          # an older Ubuntu: the AppImage runs on the distributions since (glibc 2.35)
+          - name: linux
+            os: ubuntu-22.04
+            build: npx tauri build --bundles appimage
+            out: panel/src-tauri/target/release/bundle/appimage/*.AppImage
+          - name: windows
+            os: windows-latest
+            build: npx tauri build --no-bundle
+            out: panel/src-tauri/target/release/iva-panel.exe
+          - name: macos
+            os: macos-latest
+            build: |
+              npx tauri build --target universal-apple-darwin --bundles app
+              cd src-tauri/target/universal-apple-darwin/release/bundle/macos
+              ditto -c -k --keepParent *.app iva-panel-macos.zip
+            out: panel/src-tauri/target/universal-apple-darwin/release/bundle/macos/iva-panel-macos.zip
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.name == 'macos' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      # (on failure too: the crates built for the next try)
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: panel/src-tauri -> target
+          cache-on-failure: true
+
+      # WebKitGTK and the rest Tauri needs on Linux; file, for the AppImage's tools
+      - name: Linux libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev file
+
+      - run: npm ci
+
+      # (tauri build makes panel/dist first: npm run panel:build)
+      - name: Build the app
+        working-directory: panel
+        shell: bash
+        env:
+          # the AppImage tools run unpacked (no FUSE on the runner)
+          APPIMAGE_EXTRACT_AND_RUN: 1
+          # macOS: an ad hoc signature (Apple silicon runs nothing unsigned)
+          APPLE_SIGNING_IDENTITY: '-'
+        run: ${{ matrix.build }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: iva-panel-${{ matrix.name }}
+          path: ${{ matrix.out }}
+          if-no-files-found: error
