@@ -23,7 +23,7 @@ import { createIvaHost } from '../src/runtime/host';
 import { closeHostSockets } from '../src/runtime/host/net/provider';
 import { installFonts } from '../src/preview/fonts';
 import { formatLocation, History, isGuiUrl, parseLocation, type GuiLocation } from '../src/runtime/location';
-import { PARSED_STAMP, type KeptParse, fetchGui, folderManifest, guiUrl, isZip, loadManifest, manifestOf, newerVersion, ownFile, savedManifest, toSave, unpackPlan, useTurn, type Download, type Manifest } from './loader';
+import { PARSED_STAMP, type KeptParse, appArchive, fetchGui, folderManifest, guiUrl, manifestOf, newerVersion, ownFile, savedManifest, toSave, unpackPlan, useArchives, useTurn, zipped, type Download, type Fetched, type Manifest } from './loader';
 import { forgetAllGuis, forgetGui, keptGui, keptGuis, saveGui, savedGui, usedGui, type Kept, type SavedGui } from './store';
 import { androidDevice } from './device';
 
@@ -561,8 +561,18 @@ async function unpackKey(url: string): Promise<string | undefined> {
   return undefined;
 }
 
-/** the app's side: it unpacks a GUI's archive and packs its images in sheets (src-tauri/src/unpack.rs) - a browser has none */
+/**
+ * the app's side: it downloads a GUI's archive to the device (kept there as the GUI's copy), unpacks it and packs its
+ * images in sheets (src-tauri/src/unpack.rs) - a browser has none
+ */
 const native = isTauri();
+if (native) {
+  useArchives({
+    fetch: (id, url, known) => invoke<Fetched>('gui_fetch', { args: { id, url, ...known } }),
+    names: (id, savedAt) => invoke<string[]>('gui_archive', { id, savedAt }),
+    text: (id, savedAt, name) => invoke<string>('gui_archive_text', { id, savedAt, name }),
+  });
+}
 
 /** the size of the GUI shown (its folder in its archive), of several */
 let shownSize: string | undefined;
@@ -598,7 +608,12 @@ interface Packing {
   images?: number;
   error?: string;
 }
+/** so many bytes in MB, as the loading screen says them */
+const mb = (n: number) => (n / 1048576).toFixed(1);
 if (native) {
+  // a GUI's archive coming (gui_fetch): the bar fills with it
+  void listen<{ id: string; done: number; total?: number }>('iva-gui-download', ({ payload: e }) =>
+    progress('download', `Downloading the GUI: ${mb(e.done)}${e.total ? ` of ${mb(e.total)}` : ''} MB`, e.done, e.total));
   void listen<Packing>('iva-gui-packing', ({ payload: e }) => mark(`packing: ${e.done} of ${e.total} groups`));
   void listen<Packing>('iva-gui-packed', ({ payload: e }) =>
     e.error ? noteError(`packing ${e.id}'s images: ${e.error}`) : mark(`packed by the app: ${e.images} images in ${e.sheets} sheets in ${e.ms} ms`));
@@ -623,11 +638,13 @@ const base64 = (bytes: Uint8Array<ArrayBuffer>) =>
     r.readAsDataURL(new Blob([bytes]));
   });
 
-/** an archive to the app, in pieces (an Android web view hands the app strings, not bytes): its token */
+/**
+ * an archive to the app, in pieces (an Android web view hands the app strings, not bytes): its token - only a copy an
+ * older panel kept here; one from a server the app downloads itself
+ */
 async function upload(bytes: Uint8Array<ArrayBuffer>): Promise<number> {
   const token = await invoke<number>('gui_upload_begin');
   const piece = 2 << 20;
-  const mb = (n: number) => (n / 1048576).toFixed(1);
   for (let at = 0; at < bytes.length; at += piece) {
     progress('unpacking', `Handing the GUI to the app: ${mb(at)} of ${mb(bytes.length)} MB`, at, bytes.length * 2);
     await invoke('gui_upload', { token, data: await base64(bytes.subarray(at, at + piece)) });
@@ -635,20 +652,28 @@ async function upload(bytes: Uint8Array<ArrayBuffer>): Promise<number> {
   return token;
 }
 
+/** where an archive is, for the app to unpack: its bytes here, or a GUI's copy the app keeps (whose, when it came) */
+type ZipAt = Uint8Array<ArrayBuffer> | { id: string; savedAt: number };
+
+/** a copy's archive, where it is: the app's (it downloaded it), or here (an older panel's copy; a browser's) */
+const zipOf = (s: SavedGui): ZipAt | undefined => (s.appZip ? { id: s.url, savedAt: s.savedAt } : s.zip);
+
 /**
  * A GUI's archive unpacked by the app - the size this screen runs, into its
  * folder for this version (its key) - and the GUI from there: each file by
  * its URL, nothing unzipped here (a slow phone takes seconds to inflate a
- * thousand images, the app a fraction of one). The app's own archive (the
- * built-in demo) it reads itself, any other it's sent. None: no app, no
- * version, or it failed - the page unzips it, as a browser does.
+ * thousand images, the app a fraction of one). The app reads the archive
+ * itself - one it downloaded (a GUI's copy: `drop`, let go once unpacked),
+ * its own (the built-in demo) - a copy an older panel kept here it's sent.
+ * None: no app, no version, or it failed - the page unzips it, as a browser
+ * does.
  */
-async function unpacked(url: string, key: string | undefined, zip: Uint8Array<ArrayBuffer>): Promise<Manifest | null> {
+async function unpacked(url: string, key: string | undefined, zip: ZipAt, drop = false): Promise<Manifest | null> {
   if (!native || !key) return null;
   try {
     progress('unpacking', 'Unpacking the GUI');
-    const plan = await unpackPlan(zip, url);
-    const from = ownFile(url) ? { asset: decodeURIComponent(new URL(url).pathname) } : { upload: await upload(zip) };
+    const plan = await unpackPlan(zip instanceof Uint8Array ? zip : await appArchive(zip.id, zip.savedAt), url);
+    const from = !(zip instanceof Uint8Array) ? { kept: zip, drop } : ownFile(url) ? { asset: decodeURIComponent(new URL(url).pathname) } : { upload: await upload(zip) };
     progress('unpacking', `Unpacking the GUI: ${plan.files.length} files`, 1, 2);
     const u = await invoke<Unpacked>('gui_unpack', { args: { id: url, version: key, size: plan.size, files: plan.files, atlas: plan.atlas, ...from } });
     // the size for each orientation: the next start finds the folder for the one it's turned
@@ -674,6 +699,48 @@ function keepParsed(m: Manifest, url: string, key: string): Manifest {
     void invoke('gui_keep_parsed', { id: url, version: key, size: m.size ?? '', data }).catch((e) => noteError(`keeping ${url}'s parse: ${message(e)}`));
   };
   return m;
+}
+
+/** A GUI from its copy kept: its zip unpacked by the app (the app's own copy; one an older panel kept here, sent to it), else read here. */
+async function fromCopy(url: string, saved: SavedGui, key = keptKey(saved)): Promise<Manifest> {
+  const zip = zipOf(saved);
+  return (zip && (await unpacked(url, key, zip))) || savedManifest(saved);
+}
+
+/** What came from a GUI's server, to run: unpacked by the app (as version `key`), with what to keep of it - or read here. */
+interface Served {
+  m: Manifest;
+  key?: string;
+  copy?: SavedGui;
+}
+
+/**
+ * A GUI from what its server gave: a zip unpacked by the app - one it
+ * downloaded to the device (kept there as the GUI's copy, unless the
+ * settings say no copy), the built-in demo among its own files - else read
+ * here (a .gui; a browser; an archive the app couldn't unpack).
+ */
+async function served(url: string, got: Download): Promise<Served> {
+  if (native && zipped(got)) {
+    const copy = keepsCopy(got.url) ? await toSave(got) : undefined;
+    const key = copy ? keptKey(copy) : got.archive ? keptKey(got.archive) : ownFile(url) ? await unpackKey(url) : undefined;
+    const zip: ZipAt = got.archive ? { id: got.url, savedAt: got.archive.savedAt } : got.bytes!;
+    const m = await unpacked(url, key, zip, !copy && !!got.archive);
+    if (m) return { m, key, copy };
+  }
+  progress('reading', 'Reading the GUI');
+  return { m: await manifestOf(got) };
+}
+
+/** What came from the server, shown, kept on the device behind the GUI running: unpacked by the app, its copy kept and its images packed for the next start. */
+function keepServed(url: string, got: Download, s: Served) {
+  if (!s.key) {
+    if (!ownFile(url)) void keep(got, s.m);
+    return;
+  }
+  const copy = s.copy;
+  if (copy) void keepCopy(copy).then(() => (kept = copy)).catch((e) => noteError(`keeping ${got.url} on the device: ${message(e)}`));
+  pack(url, s.key, s.m);
 }
 
 /** Its images packed in sheets by the app (behind the GUI running), for the next start - if they aren't. */
@@ -744,13 +811,14 @@ async function start() {
     try {
       const key = keptKey(saved);
       progress('reading', 'Reading the copy kept on this device');
-      const m = (saved.zip && (await unpacked(url, key, saved.zip))) || (await savedManifest(saved));
+      const m = await fromCopy(url, saved, key);
       if (m.missingScripts.length) {
         // a copy with scripts missing (kept by an older panel from a load that lost them): its server first, if it answers
         try {
-          const live = await loadManifest(url);
-          await show(live.manifest);
-          void keep(live.got, live.manifest);
+          const got = await fetchGui(url);
+          const live = await served(url, got);
+          await show(live.m);
+          keepServed(url, got, live);
           return;
         } catch (e) {
           noteError(`${message(e)} - the copy kept runs, ${m.missingScripts.length} script(s) missing`);
@@ -772,31 +840,15 @@ async function start() {
     progress('download', ownFile(url) ? 'Reading the GUI' : `Downloading the GUI from ${new URL(guiUrl(url)).host}`);
     const got = await fetchGui(url);
     // a zipped GUI (the built-in demo too): unpacked by the app, and a copy kept - by its version the app unpacked it as
-    if (isZip(got.bytes) && native) {
-      const copy = keepsCopy(got.url) ? await toSave(got) : undefined;
-      const key = copy ? keptKey(copy) : ownFile(url) ? await unpackKey(url) : undefined;
-      const m = await unpacked(url, key, got.bytes);
-      if (m && !m.missingScripts.length) {
-        mark('read');
-        await show(m);
-        mark('shown');
-        if (copy) {
-          void saveGui(copy).then(() => (kept = copy)).catch((e) => noteError(`keeping ${got.url} on the device: ${message(e)}`));
-        }
-        pack(url, key, m);
-        return;
-      }
-    }
-    progress('reading', 'Reading the GUI');
-    const manifest = await manifestOf(got);
+    const live = await served(url, got);
     // the link lost scripts the server has: a whole copy kept runs instead (a GUI short of its start script runs nothing)
-    if (manifest.missingScripts.length && saved) {
+    if (live.m.missingScripts.length && saved) {
       try {
-        const m = await savedManifest(saved);
+        const m = await fromCopy(url, saved);
         if (!m.missingScripts.length) {
           await show(m);
           kept = saved;
-          notice(`the server's copy came short of ${manifest.missingScripts.length} script(s) - the copy kept on ${new Date(saved.savedAt).toLocaleString()} runs (Ctrl+R: again from the server)`);
+          notice(`the server's copy came short of ${live.m.missingScripts.length} script(s) - the copy kept on ${new Date(saved.savedAt).toLocaleString()} runs (Ctrl+R: again from the server)`);
           return;
         }
       } catch (e) {
@@ -804,16 +856,16 @@ async function start() {
       }
     }
     mark('read');
-    await show(manifest);
+    await show(live.m);
     mark('shown');
-    if (!ownFile(url)) void keep(got, manifest);
+    keepServed(url, got, live);
   } catch (e) {
     const why = message(e);
     noteError(why);
     // the server's asked for and not there: the copy kept
     if (saved && !current) {
       try {
-        await show(await savedManifest(saved));
+        await show(await fromCopy(url, saved));
         kept = saved;
         notice(`${why} - the copy kept on ${new Date(saved.savedAt).toLocaleString()} runs`);
         return;
@@ -851,17 +903,29 @@ function setKeepsCopy(url: string, on: boolean) {
   localStorage.setItem(NO_COPY, JSON.stringify([...s]));
 }
 
+/**
+ * A copy kept (the one before for its URL goes). The GUIs it pushes out of
+ * the ones kept (store.ts) go on the app's side too - their files unpacked,
+ * their archives - but not the one shown.
+ */
+async function keepCopy(s: SavedGui) {
+  for (const u of await saveGui(s)) {
+    if (u !== s.url && !(shown && spellings(shown.gui).includes(u))) void forgetCopy(u).catch((e) => noteError(message(e)));
+  }
+}
+
 /** What came from the server, kept on the device (behind the GUI running): the next start runs it. */
-async function keep(got: Download, m: Manifest) {
+async function keep(got: Download, m?: Manifest) {
   if (!keepsCopy(got.url)) return;
   try {
     const s = await toSave(got, m);
-    await saveGui(s);
+    await keepCopy(s);
     kept = s;
     // iva serve's whole build: unpacked and packed for the next start
-    if (s.zip) {
+    const zip = zipOf(s);
+    if (zip) {
       const key = keptKey(s);
-      void unpacked(got.url, key, s.zip).then((u) => u && pack(got.url, key, u));
+      void unpacked(got.url, key, zip).then((u) => u && pack(got.url, key, u));
     }
   } catch (e) {
     noteError(`keeping ${got.url} on the device: ${message(e)}`);
@@ -878,7 +942,7 @@ async function checkServer() {
   try {
     const newer = await newerVersion(kept);
     if (!newer) return;
-    await saveGui(newer);
+    await keepCopy(newer);
     const page = current?.renderer.currentPageName;
     if (page) sessionStorage.setItem(PAGE, page);
     await letGo();
@@ -1003,8 +1067,7 @@ function copyRow(url: string, k: Kept | undefined): HTMLElement {
 async function saveNow(url: string) {
   setKeepsCopy(url, true);
   try {
-    const { manifest, got } = await loadManifest(url);
-    await keep(got, manifest);
+    await keep(await fetchGui(url));
   } catch (e) {
     noteError(`saving ${url}: ${message(e)}`);
   }

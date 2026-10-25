@@ -16,7 +16,7 @@ phone's crash log). Nothing in a .gui can avoid that.
 panel/
   index.html, main.ts   the page: the GUI full screen, the address bar, the settings
   loader.ts             a GUI from a web server: .gui, zipped GUI, iva serve
-  store.ts              the GUIs kept on the device (IndexedDB)
+  store.ts              the GUIs kept on the device (IndexedDB; in the app a zip is the app's)
   vite.config.ts        the runtime's host stand-ins -> the real Tauri APIs
   src-tauri/            the app: Rust host, Tauri config, Android project (gen/android)
 ```
@@ -75,6 +75,21 @@ compared); if it has, it's kept and runs at once, on the page shown. The same
 when the app comes back to the front. Without its server the copy runs on.
 `CF.loadGUI` with `reloadGUI` (iva serve's live reload) and Ctrl+R load the
 server's. Nothing kept and no server: it tries again every 5 s.
+
+In the app a zip - a zipped GUI, iva serve's `/__iva/gui.zip` - never
+passes through the page. The app downloads it itself, straight to the GUI's
+folder on the device (`src-tauri/src/unpack.rs`, `gui_fetch`; the loading
+bar fills as it comes), and keeps it there as the copy: `kept.zip`, its
+ETag and Last-Modified in `kept.json`, only a note of it in the page's
+storage. The size the screen runs is unpacked from it, the other
+orientation's from the same archive when the device turns; the page only
+asks what's in it (its names, its `.gui`s to choose a size from). The check
+for a newer version goes from the app too, with `If-None-Match` and
+`If-Modified-Since`, and a download of the very bytes kept is no newer
+version. A GUI with no copy kept has its archive let go once unpacked. A
+copy an older panel kept in the page (the archive in IndexedDB) is replaced
+by the app's own at its first check. In a browser (no app) the archive
+itself is kept in IndexedDB.
 
 The settings list the GUIs the panel knows - shown, the default, visited,
 kept - each with its copy's state, and per GUI: whether a copy is kept at
