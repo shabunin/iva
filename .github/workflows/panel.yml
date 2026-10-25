@@ -1,10 +1,12 @@
 name: panel
 
 # The panel app for Android (panel/): an APK on every change to it or to the
-# runtime it runs, as an artifact of the run (gh run download -n iva-panel-apk).
+# runtime it runs, as an artifact of the run (gh run download -n iva-panel-apk);
+# a release's too (release.yml calls it). Signed with the release key from the
+# repository's secrets; without them (a fork), with the dev key in the repo.
 on:
   push:
-    branches: [main]
+    branches: [main, 'release/**']
     paths:
       - 'panel/**'
       - 'src/runtime/**'
@@ -21,6 +23,7 @@ on:
       targets:
         description: 'Rust targets (aarch64: phones and tablets since ~2017; armv7: older 32-bit ones)'
         default: 'aarch64'
+  workflow_call:
 
 concurrency:
   group: panel-${{ github.ref }}
@@ -61,8 +64,25 @@ jobs:
 
       - run: npm ci
 
+      # the release key: a release (a v* tag) is never signed with the dev key
+      - name: The release key
+        env:
+          KEYSTORE_B64: ${{ secrets.IVA_PANEL_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/iva-panel-release.p12"
+            echo "IVA_PANEL_KEYSTORE=$RUNNER_TEMP/iva-panel-release.p12" >> "$GITHUB_ENV"
+          elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "::error::no release key (secret IVA_PANEL_KEYSTORE_B64) for a release"
+            exit 1
+          else
+            echo "no release key: the dev key signs this build"
+          fi
+
       - name: Build the APK
         working-directory: panel
+        env:
+          IVA_PANEL_KEYSTORE_PASSWORD: ${{ secrets.IVA_PANEL_KEYSTORE_PASSWORD }}
         run: |
           export NDK_HOME="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
           echo "NDK: $NDK_HOME"

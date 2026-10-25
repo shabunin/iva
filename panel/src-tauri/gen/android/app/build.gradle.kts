@@ -25,8 +25,9 @@ android {
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
     }
-    // a development key, kept in the repo: every build (CI's too) installs over the last one.
-    // A release for others to install gets a key of its own, out of the repo.
+    // a development key, kept in the repo: a build here installs over the last one. A release build
+    // with IVA_PANEL_KEYSTORE set (CI: the repository's secrets) is signed with the release key -
+    // its own, out of the repo; without it, with the dev key
     signingConfigs {
         create("dev") {
             storeFile = file("../keystore/iva-panel-dev.p12")
@@ -34,6 +35,16 @@ android {
             keyAlias = "iva"
             keyPassword = "iva-panel"
             storeType = "pkcs12"
+        }
+        val releaseStore = System.getenv("IVA_PANEL_KEYSTORE")
+        if (!releaseStore.isNullOrEmpty()) {
+            create("release") {
+                storeFile = file(releaseStore)
+                storePassword = System.getenv("IVA_PANEL_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("IVA_PANEL_KEY_ALIAS") ?: "iva-release"
+                keyPassword = System.getenv("IVA_PANEL_KEYSTORE_PASSWORD")
+                storeType = "pkcs12"
+            }
         }
     }
     buildTypes {
@@ -51,7 +62,7 @@ android {
             }
         }
         getByName("release") {
-            signingConfig = signingConfigs.getByName("dev")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("dev")
             isMinifyEnabled = true
             proguardFiles(
                 *fileTree(".") { include("**/*.pro") }
