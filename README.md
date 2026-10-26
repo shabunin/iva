@@ -283,22 +283,25 @@ served as it is - every file by its path, a page at `/` listing its GUIs -
 for GUIs that link to one another (`examples/browse`: one build each in
 `dist/<name>/`); no live reload there.
 
-`/` is one size: the project's own, or `--size`'s. The iva panel takes the
-whole build as one archive (`/__iva/gui.zip`), and for a project with
-`<Project sizes>` that archive has every size, laid out as `iva build --zip`
-does (the size at `/` at its root, each other in its `<W>w<H>h/` folder): the
-panel runs the one shaped like its screen. The other sizes are built when the
-archive is asked for, once a build, so saving rebuilds only the size at `/`.
-`--size 1400x1400@3x` serves that size only, in the archive too.
+`/` is one size: the project's own, or `--size`'s. A project with
+`<Project sizes>` has each other size at a path of its own, laid out as at
+`/`: `http://<this machine>:8019/1400w1400h/` (its `<W>w<H>h/` folder, as
+`iva build --zip` names it). Each is a GUI of its own - built after the one
+at `/` and again on every save, with its own live reload - and the device
+loads the one it's given; nothing picks a size for it. `--size
+1400x1400@3x` serves that size only, at `/`. The iva panel takes a GUI's
+whole build as one archive (`__iva/gui.zip` beside its `.gui`: `/__iva/gui.zip`,
+`/1400w1400h/__iva/gui.zip`), that size only.
 
 While it runs, `iva serve` is on the network for the iva panel to find
 (mDNS / DNS-SD, CF Bonjour's own engine): an `_iva._tcp` service named after
-the project, on each address it prints (`--host`: that one), each network's
-answer with its own address. Its TXT record has what the panel shows and
-loads: `path=/`, `iva=` (iva's version), `name`, `kind` (`project`, `gui` or
-`folder`), `sizes` (the size at `/` first) and `host` (this machine's name).
-The panel's settings list it under **Found on the network**, and a tap loads
-it. Port 5353 is shared with the system's own responder (avahi,
+the project - one for each size, named with it (`neomorph 1080x1920@2.5x`),
+when the project has several - on each address it prints (`--host`: that
+one), each network's answer with its own address. Its TXT record has what the
+panel shows and loads: `path` (`/`, `/1400w1400h/`), `iva=` (iva's version),
+`name`, `kind` (`project`, `gui` or `folder`), `sizes` (the size at that path)
+and `host` (this machine's name). The panel's settings list each under
+**Found on the network**, and a tap loads that one. Port 5353 is shared with the system's own responder (avahi,
 mDNSResponder) and with other `iva serve`s; a project name someone else
 serves on the network is advertised as `Name (2)`; stopping sends goodbyes.
 `--no-mdns` turns it off. It needs a network that carries the panel's query

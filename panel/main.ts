@@ -1094,7 +1094,7 @@ function showFound(list: FoundServe[]) {
   foundHint.textContent = list.length ? 'Tap one to load it.' : findingLong ? NONE_FOUND : LOOKING;
 }
 
-/** a found iva serve: its project, where it is; a tap loads it, as its address typed and Load */
+/** a GUI an iva serve serves (a size of a project's): its name, where it is; a tap loads it, as its address typed and Load */
 function foundRow(s: FoundServe): HTMLElement {
   // at an address the panel has loaded it from before (its copy kept under that), else at its main network's
   const known = new Set([shown?.gui, localStorage.getItem(GUI), localStorage.getItem(DEFAULT_GUI), ...history.entries().map((e) => e.gui)]
@@ -1110,7 +1110,9 @@ function foundRow(s: FoundServe): HTMLElement {
   info.className = 'hint';
   const host = s.host || s.hostname.replace(/\.local\.?$/, '');
   const tags = [canonical(url) === shown?.gui ? 'shown now' : '', s.kind === 'folder' ? 'a folder of GUIs: one\'s path after the address' : ''].filter(Boolean);
-  info.textContent = [host, new URL(url).host, s.sizes.join(', '), s.version ? `iva ${s.version}` : '', ...tags].filter(Boolean).join(' \u00b7 ');
+  // the address with its path: another size of the project's
+  const at = new URL(url);
+  info.textContent = [host, at.host + (at.pathname === '/' ? '' : at.pathname), s.sizes.join(', '), s.version ? `iva ${s.version}` : '', ...tags].filter(Boolean).join(' \u00b7 ');
   row.append(name, info);
   row.addEventListener('click', () => {
     input.value = url;

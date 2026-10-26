@@ -294,8 +294,9 @@ export async function toSave(got: Download, m?: Manifest): Promise<SavedGui> {
   m ??= await manifestOf(got);
   const gui = decodeXml(bytes);
   if (got.server?.startsWith('iva')) {
-    // the whole build in one archive (asked for twice: a flaky link) - in the app, kept by it as this GUI's copy
-    const at = new URL('/__iva/gui.zip', got.url).href;
+    // the whole build in one archive, beside the .gui: the size at that path only (another of the project's: its own
+    // path's, /1400w1400h/__iva/gui.zip) - asked for twice (a flaky link); in the app, kept by it as this GUI's copy
+    const at = new URL('__iva/gui.zip', got.url).href;
     const zip = await download(at, undefined, got.url).catch(() => download(at, undefined, got.url)).catch(() => null);
     if (zip?.archive) return { ...base, gui, appZip: true, savedAt: zip.archive.savedAt, bytes: zip.archive.bytes };
     if (zip?.bytes && isZip(zip.bytes)) return { ...base, gui, zip: zip.bytes, bytes: zip.bytes.length };

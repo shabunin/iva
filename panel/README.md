@@ -33,10 +33,12 @@ panel's default GUI: what it starts with, where `CF.loadGUI(null)` goes.
 From `iva serve` it reloads on every rebuild, and its log (`CF.log`, errors,
 page flips) goes to iva serve's console, as with iViewer.
 
-**Found on the network**, under the GUI in the settings, lists the
-`iva serve`s this device reaches while the settings are open: the project,
-the machine, its address and port, the sizes it serves and iva's version. A
-tap puts its address in the GUI field and loads it, as typing it and Load
+**Found on the network**, under the GUI in the settings, lists the GUIs of
+the `iva serve`s this device reaches while the settings are open - a project
+in several sizes, each size its own (`neomorph 1080x1920@2.5x`, at
+`/1080w1920h/`): its name, the machine, its address, port and path, its size
+and iva's version. The size is the one tapped: nothing picks one for the
+screen. A tap puts its address in the GUI field and loads it, as typing it and Load
 would (a folder served, `iva serve dist/`, fills the field only: its GUIs'
 paths go after it). The address picked is one the panel has loaded that
 server from before, so its kept copy is used; otherwise the one on the
@@ -92,9 +94,10 @@ disconnect while the panel sleeps.
 ## Copies on the device
 
 The GUI is kept on the device once it has loaded (the last four GUIs used):
-a zipped GUI as it came, iva serve's whole build (`/__iva/gui.zip`: its web
-pages and the assets scripts load too, every size of `<Project sizes>` - the
-one shaped like the screen runs), or a `.gui` and the files it names.
+a zipped GUI as it came, iva serve's whole build (`__iva/gui.zip` beside the
+`.gui`: its web pages and the assets scripts load too - the size at that path
+only, another size of the project being a GUI of its own), or a `.gui` and the
+files it names.
 The next start runs that copy at once and asks the server behind it whether
 it has another version (`If-None-Match`, `If-Modified-Since`, else the bytes
 compared); if it has, it's kept and runs at once, on the page shown. The same
@@ -102,7 +105,7 @@ when the app comes back to the front. Without its server the copy runs on.
 `CF.loadGUI` with `reloadGUI` (iva serve's live reload) and Ctrl+R load the
 server's. Nothing kept and no server: it tries again every 5 s.
 
-In the app a zip - a zipped GUI, iva serve's `/__iva/gui.zip` - never
+In the app a zip - a zipped GUI, iva serve's `__iva/gui.zip` - never
 passes through the page. The app downloads it itself, straight to the GUI's
 folder on the device (`src-tauri/src/unpack.rs`, `gui_fetch`; the loading
 bar fills as it comes), and keeps it there as the copy: `kept.zip`, its
