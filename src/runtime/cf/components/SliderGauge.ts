@@ -45,40 +45,26 @@ export function renderSliderOrGauge(
     if (indImg0) {
         thumbImgOff = indImg0;
         thumbImgOn = indImg0;
-        if (ind0) {
-            thumbWOff = parseInt(ind0.attributes.w || "0", 10);
-            thumbHOff = parseInt(ind0.attributes.h || "0", 10);
-            thumbWOn = thumbWOff;
-            thumbHOn = thumbHOff;
-        }
     }
     
     const indImg1 = resolveIndicatorImage(ind1);
-    if (indImg1) {
-        thumbImgOn = indImg1;
-        if (ind1) {
-            thumbWOn = parseInt(ind1.attributes.w || "0", 10);
-            thumbHOn = parseInt(ind1.attributes.h || "0", 10);
-        }
-    }
+    if (indImg1) thumbImgOn = indImg1;
 
     let thumbResourceOff: Sprite | Graphics | null = null;
     let thumbResourceOn: Sprite | Graphics | null = null;
 
+    // the thumb at its image's own size, as iViewer draws it: an indicator's w / h are nothing to it
+    // (GUI Designer writes 0s) - a file's or a sheet's frame, its pixels the GUI's units
     if (thumbImgOff && Assets.get(thumbImgOff)) {
         thumbResourceOff = new Sprite(Assets.get(thumbImgOff));
-        if (thumbWOff > 0) thumbResourceOff.width = thumbWOff;
-        if (thumbHOff > 0) thumbResourceOff.height = thumbHOff;
-        if (thumbWOff === 0) thumbWOff = thumbResourceOff.width;
-        if (thumbHOff === 0) thumbHOff = thumbResourceOff.height;
+        thumbWOff = thumbResourceOff.width;
+        thumbHOff = thumbResourceOff.height;
     } 
 
     if (thumbImgOn && Assets.get(thumbImgOn)) {
         thumbResourceOn = new Sprite(Assets.get(thumbImgOn));
-        if (thumbWOn > 0) thumbResourceOn.width = thumbWOn;
-        if (thumbHOn > 0) thumbResourceOn.height = thumbHOn;
-        if (thumbWOn === 0) thumbWOn = thumbResourceOn.width;
-        if (thumbHOn === 0) thumbHOn = thumbResourceOn.height;
+        thumbWOn = thumbResourceOn.width;
+        thumbHOn = thumbResourceOn.height;
     }
 
     if (!thumbResourceOff) {

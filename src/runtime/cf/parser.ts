@@ -207,7 +207,9 @@ export function parseNode(element: Element): CFNode {
                 directText += element.childNodes[i].nodeValue || "";
             }
         }
-        node.text = directText.trim();
+        // a button state's text as iViewer keeps it: every character, newlines too (GUI Designer's
+        // "\n\nUNLOCK<img>" puts it two lines down, under the icon)
+        node.text = type === "inactive" || type === "active" ? directText : directText.trim();
         if ((type === "txt" || type === "img") && node.text !== "#") {
             node.content = node.text;
         }

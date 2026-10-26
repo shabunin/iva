@@ -5,6 +5,13 @@ import { CFNode } from '../parser';
 import { joinStore, normalizeJoinString } from '../joinStore';
 import { CFRenderer } from '../renderer';
 
+/**
+ * A button's text as iViewer lays it out: every line, blank ones too - a
+ * blank last one Pixi's wrap drops (a zero-width space keeps it); nothing
+ * but blanks (the indent around a state's icon) nothing to draw.
+ */
+const linesOf = (text: string) => (/\S/.test(text) ? text.replace(/\n[ \t]*$/, '\n\u200B') : '');
+
 export function renderButton(
     node: CFNode,
     container: Container,
@@ -218,7 +225,7 @@ export function renderButton(
                 rawStr = TokenEngine.replaceTokens(rawStr, renderer.cfApi as any, { list: (node as any).listJoin, index: (node as any).listIndex, tokens });
             }
             // what the button can show: a value too long for any texture would draw as a black box
-            txtObj.text = fitText(rawStr, isActive ? layout1 : layout0, node.w, node.h);
+            txtObj.text = linesOf(fitText(rawStr, isActive ? layout1 : layout0, node.w, node.h));
         }
     };
 
