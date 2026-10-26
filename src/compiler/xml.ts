@@ -1,7 +1,8 @@
 /**
  * The .gui as an XML tree, and its serialization the way GUI Designer writes
- * it: UTF-8 declaration, two-space indent, one element per line, theme CSS in
- * CDATA. Attributes keep the order they were added in.
+ * it: UTF-8 declaration, two-space indent, one element per line (one with text
+ * and child elements, all on its line), theme CSS in CDATA. Attributes keep
+ * the order they were added in.
  */
 
 import { DOMParser } from '@xmldom/xmldom';
@@ -33,18 +34,24 @@ const escAttr = (s: string) =>
 // a CR as &#13;: XML reads a raw one as LF
 const escText = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\r/g, '&#13;');
 
+const attrsOf = (node: XNode) => node.attrs.map(([k, v]) => ` ${k}="${escAttr(v)}"`).join('');
+
+/** An element on one line, nothing added between its parts. */
+function inline(node: XNode): string {
+  const attrs = attrsOf(node);
+  if (node.cdata !== undefined) return `<${node.tag}${attrs}><![CDATA[${node.cdata.replace(/]]>/g, ']]]]><![CDATA[>')}]]></${node.tag}>`;
+  if (!node.children.length && !node.text) return `<${node.tag}${attrs} />`;
+  return `<${node.tag}${attrs}>${node.text ? escText(node.text) : ''}${node.children.map(inline).join('')}</${node.tag}>`;
+}
+
 function write(node: XNode, depth: number, out: string[]) {
   const pad = '  '.repeat(depth);
-  const attrs = node.attrs.map(([k, v]) => ` ${k}="${escAttr(v)}"`).join('');
-  if (node.cdata !== undefined) {
-    out.push(`${pad}<${node.tag}${attrs}><![CDATA[${node.cdata.replace(/]]>/g, ']]]]><![CDATA[>')}]]></${node.tag}>`);
-  } else if (node.children.length === 0) {
-    out.push(node.text !== undefined && node.text !== ''
-      ? `${pad}<${node.tag}${attrs}>${escText(node.text)}</${node.tag}>`
-      : `${pad}<${node.tag}${attrs} />`);
+  if (node.cdata !== undefined || node.children.length === 0 || node.text) {
+    // text and child elements together too: inline, as GUI Designer writes them - whitespace there would be text
+    // (iViewer shows every character of a button's <inactive>: '\n\nUNLOCK<img>' puts the text under its icon)
+    out.push(pad + inline(node));
   } else {
-    // text and child elements together: text first (a <btn>'s <inactive> never has both)
-    out.push(`${pad}<${node.tag}${attrs}>${node.text ? escText(node.text) : ''}`);
+    out.push(`${pad}<${node.tag}${attrsOf(node)}>`);
     for (const c of node.children) write(c, depth + 1, out);
     out.push(`${pad}</${node.tag}>`);
   }
@@ -56,7 +63,10 @@ export function serialize(root: XNode): string {
   return out.join('\r\n') + '\r\n';
 }
 
-/** DOM element -> XNode (whitespace-only text dropped, mixed text trimmed). */
+/** a button state's text, every character of it: iViewer shows them all (its lines centred) */
+export const EXACT_TEXT = new Set(['inactive', 'active']);
+
+/** DOM element -> XNode (whitespace-only text dropped, mixed text trimmed - not a button state's). */
 export function fromDom(e: Element): XNode {
   const node: XNode = { tag: e.tagName, attrs: [], children: [] };
   for (let i = 0; i < e.attributes.length; i++) node.attrs.push([e.attributes[i].name, e.attributes[i].value]);
@@ -69,7 +79,7 @@ export function fromDom(e: Element): XNode {
     else if (c.nodeType === 3) text += c.nodeValue ?? '';
   }
   if (cdata !== undefined) node.cdata = cdata;
-  else if (text.trim()) node.text = node.children.length ? text.trim() : text;
+  else if (text.trim()) node.text = node.children.length && !EXACT_TEXT.has(e.tagName) ? text.trim() : text;
   return node;
 }
 

@@ -2,12 +2,15 @@
  * Are two .gui files the same project? Formatting, attribute order and the
  * order of the top-level sections don't count; themes are compared by name
  * (`.x` and `.x[state='0']` are the same theme state); GUI Designer's
- * <designer> line is ignored. Everything else must match.
+ * <designer> line is ignored. Everything else must match - a button state's
+ * text to the character (iViewer shows its every line).
  */
 
-import { parseXml, type XNode } from '../compiler/xml.js';
+import { EXACT_TEXT, parseXml, type XNode } from '../compiler/xml.js';
 
 const norm = (s: string | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();
+/** an element's text as it counts: a button state's to the character */
+const textOf = (n: XNode) => (EXACT_TEXT.has(n.tag) ? n.text ?? '' : norm(n.cdata ?? n.text));
 
 function themeKey(name: string) {
   const m = /^\.?([^[]*)(?:\[state='(\d+)'\])?$/.exec(name);
@@ -34,8 +37,8 @@ function compareNode(path: string, a: XNode, b: XNode, out: Diff[]) {
   for (const k of new Set([...am.keys(), ...bm.keys()])) {
     if (am.get(k) !== bm.get(k)) out.push({ node: a, attr: k, value: am.get(k), text: `${path}/@${k}: ${JSON.stringify(am.get(k))} vs ${JSON.stringify(bm.get(k))}` });
   }
-  const at = norm(a.cdata ?? a.text);
-  const bt = norm(b.cdata ?? b.text);
+  const at = textOf(a);
+  const bt = textOf(b);
   if (at !== bt) out.push({ node: a, text: `${path}/text(): ${JSON.stringify(at.slice(0, 60))} vs ${JSON.stringify(bt.slice(0, 60))}` });
   if (a.children.length !== b.children.length) {
     out.push({ node: a, text: `${path}: ${a.children.length} vs ${b.children.length} children (${a.children.map((c) => c.tag).join(',')} | ${b.children.map((c) => c.tag).join(',')})`.slice(0, 300) });
