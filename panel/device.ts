@@ -7,9 +7,11 @@
  * channel (an older app, a desktop build): null.
  *
  * To the app: hello (a page starting: the keys forgotten, the brightness and
- * the bars the panel's own again), set, keys, autoLock, shown (the page has
- * drawn: the app's splash behind it can go). From it: state (what changed;
- * quiet: what a set made of it) and key (one let go, held so long).
+ * the bars the panel's own again), set, keys, autoLock, orientation (the
+ * settings': the screen kept that way, from the next start on too), shown
+ * (the page has drawn: the app's splash behind it can go). From it: state
+ * (what changed; quiet: what a set made of it) and key (one let go, held so
+ * long).
  */
 import type { HostDeviceControl, HostDeviceProperties } from '../src/runtime/stdlib/host';
 
@@ -21,6 +23,8 @@ interface Channel {
 export interface AndroidDevice extends HostDeviceControl {
   /** the screen kept on for so many minutes without a touch, then the device may lock (0: kept on) */
   autoLock(minutes: number): void;
+  /** the screen as the device is turned (auto), or kept upright or on its side - either way up */
+  orientation(way: 'auto' | 'portrait' | 'landscape'): void;
   /** the page drawn (its loading screen): the web view opaque again, the app's splash behind it no longer showing through */
   shown(): void;
 }
@@ -58,6 +62,7 @@ export function androidDevice(): AndroidDevice | null {
       post({ type: 'keys', keys });
     },
     autoLock: (minutes) => post({ type: 'autoLock', minutes }),
+    orientation: (way) => post({ type: 'orientation', way }),
     shown: () => post({ type: 'shown' }),
   };
 }

@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ActivityInfo
 import android.content.res.Resources
 import android.database.ContentObserver
 import android.graphics.Color
@@ -40,9 +41,9 @@ import kotlin.math.roundToInt
  *
  * From the page: hello (a page starting: it hears the whole state; the keys
  * are forgotten, the brightness and the bars are the panel's own again),
- * set, keys, autoLock, shown (it has drawn). To it: state (what changed since
- * it was last told; quiet: what its own set made of the device) and key (one
- * let go).
+ * set, keys, autoLock, orientation (the settings' Orientation), shown (it has
+ * drawn). To it: state (what changed since it was last told; quiet: what its
+ * own set made of the device) and key (one let go).
  *
  * Till the page first draws, the web view is see-through: the window's
  * background - the app's icon on black, the splash (res/drawable/splash.xml)
@@ -141,6 +142,7 @@ class PanelDevice(private val activity: ComponentActivity) {
         }.filter { it.code >= 0 }
       }
       "autoLock" -> autoLock(m.optInt("minutes", 0))
+      "orientation" -> setOrientation(m.optString("way", "auto"))
       "shown" -> {
         main.removeCallbacks(opaque)
         opaque.run()
@@ -256,6 +258,8 @@ class PanelDevice(private val activity: ComponentActivity) {
   }
 
   fun start() {
+    // the way the settings keep the screen, from the start (before the page loads to say so)
+    applyOrientation(prefs.getString(ORIENTATION, "auto") ?: "auto")
     ContextCompat.registerReceiver(activity, battery, IntentFilter(Intent.ACTION_BATTERY_CHANGED), ContextCompat.RECEIVER_NOT_EXPORTED)
     // (the system's own broadcast; whoever sends it, the volume is read anew)
     ContextCompat.registerReceiver(activity, volume, IntentFilter("android.media.VOLUME_CHANGED_ACTION"), ContextCompat.RECEIVER_EXPORTED)
@@ -396,9 +400,32 @@ class PanelDevice(private val activity: ComponentActivity) {
     if (lockMinutes > 0) main.postDelayed(letLock, lockMinutes * 60_000L)
   }
 
+  // ── the orientation ───────────────────────────────────────────
+
+  /** what the panel keeps between starts (the page's own storage comes too late for the window's orientation) */
+  private val prefs by lazy { activity.getSharedPreferences("iva-panel", Context.MODE_PRIVATE) }
+
+  /** the settings' Orientation: auto (as the device is turned), portrait, landscape - either way up */
+  private fun applyOrientation(way: String) {
+    activity.requestedOrientation = when (way) {
+      "portrait" -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+      "landscape" -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+      else -> ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+    }
+  }
+
+  /** set in the settings: now, and from the next start on */
+  private fun setOrientation(way: String) {
+    prefs.edit().putString(ORIENTATION, way).apply()
+    applyOrientation(way)
+  }
+
   companion object {
     /** the panel's own page (Tauri's origin on Android) */
     private val ORIGINS = setOf("http://tauri.localhost", "https://tauri.localhost")
+
+    /** the settings' Orientation, in the app's preferences */
+    private const val ORIENTATION = "orientation"
 
     /** the web view opaque again by then, whether or not the page said it has drawn */
     private const val SPLASH_MS = 5000L

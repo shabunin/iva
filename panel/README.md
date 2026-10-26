@@ -64,6 +64,14 @@ screen (held a moment), Ctrl+S or F1 on a keyboard (a phone's own, a desktop's),
 finger held in the top-left corner for 3 s. Ctrl+R loads the GUI again from
 its server, past the copy kept. The last errors are listed in the settings.
 
+**Orientation** (Settings, View): Auto, the screen as the device is turned -
+a GUI laid out both ways (`<Project orientation="both">`, or a GUI Designer
+page with both its layouts) turns with it, its page's other layout at once,
+in place; Portrait or Landscape, the screen kept so (either way up: Android's
+sensorPortrait, sensorLandscape) and the GUI's layout for it - in a desktop's
+window too, whatever its shape. The app keeps it for the window from the next
+start on, before the page has loaded.
+
 ## A browser of GUIs
 
 GUI links are followed the way a browser follows links: `CF.loadGUI(url)`

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+- Panel: a setting, **Orientation** - Auto (as the device is turned),
+  Portrait or Landscape (the screen kept so, either way up, and the GUI's
+  layout for it; in a desktop's window too). The app keeps it, so the panel
+  starts that way.
+
 ### Changed
 
 - `iva serve`: a project in several sizes (`<Project sizes>`) has each size
@@ -22,6 +29,11 @@
   (`orientation="both"`) - the phones on their side, the tablet upright - so
   turning the panel shows the page's other layout at once, with what was set
   kept (a switch, a tab, a dial's value).
+
+### Fixed
+
+- Panel: a GUI laid out both ways, shown straight from its `.gui` and its
+  copy kept since, no longer reloads the first time the device is turned.
 
 ## 0.1.2 (26 October 2026)
 
