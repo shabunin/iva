@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Panel: a GUI served in several sizes (`<Project sizes>`, `iva serve` without
+  `--size`) ran its tall phone size on a square screen that says it's upright
+  (a Titan 2's 1436 x 1440), with bars either side, instead of its square
+  size. A size laid out square now counts for either way the screen is
+  turned, and wins on a square screen; a tall phone still gets the tall size.
+
 ## 0.1.2 (26 October 2026)
 
 `iva serve` is now found on the network: the iva panel's settings list the

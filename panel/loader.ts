@@ -457,7 +457,13 @@ export function layoutOf(xml: string): Layout {
  */
 export function shapedLike(sizes: string[], layouts: Map<string, Layout>, w: number, h: number, t?: Turn): string {
   const long = (a: number, b: number) => Math.max(a, b) / Math.min(a, b);
-  const pool = t ? sizes.filter((n) => layouts.get(n)?.has.has(t)) : [];
+  // a size laid out (nearly) square is laid out for either way, whichever its pages say (iva's: landscape) - a
+  // square screen that says portrait (a Titan 2: 1436 x 1440) runs it, not the tall size
+  const square = (l?: Layout) => {
+    const d = l?.landscape ?? l?.portrait;
+    return !!d && long(d[0], d[1]) < 1.15;
+  };
+  const pool = t ? sizes.filter((n) => layouts.get(n)?.has.has(t) || square(layouts.get(n))) : [];
   const off = (pool.length ? pool : sizes).map((n) => {
     const l = layouts.get(n);
     let d: number;

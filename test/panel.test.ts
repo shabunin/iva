@@ -251,10 +251,19 @@ test("a GUI in sizes laid out each one way (iva build's: 1080x1920 portrait, 128
     assert.deepEqual([plan.size, plan.files], ['', ['app.gui']]);
     useTurn('portrait');
     assert.deepEqual((await unpackPlan(zip, 'http://10.0.0.2/app.gui.zip')).files, ['1080w1920h/app.gui']);
-    // a square screen: the square size, either way
+    // a square screen: the square size, either way - its pages laid out landscape, square fits portrait as well
     g.screen = { width: 1440, height: 1440 };
     useTurn('landscape');
     assert.equal((await savedManifest({ url: 'http://10.0.0.2/app.gui.zip', zip, savedAt: 0, bytes: zip.length })).title, '467x467');
+    useTurn('portrait');
+    assert.equal((await savedManifest({ url: 'http://10.0.0.2/app.gui.zip', zip, savedAt: 0, bytes: zip.length })).title, '467x467');
+    // a Titan 2: 1436 x 1440, a hair taller than wide, says portrait - the square size, and for each way
+    g.screen = { width: 1436, height: 1440 };
+    assert.equal((await savedManifest({ url: 'http://10.0.0.2/app.gui.zip', zip, savedAt: 0, bytes: zip.length })).title, '467x467');
+    assert.deepEqual((await unpackPlan(zip, 'http://10.0.0.2/app.gui.zip')).sizes, { landscape: '1400w1400h/', portrait: '1400w1400h/' });
+    // a tall phone still gets the tall size turned upright, the square one not in its way
+    g.screen = { width: 1080, height: 2400 };
+    assert.equal((await savedManifest({ url: 'http://10.0.0.2/app.gui.zip', zip, savedAt: 0, bytes: zip.length })).title, '432x768');
   } finally {
     delete g.screen;
     useTurn(undefined);
