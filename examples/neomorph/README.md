@@ -41,7 +41,9 @@ way, its cards two a row.
   shape is a PNG drawn as the project builds, at the element's own size and
   as sharp as the screen needs (2x on the tablet, 3x and 2.5x on the phones):
   a shape's fill and its outer and inset shadows as CSS box-shadow has them
-  (blurred rounded rects in Evan Wallace's closed form). The files go to
+  (blurred rounded rects in Evan Wallace's closed form). A slider's thumb,
+  which iViewer shows at its image's own size, is drawn at that size and
+  twice it (`name@2x.png`), whatever the screen. The files go to
   `.neu/`, outside `assets/`, so each size ships only the drawings it uses; a
   rebuild draws only what's new, and `iva build` / `iva check` delete the ones
   no longer used.

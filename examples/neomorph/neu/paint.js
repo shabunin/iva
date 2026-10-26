@@ -12,11 +12,13 @@
  *
  * A drawing is one PNG, as sharp as the build's screen needs: twice its size
  * on a tablet (a retina one shows every pixel), three times on a phone laid
- * out at a third (`'1400x1400@3x'`) - as iva draws its own. The files go to
- * .neu/, outside assets/ (whose every file ships with every size): a build
- * ships the drawings it uses, nothing else. Named after what they hold, so a
- * rebuild draws only what is new; `iva build` and `iva check` delete the ones
- * no longer used.
+ * out at a third (`'1400x1400@3x'`) - as iva draws its own. A slider's thumb,
+ * which iViewer shows at its image's own size, is two: at 1x and 2x
+ * (name@2x.png), whatever the screen (`natural`). The files go to .neu/,
+ * outside assets/ (whose every file ships with every size): a build ships the
+ * drawings it uses, nothing else. Named after what they hold, so a rebuild
+ * draws only what is new; `iva build` and `iva check` delete the ones no
+ * longer used.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -297,28 +299,33 @@ if (!globalThis.__neuCleanup && ['build', 'check'].includes(process.argv[2])) {
 /**
  * A drawing's file, drawn into .neu/ the first time it's asked for, as sharp
  * as the screen being built needs. The path is absolute; the .gui names it
- * by its file name, as iViewer finds images.
+ * by its file name, as iViewer finds images. `natural`: an image iViewer
+ * shows at its own size, not its element's (a slider's thumb) - drawn at
+ * that size, and twice it beside it (name@2x.png: iViewer's retina version),
+ * whatever the screen.
  *
  *   paint({ w: 140, h: 80, layers: [{ shape: { x: 20, y: 20, w: 100, h: 40, r: 20 }, fill: '#E4EBF5', outer: [...] }] }, 'btn')
  */
-export function paint(spec, tag = 'neu') {
-  const sc = sharpness();
-  const key = JSON.stringify([VERSION, sc, spec]);
-  const hit = made.get(key);
-  if (hit) {
-    used.add(path.basename(hit));
-    return hit;
+export function paint(spec, tag = 'neu', { natural = false } = {}) {
+  const scales = natural ? [1, 2] : [sharpness()];
+  // (one at the screen's scale keyed by it alone, as ever: its file keeps its name)
+  const key = JSON.stringify([VERSION, natural ? scales : scales[0], spec]);
+  let files = made.get(key);
+  if (!files) {
+    const id = crypto.createHash('sha1').update(key).digest('hex').slice(0, 10);
+    const name = `neu-${tag}-${Math.round(spec.w)}x${Math.round(spec.h)}-${id}`;
+    files = scales.map((sc, i) => {
+      const file = path.join(OUT, `${name}${i ? `@${sc}x` : ''}.png`);
+      if (!fs.existsSync(file)) {
+        fs.mkdirSync(OUT, { recursive: true });
+        const tmp = path.join(OUT, `.${name}.${process.pid}.tmp`);
+        fs.writeFileSync(tmp, render(spec, sc));
+        fs.renameSync(tmp, file);
+      }
+      return file;
+    });
+    made.set(key, files);
   }
-  const id = crypto.createHash('sha1').update(key).digest('hex').slice(0, 10);
-  const name = `neu-${tag}-${Math.round(spec.w)}x${Math.round(spec.h)}-${id}`;
-  const file = path.join(OUT, `${name}.png`);
-  if (!fs.existsSync(file)) {
-    fs.mkdirSync(OUT, { recursive: true });
-    const tmp = path.join(OUT, `.${name}.${process.pid}.tmp`);
-    fs.writeFileSync(tmp, render(spec, sc));
-    fs.renameSync(tmp, file);
-  }
-  made.set(key, file);
-  used.add(`${name}.png`);
-  return file;
+  for (const f of files) used.add(path.basename(f));
+  return files[0];
 }

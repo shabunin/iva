@@ -395,7 +395,8 @@ export function createNeu(theme = {}) {
 
   // ── values ────────────────────────────────────────────────────────
 
-  // a slider's thumb: the same in every look (iViewer can't switch a thumb's image at runtime) - the light look's accent
+  // a slider's thumb: the same in every look (iViewer can't switch a thumb's image at runtime) - the light look's accent;
+  // drawn at its own size (natural): iViewer shows a thumb at its image's size, whatever the indicator's w / h
   const L = { ...looks.light, ...theme };
   const thumbOf = (ts, pressed) => {
     const m = 8, dot = pressed ? 12 : 8;
@@ -409,7 +410,7 @@ export function createNeu(theme = {}) {
           },
           { shape: { x: m + (ts - dot) / 2, y: m + (ts - dot) / 2, w: dot, h: dot, r: dot / 2 }, fill: '#FFFFFF', outer: [{ x: 0, y: 1, blur: 3, color: alpha(L.deep, 0.5) }] },
         ],
-      }, 'thumb'),
+      }, 'thumb', { natural: true }),
       size: ts + 2 * m,
     };
   };
