@@ -224,6 +224,27 @@ test("the copy kept is whole: iva serve's archive asked for twice, else the file
   await assert.rejects(toSave(got, manifest), /not kept - scripts missing: scripts\/dead\.js/);
 });
 
+test("iva serve's archive is the GUI's own: asked for beside its .gui - another size of the project (at /1080w1920h/) its own path's", async () => {
+  const gui = '<gui><properties><project>Live</project><imagefolder>assets</imagefolder></properties><scripts><script name="scripts/a.js" /></scripts></gui>';
+  const asked: string[] = [];
+  useFetch((async (url: string) => {
+    asked.push(url);
+    if (url.endsWith('/gui.zip')) throw new Error('connection reset');
+    return {
+      ok: true, status: 200, headers: { get: (h: string) => (h === 'server' && !url.endsWith('.js') ? 'iva' : null) },
+      arrayBuffer: async () => new TextEncoder().encode(url.endsWith('.js') ? '// a' : gui).buffer,
+    };
+  }) as any);
+  for (const at of ['http://10.0.0.2:8019/1080w1920h/', 'http://10.0.0.2:8019/']) {
+    asked.length = 0;
+    const { manifest, got } = await loadManifest(at);
+    await toSave(got, manifest);
+    assert.deepEqual(asked.filter((u) => u.endsWith('/gui.zip')), [`${at}__iva/gui.zip`, `${at}__iva/gui.zip`]);
+    // its files beside it too
+    assert.ok(asked.includes(`${at}assets/scripts/a.js`), asked.join('\n'));
+  }
+});
+
 test("a GUI in sizes laid out each one way (iva build's: 1080x1920 portrait, 1280x800 landscape): the one for the way the screen is turned, and which for each", async () => {
   // a size's pages in one orientation (the other written empty, as GUI Designer does)
   const sized = (w: number, h: number, turn: 'landscape' | 'portrait') => {

@@ -13,6 +13,12 @@ var Neu = (function () {
   var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
+  /** a group's pill under option i: by its offset from where it was placed, sliding (at once just after it was) */
+  function place(p, i) {
+    if (p.x0 === undefined || p.xs[i] === undefined || p.at === i) return;
+    CF.setProperties({ join: p.join, x: p.x0 + p.xs[i] }, 0, Date.now() - p.born < 500 ? 0 : p.time, CF.AnimationCurveEaseInOut);
+    p.at = i;
+  }
   function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
   function toJoin(v, min, max) { return Math.round(clamp((v - min) / ((max - min) || 1), 0, 1) * 65535); }
   function fromJoin(j, min, max) { return min + (Number(j) || 0) / 65535 * (max - min); }
@@ -44,28 +50,30 @@ var Neu = (function () {
      * one of several: the index in an analog join, each option's digital join
      * on when it's the one. With a pill ({ join, xs, at, time }: an image placed
      * under option `at`), it slides under the one chosen - by offsets from where
-     * it was placed, so the group can sit anywhere.
+     * it was placed, so the group can sit anywhere. Again for a page laid out the
+     * other way (<Project orientation="both">, the panel turned): that way's pill
+     * too, under the one chosen now - the value as it is.
      */
     group: function (id, value, joins, initial, pill) {
-      var g = groups[id] = { value: value, joins: joins, pill: pill, at: pill ? pill.at : -1, born: Date.now() };
-      g.place = function (i) {
-        if (!g.pill || g.pill.xs[i] === undefined || g.at === i) return;
-        if (g.x0 === undefined) { g.want = i; return; }
-        CF.setProperties({ join: g.pill.join, x: g.x0 + g.pill.xs[i] }, 0, Date.now() - g.born < 500 ? 0 : g.pill.time, CF.AnimationCurveEaseInOut);
-        g.at = i;
-      };
-      if (pill) {
-        CF.getProperties(pill.join, function (p) {
-          g.x0 = (p && p.x !== undefined ? Number(p.x) : 0) - pill.xs[pill.at];
-          if (g.want !== undefined) { var w = g.want; g.want = undefined; g.place(w); }
-        });
+      var g = groups[id];
+      if (!g) {
+        g = groups[id] = { value: value, joins: joins, pills: [], at: -1 };
+        CF.watch(CF.JoinChangeEvent, value, function (j, v) {
+          var i = Number(v);
+          g.at = i;
+          for (var k = 0; k < g.joins.length; k++) CF.setJoin(g.joins[k], k === i ? 1 : 0);
+          for (var n = 0; n < g.pills.length; n++) place(g.pills[n], i);
+        }, true);
+        Neu.pick(id, initial);
       }
-      CF.watch(CF.JoinChangeEvent, value, function (j, v) {
-        var i = Number(v);
-        for (var k = 0; k < g.joins.length; k++) CF.setJoin(g.joins[k], k === i ? 1 : 0);
-        g.place(i);
-      }, true);
-      Neu.pick(id, initial);
+      if (!pill) return;
+      for (var n = 0; n < g.pills.length; n++) if (g.pills[n].join === pill.join) return;
+      var p = { join: pill.join, xs: pill.xs, at: pill.at, time: pill.time, born: Date.now() };
+      g.pills.push(p);
+      CF.getProperties(pill.join, function (props) {
+        p.x0 = (props && props.x !== undefined ? Number(props.x) : 0) - pill.xs[pill.at];
+        if (g.at >= 0) place(p, g.at);
+      });
     },
     pick: function (id, i) {
       var g = groups[id];
@@ -76,6 +84,8 @@ var Neu = (function () {
 
     /** a stepper: the value in an analog join, shown in a serial join, stepped from what the join holds */
     stepper: function (id, join, text, o) {
+      // again (a page laid out the other way): as it is
+      if (steppers[id]) return;
       var st = steppers[id] = { join: join, text: text, o: o, v: o.min };
       // what the join holds by then (iViewer tells of a script's own CF.setJoin a moment later: an event may be an old one)
       CF.watch(CF.JoinChangeEvent, join, function () {
@@ -100,11 +110,22 @@ var Neu = (function () {
     /**
      * a knob: its pointer (an image drawn at the start, `from`) turned by the
      * value, 0..sweep degrees; the value as text. A tap turns it there in
-     * 0.3 s, a drag has it follow the finger straight.
+     * 0.3 s, a drag has it follow the finger straight. Again for a page laid
+     * out the other way (the panel turned): its size that way's (a touch goes
+     * by it), that way's pointer too, turned to the value as it is.
      */
     dial: function (id, o, join, pointer, text) {
+      var was = dials[id];
+      if (was) {
+        was.size = o.size;
+        if (was.pointers.indexOf(pointer) < 0) {
+          was.pointers.push(pointer);
+          if (was.turn !== undefined) CF.setProperties({ join: pointer, zrotation: was.turn }, 0, 0, CF.AnimationCurveLinear);
+        }
+        return;
+      }
       o.join = join;
-      o.pointer = pointer;
+      o.pointers = [pointer];
       o.text = text;
       dials[id] = o;
       CF.watch(CF.JoinChangeEvent, join, function (j, v) { Neu.dialShow(id, v); }, true);
@@ -116,7 +137,9 @@ var Neu = (function () {
       var turn = f * o.sweep;
       if (turn !== o.turn) {
         o.turn = turn;
-        CF.setProperties({ join: o.pointer, zrotation: turn }, 0, Date.now() - (o.touched || 0) < 400 ? 0 : 0.3, CF.AnimationCurveEaseOut);
+        for (var i = 0; i < o.pointers.length; i++) {
+          CF.setProperties({ join: o.pointers[i], zrotation: turn }, 0, Date.now() - (o.touched || 0) < 400 ? 0 : 0.3, CF.AnimationCurveEaseOut);
+        }
       }
       CF.setJoin(o.text, fmt(fromJoin(v, o.min, o.max), o.decimals, o.unit));
     },
@@ -155,6 +178,7 @@ var Neu = (function () {
 
     /** a PIN pad: digits as dots, OK checks the code (onEnter(code) when right) */
     pin: function (id, o, dots, status, onEnter) {
+      if (pins[id]) return;
       pins[id] = { o: o, dots: dots, status: status, code: '', onEnter: onEnter };
       Neu.pinShow(id, 'Enter your PIN');
     },
@@ -197,7 +221,10 @@ var Neu = (function () {
           for (var i = 0; i < skins.length; i++) CF.setJoin(skins[i][0], IvaTheme.file(skins[i][1]));
         });
       }
-      skins.push([join, name]);
+      // again (a page laid out the other way): one entry a join
+      var had = false;
+      for (var i = 0; i < skins.length; i++) if (skins[i][0] === join) { skins[i][1] = name; had = true; }
+      if (!had) skins.push([join, name]);
       CF.setJoin(join, IvaTheme.file(name));
     },
 
@@ -206,10 +233,18 @@ var Neu = (function () {
      * row after them, so even a list that fits scrolls; the index in an analog join, the text in a serial one
      */
     select: function (id, o) {
-      var sel = selects[id] = { o: o, at: -1 };
+      var sel = selects[id];
+      if (sel) {
+        // again (a page laid out the other way, its sheet another width): its rows that way's, the one chosen as it is
+        sel.o = o;
+        selectOf[o.list] = id;
+        sel.fill();
+        return;
+      }
+      sel = selects[id] = { o: o, at: -1 };
       selectOf[o.list] = id;
       sel.fill = function () {
-        var items = [];
+        var o = sel.o, items = [];
         for (var i = 0; i < o.options.length; i++) items.push({ subpage: rowIn(o.row), s1: o.options[i], d1: i === sel.at ? 1 : 0 });
         items.push({ subpage: rowIn(o.end) });
         CF.listRemove(o.list);

@@ -1,4 +1,4 @@
-import { neu, t, W, phone, P } from '../ui.js';
+import { neu, t, phone, P, CW } from '../ui.js';
 import Shell, { fade } from '../components/Shell.jsx';
 import Stack from '../components/Stack.jsx';
 
@@ -119,10 +119,10 @@ export default (
   <Page name="Buttons" bg={t.base} transition={fade}>
     {phone ? (
       <Stack page="Buttons" items={[
-        { title: 'Text buttons', h: 290, body: text(W - 36) },
-        { title: 'Round buttons', h: roundsH, body: rounds(W - 36) },
-        { title: 'Groups', h: groupsH(W - 36), body: groups(W - 36) },
-        { title: 'Chips & badges', h: chipsH(W - 36), body: chips(W - 36) },
+        { title: 'Text buttons', h: 290, body: text(CW) },
+        { title: 'Round buttons', h: roundsH, body: rounds(CW) },
+        { title: 'Groups', h: groupsH(CW), body: groups(CW) },
+        { title: 'Chips & badges', h: chipsH(CW), body: chips(CW) },
       ]} />
     ) : (
       <>

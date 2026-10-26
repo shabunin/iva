@@ -1,7 +1,9 @@
 /**
  * iva serve on the network: the DNS-SD service (RFC 6763) it advertises so
- * the iva panel's settings find it - `_iva._tcp`, an instance per iva serve
- * named after the project, its TXT record what the panel shows and loads.
+ * the iva panel's settings find it - `_iva._tcp`, an instance per GUI it
+ * serves, named after the project (and the size, for a project in several:
+ * each size at a path of its own), its TXT record what the panel shows and
+ * loads.
  * Both ends run the Bonjour engine (mdns.ts): iva serve publishes it
  * (src/server/mdns.ts), the panel's settings look it up (panel/discover.ts).
  */
@@ -11,7 +13,7 @@ export const IVA_TYPE = '_iva._tcp.';
 
 /** What iva serve says of what it serves (its TXT record). */
 export interface ServedInfo {
-  /** the path to load: '/' */
+  /** the path to load: '/', another size's '/1400w1400h/' */
   path: string;
   /** iva's version */
   version: string;
@@ -19,7 +21,7 @@ export interface ServedInfo {
   project: string;
   /** a JSX project, a .gui, a folder of GUIs (its '/' a page listing them) */
   kind: 'project' | 'gui' | 'folder';
-  /** the sizes it serves ('1400x1400@3x'): the one at '/' first, then the rest of <Project sizes> */
+  /** the size at that path ('1400x1400@3x'); an older iva serve's: every size, the one at '/' first */
   sizes: string[];
   /** the machine's host name */
   host: string;

@@ -194,9 +194,10 @@ const { width, height } = screen();   // the size being built
   `dist/` and each other in `dist/<W>w<H>h/` (`1920w1080h/`); `--zip` puts
   them all in one archive - iViewer (4.1 on) loads the GUI whose path names
   its screen (Android: `1080w1920h`, either orientation; else the first GUI
-  in the archive). `iva serve` serves one size at `/` and every size in the
-  iva panel's archive, laid out the same way: the panel runs the one shaped
-  like its screen. `iva dev` lists each size in the GUI picker; `--size
+  in the archive). `iva serve` serves the project's own size at `/` and each
+  other at a path of its own, laid out the same way (`/1920w1080h/`), each
+  advertised on the network for the iva panel to list: the device loads the
+  one it's given. `iva dev` lists each size in the GUI picker; `--size
   1400x1400` builds or previews one size (`iva build`, `dev`, `serve`,
   `designer`).
 - A phone: `'1400x1400@3x'`. Its screen is dense - laid out at its own

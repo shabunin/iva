@@ -1,6 +1,7 @@
 /**
- * The settings' "Found on the network": the iva serves this device reaches
- * (_iva._tcp, DNS-SD), looked up while the settings are open.
+ * The settings' "Found on the network": the GUIs of the iva serves this
+ * device reaches (_iva._tcp, DNS-SD) - a project in several sizes, each size
+ * its own - looked up while the settings are open.
  *
  * CF Bonjour's engine (src/runtime/cf/mdns), one per network of the
  * device's, pinned to it and asking only: one-shot queries from a port of
@@ -21,11 +22,11 @@ export interface Network {
   name?: string;
 }
 
-/** An iva serve found, however many of the device's networks it's found on. */
+/** A GUI an iva serve serves (a project; one of its sizes), however many of the device's networks it's found on. */
 export interface Served extends ServedInfo {
-  /** its host name and port: one iva serve */
+  /** its host name, port and path: one GUI of one iva serve */
   key: string;
-  /** the instance's name ("neomorph", "neomorph (2)") */
+  /** the instance's name ("neomorph", "neomorph 1400x1400@3x", "neomorph (2)") */
   name: string;
   /** its host name on the network ("studio-iva-8020.local") */
   hostname: string;
@@ -55,8 +56,9 @@ export function browse(o: BrowseOptions): { stop(): void; list(): Served[] } {
     const all = new Map<string, Served>();
     found.forEach((byName) => {
       for (const f of byName.values()) {
-        const key = `${f.hostname.toLowerCase()}:${f.port}`;
-        const s = all.get(key) ?? { ...servedInfo(f.data), key, name: f.name, hostname: f.hostname, port: f.port, addresses: [], urls: [] };
+        const info = servedInfo(f.data);
+        const key = `${f.hostname.toLowerCase()}:${f.port}${info.path}`;
+        const s = all.get(key) ?? { ...info, key, name: f.name, hostname: f.hostname, port: f.port, addresses: [], urls: [] };
         for (const a of f.addresses.filter((x) => !x.includes(':'))) {
           if (s.addresses.includes(a)) continue;
           s.addresses.push(a);

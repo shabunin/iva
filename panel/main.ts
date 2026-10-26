@@ -60,6 +60,13 @@ const rendererChoice = (): RendererChoice => {
   return v && RENDERERS.includes(v) ? v : 'auto';
 };
 const BAR = 'iva-panel:addressbar';
+/** the settings' Orientation: auto (as the device is turned, the window's shape), portrait, landscape */
+const ORIENTATION = 'iva-panel:orientation';
+type Way = 'auto' | Orientation;
+const orientationSetting = (): Way => {
+  const v = localStorage.getItem(ORIENTATION);
+  return v === 'portrait' || v === 'landscape' ? v : 'auto';
+};
 /** a GUI's sizes, as the app unpacked it: the one each orientation runs (JSON by orientation; a key per GUI) */
 const SIZES = 'iva-panel:sizes:';
 /** the GUIs no copy is kept of (JSON: their URLs) */
@@ -86,6 +93,7 @@ const options = {
   fps: $<HTMLInputElement>('opt-fps'),
   disconnect: $<HTMLInputElement>('opt-disconnect'),
   autoLock: $<HTMLSelectElement>('opt-autolock'),
+  orientation: $<HTMLSelectElement>('opt-orientation'),
   renderer: $<HTMLSelectElement>('opt-renderer'),
   onDemand: $<HTMLInputElement>('opt-ondemand'),
 };
@@ -105,10 +113,13 @@ let shown: GuiLocation | null = null;
 const quiet = sessionStorage.getItem(QUIET) === '1';
 sessionStorage.removeItem(QUIET);
 /**
- * the orientation the window asks for: clearly taller or wider; a nearly square one (a Titan 2's screen) the way the
- * device is turned, where it says (screen.orientation), else what there is (landscape at first)
+ * the orientation the window asks for: the settings' (Orientation: portrait, landscape - the app keeps the screen
+ * so), else clearly taller or wider; a nearly square one (a Titan 2's screen) the way the device is turned, where it
+ * says (screen.orientation), else what there is (landscape at first)
  */
 const wanted = (now: Orientation): Orientation => {
+  const set = orientationSetting();
+  if (set !== 'auto') return set;
   if (innerHeight > innerWidth * 1.15) return 'portrait';
   if (innerWidth > innerHeight * 1.15) return 'landscape';
   const type = typeof screen !== 'undefined' ? screen.orientation?.type : undefined;
@@ -225,6 +236,8 @@ installHost({ ...createIvaHost(), ...(device ? { deviceControl: device } : {}) }
 /** the auto-lock delay set (minutes; 0: the screen always on) */
 const autoLockDelay = () => Math.max(0, Number(localStorage.getItem(AUTOLOCK)) || 0);
 device?.autoLock(autoLockDelay());
+// (the app keeps it too, for the window from the next start on: the two the same)
+device?.orientation(orientationSetting());
 function setAutoLockDelay(minutes: number) {
   const m = Number.isFinite(minutes) ? Math.max(0, Math.round(minutes)) : 0;
   localStorage.setItem(AUTOLOCK, String(m));
@@ -297,7 +310,8 @@ function turned() {
   // this page - once the device has stayed turned a moment (a window dragged on a desktop goes through shapes)
   const other = want !== orientation && shown ? sizesOf(shown.gui)?.[want] : undefined;
   clearTimeout(turning);
-  if (other !== undefined && other !== shownSize) {
+  // (a GUI shown from its .gui, its archive kept since: the size at that archive's root, '')
+  if (other !== undefined && other !== (shownSize ?? '')) {
     turning = window.setTimeout(() => {
       if (wanted(orientation) !== want) return;
       if (page) sessionStorage.setItem(PAGE, page);
@@ -1029,6 +1043,7 @@ function openSettings() {
   options.onDemand.checked = onDemand();
   options.disconnect.checked = localStorage.getItem(DISCONNECT) !== '0';
   showAutoLock();
+  options.orientation.value = orientationSetting();
   options.renderer.value = rendererChoice();
   $('opt-renderer-now').textContent = current ? `(now: ${rendererLabel(current.app)})` : '';
   $('errors').textContent = errors.slice().reverse().join('\n');
@@ -1094,7 +1109,7 @@ function showFound(list: FoundServe[]) {
   foundHint.textContent = list.length ? 'Tap one to load it.' : findingLong ? NONE_FOUND : LOOKING;
 }
 
-/** a found iva serve: its project, where it is; a tap loads it, as its address typed and Load */
+/** a GUI an iva serve serves (a size of a project's): its name, where it is; a tap loads it, as its address typed and Load */
 function foundRow(s: FoundServe): HTMLElement {
   // at an address the panel has loaded it from before (its copy kept under that), else at its main network's
   const known = new Set([shown?.gui, localStorage.getItem(GUI), localStorage.getItem(DEFAULT_GUI), ...history.entries().map((e) => e.gui)]
@@ -1110,7 +1125,9 @@ function foundRow(s: FoundServe): HTMLElement {
   info.className = 'hint';
   const host = s.host || s.hostname.replace(/\.local\.?$/, '');
   const tags = [canonical(url) === shown?.gui ? 'shown now' : '', s.kind === 'folder' ? 'a folder of GUIs: one\'s path after the address' : ''].filter(Boolean);
-  info.textContent = [host, new URL(url).host, s.sizes.join(', '), s.version ? `iva ${s.version}` : '', ...tags].filter(Boolean).join(' \u00b7 ');
+  // the address with its path: another size of the project's
+  const at = new URL(url);
+  info.textContent = [host, at.host + (at.pathname === '/' ? '' : at.pathname), s.sizes.join(', '), s.version ? `iva ${s.version}` : '', ...tags].filter(Boolean).join(' \u00b7 ');
   row.append(name, info);
   row.addEventListener('click', () => {
     input.value = url;
@@ -1228,6 +1245,12 @@ function showAutoLock() {
   list.disabled = !device;
 }
 options.autoLock.addEventListener('change', () => setAutoLockDelay(Number(options.autoLock.value)));
+// the screen kept so by the app, and the GUI's layout for it at once (a desktop's window: that layout in it)
+options.orientation.addEventListener('change', () => {
+  localStorage.setItem(ORIENTATION, options.orientation.value);
+  device?.orientation(orientationSetting());
+  turned();
+});
 // another kind of drawing: a canvas takes one for good - the panel again, with a new one
 options.renderer.addEventListener('change', () => {
   localStorage.setItem(RENDERER, options.renderer.value);

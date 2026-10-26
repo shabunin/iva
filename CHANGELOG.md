@@ -1,5 +1,40 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Panel: a setting, **Orientation** - Auto (as the device is turned),
+  Portrait or Landscape (the screen kept so, either way up, and the GUI's
+  layout for it; in a desktop's window too). The app keeps it, so the panel
+  starts that way.
+
+### Changed
+
+- `iva serve`: a project in several sizes (`<Project sizes>`) has each size
+  at a path of its own (`/1400w1400h/`; its own size still at `/`), each a GUI
+  of its own - built after the one at `/` and again on every save, with its
+  own live reload and its own archive for the panel (`__iva/gui.zip` beside
+  its `.gui`, that size only) - and each advertised on the network as an
+  `_iva._tcp` service of its own, named with its size
+  (`neomorph 1080x1920@2.5x`). Nothing picks a size for the device any more:
+  it runs the one it's given. The panel's archive no longer waits for the
+  other sizes to be built either - a project drawing its images as it builds
+  (`examples/neomorph`) took longer than the panel waits for an answer, and
+  the panel kept the size at `/` only.
+- Panel: **Found on the network** lists each size of a project as an entry
+  of its own (its path, its size); a tap loads that size, and its copy kept is
+  that size's.
+- `examples/neomorph`: each page laid out both ways in one .gui
+  (`orientation="both"`) - the phones on their side, the tablet upright - so
+  turning the panel shows the page's other layout at once, with what was set
+  kept (a switch, a tab, a dial's value).
+
+### Fixed
+
+- Panel: a GUI laid out both ways, shown straight from its `.gui` and its
+  copy kept since, no longer reloads the first time the device is turned.
+
 ## 0.1.2 (26 October 2026)
 
 `iva serve` is now found on the network: the iva panel's settings list the

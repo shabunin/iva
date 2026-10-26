@@ -1,4 +1,4 @@
-import { neu, t, W, phone, P } from '../ui.js';
+import { neu, t, phone, P, CW } from '../ui.js';
 import Shell, { sections, fade } from '../components/Shell.jsx';
 import Stack from '../components/Stack.jsx';
 
@@ -60,8 +60,8 @@ export default (
   <Page name="Overview" bg={t.base} transition={fade}>
     {phone ? (
       <Stack page="Overview" items={[
-        { h: 352, body: hero(W - 36) },
-        { title: 'The shapes', h: facesH(W - 36), body: faces(W - 36) },
+        { h: 352, body: hero(CW) },
+        { title: 'The shapes', h: facesH(CW), body: faces(CW) },
         // the sections, two a row
         ...Array.from({ length: Math.ceil(cards.length / 2) }, (_, r) => ({
           h: 200,

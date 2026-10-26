@@ -1,4 +1,4 @@
-import { neu, t, W, phone, P } from '../ui.js';
+import { neu, t, phone, P, CW } from '../ui.js';
 import Shell, { fade } from '../components/Shell.jsx';
 import Stack from '../components/Stack.jsx';
 
@@ -84,9 +84,9 @@ export default (
         { h: 48, el: (x, y, w) => <neu.Segmented x={x} y={y} w={w} h={48} options={['Living', 'Kitchen', 'Bed', 'Office']} join="room" fontSize={15} /> },
         { h: 34, el: (x, y) => <><neu.Chip x={x} y={y} text="22.5° inside" dot={t.warn} /><neu.Chip x={x + 148} y={y} text="2 on" dot={t.ok} /></> },
         { h: 2 * 140 + 18, el: (x, y, w) => deviceTiles(x, y, w, 140, 18) },
-        { title: 'Lighting', h: lightingH(W - 36), body: lighting(W - 36) },
-        { title: 'Climate', h: 324, body: climate(W - 36) },
-        { title: 'Now playing', h: 104 + 84 + 26 + 60 + 22, body: music(W - 36) },
+        { title: 'Lighting', h: lightingH(CW), body: lighting(CW) },
+        { title: 'Climate', h: 324, body: climate(CW) },
+        { title: 'Now playing', h: 104 + 84 + 26 + 60 + 22, body: music(CW) },
       ]} />
     ) : (
       <>

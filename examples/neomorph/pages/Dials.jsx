@@ -50,34 +50,47 @@ const tablet = (
   </>
 );
 
-// a phone: a screen each, a tab apart - a knob takes gestures, which iViewer fires in no list (a scroll)
+// stacked: a screen each, a tab apart - a knob takes gestures, which iViewer fires in no list (a scroll); beside the
+// bar on a phone on its side
+const ax = frame.left, aw = W - frame.left;
 const tabs = { y: frame.top + 4, h: 46 };
 const area = { y: tabs.y + tabs.h + 14, h: H - frame.bar - (tabs.y + tabs.h + 14) };
 const tall = area.h >= 480;
-const knobSize = Math.min(W - 60, area.h - 12, 300);
-const thermoSize = tall ? 270 : Math.min(W - 60, area.h - 70);
-const ringSize = Math.min(Math.floor((W - 36 - 24) / 2), Math.floor((area.h - 24) / 2), 160);
+/** low and wide (a phone on its side): the thermostat's knob beside what the room is, the rings in a row */
+const wide = !tall && aw >= 600;
+/** a tablet upright: room for larger dials */
+const roomy = tall && aw >= 700;
+const knobSize = Math.min(aw - 60, area.h - 12, roomy ? 420 : 300);
+const thermoSize = roomy ? 360 : tall ? 270 : wide ? Math.min(area.h - 12, 280) : Math.min(aw - 60, area.h - 70);
+const ringSize = wide
+  ? Math.min(160, Math.floor((aw - 36 - 3 * 24) / 4), area.h - 24)
+  : Math.min(Math.floor((aw - 36 - 24) / 2), Math.floor((area.h - 24) / 2), roomy ? 240 : 160);
+/** the thermostat's other half - what the room is, the mode, eco: under its knob, or beside it */
+const room = wide ? { x: 18 + thermoSize + 24, y: 8 } : { x: 18, y: thermoSize + 30 };
+const roomW = aw - room.x - 18;
 const screens = [
   {
     title: 'Knob',
-    content: <neu.Knob x={Math.round((W - knobSize) / 2)} y={Math.round((area.h - knobSize) / 2)} size={knobSize} join="master" value={42} label="Master volume" buttons />,
+    content: <neu.Knob x={Math.round((aw - knobSize) / 2)} y={Math.round((area.h - knobSize) / 2)} size={knobSize} join="master" value={42} label="Master volume" buttons />,
   },
   {
     title: 'Thermostat',
     content: (
       <>
-        <neu.Knob x={Math.round((W - thermoSize) / 2)} y={tall ? 6 : 0} size={thermoSize} join="setpoint" min={16} max={30} step={0.5} decimals={1} unit="°" value={21.5} label="Heating to" buttons />
-        {tall && readings(18, 300, W - 36)}
-        <neu.Segmented x={18} y={tall ? 408 : thermoSize + 12} w={W - 36} h={tall ? 50 : 46} options={['Auto', 'Heat', 'Cool', 'Off']} join="hvac" value={1} fontSize={15} />
-        {tall && <neu.Toggle x={24} y={478} w={W - 48} label="Eco" sub="1° lower while away" join="eco" value />}
+        <neu.Knob x={wide ? 18 : Math.round((aw - thermoSize) / 2)} y={tall ? 6 : 0} size={thermoSize} join="setpoint" min={16} max={30} step={0.5} decimals={1} unit="°" value={21.5} label="Heating to" buttons />
+        {(tall || wide) && readings(room.x, room.y, roomW)}
+        <neu.Segmented x={room.x} y={tall || wide ? room.y + 108 : thermoSize + 12} w={roomW} h={tall ? 50 : 46} options={['Auto', 'Heat', 'Cool', 'Off']} join="hvac" value={1} fontSize={15} />
+        {(tall || wide) && <neu.Toggle x={room.x + 6} y={room.y + (tall ? 178 : 170)} w={roomW - 12} label="Eco" sub="1° lower while away" join="eco" value />}
       </>
     ),
   },
   {
     title: 'Rings',
     content: rings.map((r, i) => {
-      const gx = Math.round((W - 2 * ringSize - 24) / 2), gy = Math.round((area.h - 2 * ringSize - 24) / 2);
-      return <neu.Ring x={gx + (i % 2) * (ringSize + 24)} y={gy + Math.floor(i / 2) * (ringSize + 24)} size={ringSize} part={r.part} text={r.text} label={r.label} color={r.color} />;
+      // four in a row, or two by two
+      const across = wide ? 4 : 2, down = 4 / across;
+      const gx = Math.round((aw - across * ringSize - (across - 1) * 24) / 2), gy = Math.round((area.h - down * ringSize - (down - 1) * 24) / 2);
+      return <neu.Ring x={gx + (i % across) * (ringSize + 24)} y={gy + Math.floor(i / across) * (ringSize + 24)} size={ringSize} part={r.part} text={r.text} label={r.label} color={r.color} />;
     }),
   },
 ];
@@ -86,9 +99,9 @@ export default (
   <Page name="Dials" bg={t.base} transition={fade}>
     {phone ? (
       <>
-        <neu.Segmented x={18} y={tabs.y} w={W - 36} h={tabs.h} options={screens.map((sc) => sc.title)} join="dials_tab" fontSize={15} />
+        <neu.Segmented x={ax + 18} y={tabs.y} w={aw - 36} h={tabs.h} options={screens.map((sc) => sc.title)} join="dials_tab" fontSize={15} />
         {screens.map((sc, i) => (
-          <Subpage name={`dials_${sc.title.toLowerCase()}`} x={0} y={area.y} w={W} h={area.h} join={neu.optionJoin('dials_tab', i)}
+          <Subpage name={`dials_${sc.title.toLowerCase()}`} x={ax} y={area.y} w={aw} h={area.h} join={neu.optionJoin('dials_tab', i)}
             in={{ type: 'fade', time: 0.15 }} out={{ type: 'fade', time: 0.15 }}>
             {sc.content}
           </Subpage>

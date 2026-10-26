@@ -120,6 +120,8 @@ const closed = async (a: { close(): Promise<void> }) => {
 const SERVER = ['192.168.1.5', '10.153.12.190'];
 const NETWORKS = SERVER.map((address) => ({ address, netmask: MASK }));
 const TXT = servedTxt({ path: '/', version: '0.1.1', project: 'neomorph', kind: 'project', sizes: ['1400x1400@3x'], host: 'studio' });
+/** what a project of one size is advertised as: the GUI at / */
+const one = (name: string) => [{ key: '/', name, txt: TXT }];
 
 /** a lookup of _iva._tcp from another device, as the panel's settings do it: asking only, from a port of its own on that address */
 function asker(net: FakeNet, address: string) {
@@ -139,10 +141,10 @@ test('iva serve advertised: announced on each network with that network\'s addre
   try {
     const net = new FakeNet();
     const logs: string[] = [];
-    const ad = advertise({ name: 'neomorph', port: 8020, networks: NETWORKS, txt: TXT, host: 'Studio', createSocket: () => new FakeUdp(net, SERVER) as any, log: (m) => logs.push(m) });
+    const ad = advertise({ services: one('neomorph'), port: 8020, networks: NETWORKS, host: 'Studio', createSocket: () => new FakeUdp(net, SERVER) as any, log: (m) => logs.push(m) });
     await pass(1500);
     const a = await ad;
-    assert.equal(a.name, 'neomorph');
+    assert.equal(a.nameOf('/'), 'neomorph');
     assert.ok(logs.includes('mDNS: "neomorph" (_iva._tcp) on 192.168.1.5:8020, 10.153.12.190:8020'), logs.join('\n'));
     // each network's announcement: its own address only (RFC 6762 §14), the host name iva serve's own
     const announced = net.sent.filter((x) => x.to === '224.0.0.251:5353' && x.m.response && x.m.answers.some((r) => r.type === TYPE.PTR));
@@ -185,7 +187,7 @@ test('iva serve stopping: a goodbye (TTL 0) on each network, its sockets closed;
   try {
     const net = new FakeNet();
     const made: FakeUdp[] = [];
-    const ad = advertise({ name: 'neomorph', port: 8020, networks: NETWORKS, txt: TXT, host: 'studio', createSocket: () => {
+    const ad = advertise({ services: one('neomorph'), port: 8020, networks: NETWORKS, host: 'studio', createSocket: () => {
       const s = new FakeUdp(net, SERVER);
       made.push(s);
       return s as any;
@@ -221,14 +223,14 @@ test('iva serve: a name another has on the network is "Name (2)" on every networ
   try {
     const net = new FakeNet();
     // another machine on the ZeroTier network serving a project of the same name
-    const other = advertise({ name: 'neomorph', port: 8019, networks: [{ address: '10.153.12.50', netmask: MASK }], txt: TXT, host: 'laptop', createSocket: () => new FakeUdp(net, ['10.153.12.50']) as any });
+    const other = advertise({ services: one('neomorph'), port: 8019, networks: [{ address: '10.153.12.50', netmask: MASK }], host: 'laptop', createSocket: () => new FakeUdp(net, ['10.153.12.50']) as any });
     await pass(1500);
     await other;
     const logs: string[] = [];
-    const ad = advertise({ name: 'neomorph', port: 8020, networks: NETWORKS, txt: TXT, host: 'studio', createSocket: () => new FakeUdp(net, SERVER) as any, log: (m) => logs.push(m) });
+    const ad = advertise({ services: one('neomorph'), port: 8020, networks: NETWORKS, host: 'studio', createSocket: () => new FakeUdp(net, SERVER) as any, log: (m) => logs.push(m) });
     await pass(4000);
     const a = await ad;
-    assert.equal(a.name, 'neomorph (2)');
+    assert.equal(a.nameOf('/'), 'neomorph (2)');
     assert.ok(logs.some((l) => /"neomorph" is taken on the network: "neomorph \(2\)"/.test(l)), logs.join('\n'));
     const phone = asker(net, '10.153.12.182');
     const tablet = asker(net, '192.168.1.40');
@@ -243,7 +245,7 @@ test('iva serve: a name another has on the network is "Name (2)" on every networ
     const busy = new FakeNet();
     for (const ip of SERVER) busy.taken.add(ip);
     const said: string[] = [];
-    const none = advertise({ name: 'neomorph', port: 8020, networks: NETWORKS, txt: TXT, host: 'studio', createSocket: () => new FakeUdp(busy, SERVER) as any, log: (m) => said.push(m) });
+    const none = advertise({ services: one('neomorph'), port: 8020, networks: NETWORKS, host: 'studio', createSocket: () => new FakeUdp(busy, SERVER) as any, log: (m) => said.push(m) });
     await pass(500);
     await closed(await none);
     assert.ok(said.some((l) => /not on 192\.168\.1\.5: .*5353 is taken/.test(l)), said.join('\n'));
@@ -258,7 +260,7 @@ test("the panel's list: one entry for an iva serve found on two of the device's 
   mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
   try {
     const net = new FakeNet();
-    const ad = advertise({ name: 'neomorph', port: 8020, networks: NETWORKS, txt: TXT, host: 'studio', createSocket: () => new FakeUdp(net, SERVER) as any });
+    const ad = advertise({ services: one('neomorph'), port: 8020, networks: NETWORKS, host: 'studio', createSocket: () => new FakeUdp(net, SERVER) as any });
     await pass(1500);
     const a = await ad;
     // a desktop panel on the LAN and the ZeroTier network (Wi-Fi first)
@@ -279,7 +281,7 @@ test("the panel's list: one entry for an iva serve found on two of the device's 
     assert.equal(now.length, 1);
     assert.deepEqual({ ...now[0] }, {
       path: '/', version: '0.1.1', project: 'neomorph', kind: 'project', sizes: ['1400x1400@3x'], host: 'studio',
-      key: 'studio-iva-8020.local:8020', name: 'neomorph', hostname: 'studio-iva-8020.local', port: 8020,
+      key: 'studio-iva-8020.local:8020/', name: 'neomorph', hostname: 'studio-iva-8020.local', port: 8020,
       addresses: ['192.168.1.5', '10.153.12.190'], urls: ['http://192.168.1.5:8020/', 'http://10.153.12.190:8020/'],
     });
     // each network asked from a port of its own on its address, multicast out of it
@@ -293,6 +295,44 @@ test("the panel's list: one entry for an iva serve found on two of the device's 
     b.stop();
     await pass(500);
     assert.ok(made.every((s) => s.closed));
+    await closed(a);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("a project in several sizes: an instance each, on one socket a network; the panel's list has each its own (its path, its size) - a size let go goes, the rest stay", async () => {
+  mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
+  try {
+    const net = new FakeNet();
+    const made: FakeUdp[] = [];
+    const sized = (at: string, size: string) => ({
+      key: at, name: `neomorph ${size}`, txt: servedTxt({ path: at, version: '0.1.3', project: 'neomorph', kind: 'project', sizes: [size], host: 'studio' }),
+    });
+    const ad = advertise({
+      services: [sized('/', '1280x800'), sized('/1080w1920h/', '1080x1920@2.5x')], port: 8020, networks: NETWORKS, host: 'studio',
+      createSocket: () => {
+        const s = new FakeUdp(net, SERVER);
+        made.push(s);
+        return s as any;
+      },
+    });
+    await pass(1500);
+    const a = await ad;
+    assert.equal(made.length, SERVER.length);
+    assert.equal(a.nameOf('/1080w1920h/'), 'neomorph 1080x1920@2.5x');
+    const b = browse({ networks: [{ address: '192.168.1.40', netmask: MASK }], createSocket: () => new FakeUdp(net, ['192.168.1.40']) as any, onChange: () => {} });
+    await pass(3000);
+    assert.deepEqual(b.list().map((s) => [s.name, s.key, s.urls, s.sizes]), [
+      ['neomorph 1080x1920@2.5x', 'studio-iva-8020.local:8020/1080w1920h/', ['http://192.168.1.5:8020/1080w1920h/'], ['1080x1920@2.5x']],
+      ['neomorph 1280x800', 'studio-iva-8020.local:8020/', ['http://192.168.1.5:8020/'], ['1280x800']],
+    ]);
+    // the phone's size no longer in <Project sizes>: no longer answered for (off the list within the answers' 10 s), the other stays
+    await a.set([sized('/', '1280x800')]);
+    assert.equal(a.nameOf('/1080w1920h/'), null);
+    await pass(12000);
+    assert.deepEqual(b.list().map((s) => s.name), ['neomorph 1280x800']);
+    b.stop();
     await closed(a);
   } finally {
     mock.timers.reset();

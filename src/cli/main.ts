@@ -36,11 +36,11 @@ Usage:
   iva serve [entry | file.gui]
                        serve it to iViewer on a real device, as GUI Designer's
                        Upload Service does (port 8019); rebuilds on save and
-                       reloads the panel on the device (--no-live: don't); the
-                       iva panel's archive has every <Project sizes> size
-                       (--size: that one only); advertised on the network
-                       (mDNS: _iva._tcp) for the iva panel's settings to find
-                       (--no-mdns: not)
+                       reloads the panel on the device (--no-live: don't); each
+                       <Project sizes> size at a path of its own (/1400w1400h/;
+                       --size: that one only, at /), each advertised on the
+                       network (mDNS: _iva._tcp) for the iva panel's settings
+                       to list (--no-mdns: not)
   iva designer [entry | file.gui]
                        build and open in CommandFusion GUI Designer (Wine on
                        Linux / macOS: $IVA_DESIGNER, $IVA_WINEPREFIX)
@@ -114,7 +114,16 @@ async function main(argv: string[]) {
     process.stdout.write(`\nServing ${server.name} for iViewer. On the device, set iViewer's GUI File URL to:\n\n`);
     for (const a of server.addresses) process.stdout.write(`    ${a.url.padEnd(28)} ${a.iface}${a.kind ? ` (${a.kind})` : ''}\n`);
     process.stdout.write('\n(the device must reach that address: same network, or the same VPN / ZeroTier network)\n');
-    if (server.advertisedAs) process.stdout.write(`\nOn the network as "${server.advertisedAs}" (mDNS): the iva panel's settings list it under Found on the network.\n`);
+    const [own, ...more] = server.sizes;
+    if (more.length) {
+      process.stdout.write(`\nThat's ${own.label}. Each other size is at a path of its own after the address (served once it's built):\n\n`);
+      for (const z of more) process.stdout.write(`    ${z.path.padEnd(16)} ${z.label}\n`);
+    }
+    if (server.advertisedAs) {
+      process.stdout.write(more.length
+        ? `\nOn the network as "${server.advertisedAs}", each other size as its own (mDNS): the iva panel's settings list them under Found on the network.\n`
+        : `\nOn the network as "${server.advertisedAs}" (mDNS): the iva panel's settings list it under Found on the network.\n`);
+    }
     if (server.addresses[0]) {
       // a cf:// link opens iViewer (iOS camera / Android scanner)
       const link = server.addresses[0].url.replace(/^http:/, 'cf:');
