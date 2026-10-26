@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.1.3 (26 October 2026)
+
+A project in several sizes is now a GUI per size: `iva serve` serves each at a
+path of its own and advertises each on the network, and the iva panel lists
+them under **Found on the network** - the size is the one picked, nothing
+picks it for the device. A GUI laid out both ways turns in place, with what
+was set kept (`examples/neomorph` now is), and the panel has an
+**Orientation** setting. What iva is and does, and its known limits, are
+under 0.1.0 below.
 
 ### Added
 
@@ -34,6 +42,34 @@
 
 - Panel: a GUI laid out both ways, shown straight from its `.gui` and its
   copy kept since, no longer reloads the first time the device is turned.
+
+### Downloads
+
+The panel app; the CLI comes from the repository (below).
+
+| System | File | Notes |
+|---|---|---|
+| Android 7 and newer | `iva-panel-0.1.3-android.apk` | Signed with the release key: installs over 0.1.2 and the releases before it, their kept GUIs and settings kept. A panel signed with the development key (a CI or local build) has to be uninstalled first; its kept GUIs and settings go with it. Needs an up-to-date Android System WebView. |
+| Linux x86_64 | `iva-panel-0.1.3-linux-x86_64.AppImage` | `chmod +x` and run. Built on Ubuntu 22.04: glibc 2.35 or newer. |
+| Windows 10 and 11, x64 | `iva-panel-0.1.3-windows-x64.exe` | The app alone, nothing to install. Needs the WebView2 runtime (Windows 11 has it; Windows 10 with an up-to-date Edge does). Not code signed: SmartScreen may warn. |
+| macOS, Apple silicon and Intel | `iva-panel-0.1.3-macos-universal.zip` | Not signed by a developer: the first open is refused. On macOS 15 and newer, allow it in System Settings, Privacy & Security, Open Anyway; before, right click the app, Open. |
+
+iOS: not yet.
+
+### Install the CLI
+
+Node.js 22 or newer:
+
+```bash
+git clone https://github.com/shabunin/iva.git
+cd iva
+npm install
+npm link        # puts `iva` on your PATH
+```
+
+Then `iva create my-panel --template demo`, `iva dev` in it, and http://127.0.0.1:5180/.
+
+Updating a clone of 0.1.2 or before: `git fetch --depth 1 origin tag v0.1.3` and `git checkout v0.1.3` (or `git pull` on main), then `iva types` in each project, which rewrites its `iva.d.ts` and the copied docs. A running `iva serve` serves each size at a path of its own once it is started again with this version; update the panel with it - one from before 0.1.3 shows a project's sizes as one entry.
 
 ## 0.1.2 (26 October 2026)
 
