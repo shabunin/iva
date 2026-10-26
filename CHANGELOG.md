@@ -1,5 +1,71 @@
 # Changelog
 
+## 0.1.4 (26 October 2026)
+
+What iva builds now looks in real iViewer as it does in the iva panel. A button
+with an icon and a text, and a slider's thumb on a dense phone size, came out
+wrong on the device (seen on a Titan 2 with iViewer 5.0.7); and the panel now
+reads a `.gui` the way iViewer does, so it shows what the device will. What iva
+is and does, and its known limits, are under 0.1.0 below.
+
+### Fixed
+
+- A button with a text and an icon (`<Button icon text>`; `examples/neomorph`'s
+  buttons): in iViewer the text sat a line above the middle. The `.gui` put the
+  icon's `<img>` on an indented line of its own inside the button's text, and
+  iViewer keeps every character of a button's text, newlines included. It is
+  now written on one line, as GUI Designer writes it. (iva/ui lays its icons
+  out apart: its buttons were never affected.)
+- A slider's thumb on a size of 2x and up (`1400x1400@3x`, `1080x1920@2.5x`):
+  iViewer draws a thumb at its picture's own size and ignores the w / h the
+  `.gui` gives it, so a thumb drawn at 3x came out three times too big. iva's
+  own thumbs (`thumbColor`, `draw.*`) and `examples/neomorph`'s are now drawn at
+  1x with `name@2x.png` beside them, whatever the size's scale; every other
+  drawing stays at the size's scale (iViewer stretches those to their element).
+  iva/ui's sliders have no thumb picture and were never affected.
+- `iva decompile` keeps a button's text to the character, GUI Designer's
+  blank lines that put a text under its icon (`\n\nUNLOCK`) included.
+
+### Changed
+
+- The panel (and `iva dev`) read a button's text and a slider's thumb as
+  iViewer does: the text untrimmed, newlines included, and the thumb at its
+  picture's size, the indicator's w / h ignored. A `.gui` with either mistake
+  now looks wrong in the panel too, as it does on the device.
+- A project image's `name@2x.png` beside it ships with the build, and a thumb
+  file whose pixel size isn't the w / h it is given is a build warning.
+
+Known limit: iViewer for Android draws a thumb from `name.png` only, not its
+`@2x`, scaled up on a dense screen - a little softer than the rest.
+
+### Downloads
+
+The panel app; the CLI comes from the repository (below).
+
+| System | File | Notes |
+|---|---|---|
+| Android 7 and newer | `iva-panel-0.1.4-android.apk` | Signed with the release key: installs over 0.1.3 and the releases before it, their kept GUIs and settings kept. A panel signed with the development key (a CI or local build) has to be uninstalled first; its kept GUIs and settings go with it. Needs an up-to-date Android System WebView. |
+| Linux x86_64 | `iva-panel-0.1.4-linux-x86_64.AppImage` | `chmod +x` and run. Built on Ubuntu 22.04: glibc 2.35 or newer. |
+| Windows 10 and 11, x64 | `iva-panel-0.1.4-windows-x64.exe` | The app alone, nothing to install. Needs the WebView2 runtime (Windows 11 has it; Windows 10 with an up-to-date Edge does). Not code signed: SmartScreen may warn. |
+| macOS, Apple silicon and Intel | `iva-panel-0.1.4-macos-universal.zip` | Not signed by a developer: the first open is refused. On macOS 15 and newer, allow it in System Settings, Privacy & Security, Open Anyway; before, right click the app, Open. |
+
+iOS: not yet.
+
+### Install the CLI
+
+Node.js 22 or newer:
+
+```bash
+git clone https://github.com/shabunin/iva.git
+cd iva
+npm install
+npm link        # puts `iva` on your PATH
+```
+
+Then `iva create my-panel --template demo`, `iva dev` in it, and http://127.0.0.1:5180/.
+
+Updating a clone of 0.1.3 or before: `git fetch --depth 1 origin tag v0.1.4` and `git checkout v0.1.4` (or `git pull` on main), then `iva types` in each project, which rewrites its `iva.d.ts` and the copied docs. A GUI built with 0.1.3 or before keeps both mistakes until it is built again.
+
 ## 0.1.3 (26 October 2026)
 
 A project in several sizes is now a GUI per size: `iva serve` serves each at a
