@@ -16,7 +16,7 @@
  * scripts/neu.js. Pickers (select boxes, time, date, number) are iva/ui's, made
  * soft (`soften`).
  */
-import { Button as IvaButton, Text as IvaText, Image, Group, Slider as IvaSlider, Gauge, Input, List, Subpage, Script, OnStart, Gesture, d, a, s, l, js, fa, draw, variant } from 'iva';
+import { Button as IvaButton, Text as IvaText, Image, Group, Slider as IvaSlider, Gauge, Input, List, Subpage, Script, OnStart, Gesture, d, a, s, l, js, fa, draw, variant, screen } from 'iva';
 import { createUi } from 'iva/ui';
 import { paint, shade, alpha } from './paint.js';
 
@@ -113,6 +113,13 @@ export function createNeu(theme = {}) {
    * swaps only images without one): neu.js sets the look's own through the join (IvaTheme.file).
    */
   const skin = (join, file) => <OnStart js={`Neu.skin(${jsJoin('s', join)}, ${JSON.stringify(fileName(file))});`} joins={[join]} />;
+  /**
+   * The name of the join of an image that moves (a switch's knob, a group's pill, a dial's pointer): one of its
+   * own each way the page is laid out (<Project orientation="both">) - iViewer moves every element on a join, and
+   * turned it's placed otherwise; a square screen's ways are the same, its own both ways.
+   */
+  const { width: SW, height: SH, orientation: WAY } = screen();
+  const moving = (name) => (WAY && SW !== SH ? `${name}_${WAY[0]}` : name);
 
   // ── drawings ──────────────────────────────────────────────────────
 
@@ -280,7 +287,7 @@ export function createNeu(theme = {}) {
     const km = marginOf(DEPTH.xs);
     const knob = paint({ w: kd + 2 * km, h: kd + 2 * km, layers: [{ ...face('flat', { x: km, y: km, w: kd, h: kd, r: kd / 2 }, DEPTH.xs), fill: { from: T.knob[0], to: T.knob[1], angle: 135 } }] }, 'knob');
     const dj = asJoin('d', join);
-    const knobJoin = s(`neu_${keyOf(join)}_knob`);
+    const knobJoin = s(moving(`neu_${keyOf(join)}_knob`));
     return (
       <Group x={x} y={y}>
         <IvaButton w={w} h={h} image={track(false)} active={{ image: track(true) }} join={join} feedback="toggle" {...actions} />
@@ -323,9 +330,10 @@ export function createNeu(theme = {}) {
   let groupN = 0;
   function oneOf(join, count, value, pill) {
     const key = keyOf(join);
-    const id = `${key}#${groupN++}`;
+    // one group a join, whichever way the page is laid out (its options' joins are the join's); each its own pill
+    const id = key;
     const option = (i) => d(`neu_${key}_${i}`);
-    const pillJoin = s(`neu_${key}_pill_${groupN}`);
+    const pillJoin = s(moving(`neu_${key}_pill_${++groupN}`));
     const opts = pill ? `{ join: ${jsJoin('s', pillJoin)}, xs: ${JSON.stringify(pill.xs)}, at: ${value}, time: 0.24 }` : 'null';
     const start = (
       <OnStart js={`Neu.group(${JSON.stringify(id)}, ${jsJoin('a', join)}, [${Array.from({ length: count }, (_, i) => jsJoin('d', option(i))).join(', ')}], ${value}, ${opts});`}
@@ -523,7 +531,7 @@ export function createNeu(theme = {}) {
     const from = -sweep / 2;
     const disc = Math.round(size * 0.66);
     const dp = DEPTH.lg, m = marginOf(dp);
-    const pointer = s(`neu_${keyOf(join)}_pointer`);
+    const pointer = s(moving(`neu_${keyOf(join)}_pointer`));
     const text = s(`neu_${keyOf(join)}_knob`);
     const off = (size - disc) / 2;
     // the dot: drawn at the start (from), turned by the value (0 .. sweep)

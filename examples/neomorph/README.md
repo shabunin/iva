@@ -4,7 +4,9 @@ A neumorphic ("soft UI") gallery: every control made of one colour, lit from
 the top left - raised shapes catch the light and cast a shadow, sunk ones hold
 both inside. Six pages: Overview, Buttons, Controls, Dials, Smart home, Forms
 (select boxes, time, date and number pickers, a PIN pad); a light look and a
-dark one, switched on the panel; built for a 1280x800 tablet and two phones.
+dark one, switched on the panel; built for a 1280x800 tablet and two phones,
+each page laid out both ways in one .gui (`orientation="both"`): turn the
+panel and the page shows its other layout at once, what was set kept.
 
 ```bash
 iva dev examples/neomorph/app.jsx
@@ -17,7 +19,10 @@ iva dev examples/neomorph/app.jsx
 
 On a phone (`<Project sizes={['1400x1400@3x', '1080x1920@2.5x']}>`): a header,
 the cards one under another in a scroll, the sections in a bar at the bottom,
-the dials on tabs; every picker opens as a sheet.
+the dials on tabs; every picker opens as a sheet. On its side the bar goes
+down the left and the cards scroll beside it (the thermostat's knob beside
+its readings, the rings in a row); the tablet upright is laid out the same
+way, its cards two a row.
 
 <p align="center">
   <img src="../../docs/images/neomorph-phone-date.webp" width="280" alt="A date picker's sheet on a square phone screen: three drums in a sunk band, Today, Cancel, OK">
@@ -52,3 +57,11 @@ the dials on tabs; every picker opens as a sheet.
 - Phones: `components/Stack.jsx` stacks a page's cards in a `neu.Scroll` (a
   list with no join, so the joins in it are the page's own); Dials puts its
   knobs on tabs of subpages, as gestures don't fire in a list.
+- Both ways: iva evaluates the project again with `screen()` turned and puts
+  each page's two layouts in one .gui; `ui.js` picks the layout from the
+  size (the rail and fixed cards for a tablet on its side, stacked for the
+  rest). An image that moves (a switch's knob, a pill, a dial's pointer) has
+  a join of its own each way (`moving()` in `neu/index.jsx`: iViewer moves
+  every element on a join, and turned it's placed otherwise), and `neu.js`
+  takes a control set up again for the other way as the same one: its value
+  kept, that way's pill or pointer put where the value has it.

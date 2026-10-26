@@ -18,6 +18,10 @@
 - Panel: **Found on the network** lists each size of a project as an entry
   of its own (its path, its size); a tap loads that size, and its copy kept is
   that size's.
+- `examples/neomorph`: each page laid out both ways in one .gui
+  (`orientation="both"`) - the phones on their side, the tablet upright - so
+  turning the panel shows the page's other layout at once, with what was set
+  kept (a switch, a tab, a dial's value).
 
 ## 0.1.2 (26 October 2026)
 

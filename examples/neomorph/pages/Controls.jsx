@@ -1,4 +1,4 @@
-import { neu, t, W, phone, P } from '../ui.js';
+import { neu, t, phone, P, CW } from '../ui.js';
 import Shell, { fade } from '../components/Shell.jsx';
 import Stack from '../components/Stack.jsx';
 
@@ -77,12 +77,12 @@ export default (
   <Page name="Controls" bg={t.base} transition={fade}>
     {phone ? (
       <Stack page="Controls" items={[
-        { title: 'Switches', h: 318, body: switches(W - 36) },
-        { title: 'Sliders', h: 296, body: sliders(W - 36) },
-        { title: 'Faders', h: 320, body: faders(W - 36) },
-        { title: 'Segmented & stepper', h: 300, body: segmented(W - 36) },
-        { title: 'Check & radio', h: 306, body: choices(W - 36) },
-        { title: 'Progress', h: 266, body: progress(W - 36) },
+        { title: 'Switches', h: 318, body: switches(CW) },
+        { title: 'Sliders', h: 296, body: sliders(CW) },
+        { title: 'Faders', h: 320, body: faders(CW) },
+        { title: 'Segmented & stepper', h: 300, body: segmented(CW) },
+        { title: 'Check & radio', h: 306, body: choices(CW) },
+        { title: 'Progress', h: 266, body: progress(CW) },
       ]} />
     ) : (
       <>

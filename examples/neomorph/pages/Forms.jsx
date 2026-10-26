@@ -1,4 +1,4 @@
-import { neu, t, W, phone, P } from '../ui.js';
+import { neu, t, phone, P, CW } from '../ui.js';
 import Shell, { fade } from '../components/Shell.jsx';
 import Stack from '../components/Stack.jsx';
 
@@ -67,9 +67,9 @@ export default (
   <Page name="Forms" bg={t.base} transition={fade}>
     {phone ? (
       <Stack page="Forms" items={[
-        { title: 'Pickers', h: 86 + 5 * 94 + 54 + 26, body: pickers(W - 36) },
-        { h: 640, body: signIn(W - 36) },
-        { title: 'Security', h: 650, body: security(W - 36) },
+        { title: 'Pickers', h: 86 + 5 * 94 + 54 + 26, body: pickers(CW) },
+        { h: 640, body: signIn(CW) },
+        { title: 'Security', h: 650, body: security(CW) },
       ]} />
     ) : (
       <>

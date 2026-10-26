@@ -1,4 +1,4 @@
-import { neu, t, W, H, phone } from '../ui.js';
+import { neu, t, W, H, phone, side, frame } from '../ui.js';
 
 /** The gallery's sections: the rail's (a phone: the bar's) buttons and the overview's cards. */
 export const sections = [
@@ -49,25 +49,33 @@ function Rail({ page, title, sub }) {
   );
 }
 
-/** A phone: the title, the time and the look's button on top; the sections in a raised bar at the bottom. */
+/**
+ * Stacked (a phone, a tablet upright): the title, the time and the look's button on top; the sections in a raised
+ * bar at the bottom - a phone on its side, down the left.
+ */
 function Bar({ page, title }) {
-  const bh = 62, bx = 12, by = H - bh - 12, bw = W - 24, b = 44;
-  const slot = (bw - 12) / sections.length;
+  const b = 44, thick = 62;
+  // across the bottom, or down the left: the buttons spread along it
+  const bar = side ? { x: 12, y: 12, w: thick, h: H - 24 } : { x: 12, y: H - thick - 12, w: W - 24, h: thick };
+  const slot = ((side ? bar.h : bar.w) - 12) / sections.length;
+  const at = (i) => Math.round(6 + slot * i + (slot - b) / 2);
   return (
     <>
-      <neu.Text x={20} y={13} w={W - 200} h={38} text={title} fontSize={24} fontStyle="Demi Bold" />
+      <neu.Text x={frame.left + 20} y={13} w={W - frame.left - 200} h={38} text={title} fontSize={24} fontStyle="Demi Bold" />
       <neu.Plate x={W - 168} y={13} w={92} h={38} r={19} kind="inset" depth="sm" />
       <neu.Text x={W - 168} y={13} w={92} h={38} join={neu.clock.time} align="center" fontSize={17} fontStyle="Demi Bold" />
       <neu.RoundButton x={W - 60} y={12} size={40} icon="moon" kind="flat" depth="sm" color={t.muted} js="IvaTheme.toggle()" />
-      <neu.Plate x={bx} y={by} w={bw} h={bh} r={bh / 2} depth="md" />
+      <neu.Plate x={bar.x} y={bar.y} w={bar.w} h={bar.h} r={thick / 2} depth="md" />
       {sections.map((sec, i) => (
-        <SectionButton sec={sec} page={page} x={Math.round(bx + 6 + slot * i + (slot - b) / 2)} y={by + (bh - b) / 2} size={b} />
+        side
+          ? <SectionButton sec={sec} page={page} x={bar.x + (thick - b) / 2} y={bar.y + at(i)} size={b} />
+          : <SectionButton sec={sec} page={page} x={bar.x + at(i)} y={bar.y + (thick - b) / 2} size={b} />
       ))}
     </>
   );
 }
 
-/** What every page has: its frame (a tablet's rail and title, a phone's header and bar), the clock. */
+/** What every page has: its frame (a tablet's rail and title; stacked, the header and bar), the clock. */
 export default function Shell({ page, title, sub }) {
   return (
     <>
