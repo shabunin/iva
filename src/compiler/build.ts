@@ -13,7 +13,7 @@ import { isVNode, type Child, type Source, type VNode } from './runtime.js';
 import { styleCss, Themes, type ThemeType } from './style.js';
 import { didYouMean } from './suggest.js';
 import { arc, box, boxIcon, circle, cutout, dotOnRing, generatedName, icon, knob, ring, ticks, wheel, type PlacedIcon } from './images.js';
-import type { DrawRef, IconRef, JoinRef } from './components.js';
+import type { DrawRef, IconRef, ImageRef, JoinRef } from './components.js';
 
 const isIcon = (v: unknown): v is IconRef => !!v && typeof v === 'object' && (v as IconRef).$$icon === 1;
 
@@ -44,6 +44,18 @@ const drawLook = (d: DrawRef) => {
   return `drawn/${d.kind}-${o.size !== undefined ? Math.round(o.size) : `${Math.round(o.w ?? 0)}x${Math.round(o.h ?? 0)}`}`;
 };
 const isDraw = (v: unknown): v is DrawRef => !!v && typeof v === 'object' && (v as DrawRef).$$draw === 1;
+
+/** A PNG's size in pixels, from its header (undefined: not a PNG). */
+function pngSize(file: string): [number, number] | undefined {
+  const head = Buffer.alloc(24);
+  const fd = fs.openSync(file, 'r');
+  try {
+    fs.readSync(fd, head, 0, 24, 0);
+  } finally {
+    fs.closeSync(fd);
+  }
+  return head.readUInt32BE(0) === 0x89504e47 && head.toString('latin1', 12, 16) === 'IHDR' ? [head.readUInt32BE(16), head.readUInt32BE(20)] : undefined;
+}
 
 /** A DrawRef drawn. */
 function drawImage(d: DrawRef, sc: number): Buffer {
@@ -639,16 +651,16 @@ export class Builder {
     this.joins.use(t, (n) => (entry[1] = `${t.type}${n}`));
   }
 
-  /** An image file: its .gui name (copied with the build); URLs stay as they are. */
-  private image(node: VNode, src: string | IconRef | DrawRef): string {
-    if (isDraw(src)) return this.generated(node, src.kind, (sc) => drawImage(src, sc), src.name, [drawLook(src)]);
+  /** An image file: its .gui name (copied with the build); URLs stay as they are. `thumb`: a slider's, drawn as one (generated()). */
+  private image(node: VNode, src: string | IconRef | DrawRef, thumb = false): string {
+    if (isDraw(src)) return this.generated(node, src.kind, (sc) => drawImage(src, sc), src.name, [drawLook(src)], thumb);
     if (isIcon(src)) {
       // an icon as a whole image: centred in the element's box; one with a fixed file name
       // (shared: list rows, scripts) at its own size, whatever element names it
       const p = node.props;
       const [w, h] = src.file && src.size ? [src.size, src.size] : [p.w ?? src.size ?? 32, p.h ?? src.size ?? 32];
       return this.generated(node, 'fa', (sc) => icon(src.name, src.style, src.color ?? '#FFFFFF', src.size ?? Math.min(w, h), sc, w, h), src.file,
-        iconNames(src.name, src.style, src.color ?? '#FFFFFF', src.size ?? Math.min(w, h)));
+        iconNames(src.name, src.style, src.color ?? '#FFFFFF', src.size ?? Math.min(w, h)), thumb);
     }
     if (/^[a-z]+:\/\//i.test(src) || src === '') return src;
     if (this.assets.get(src.toLowerCase())?.data) return src; // drawn by iva
@@ -663,15 +675,34 @@ export class Builder {
     return this.addAsset(node, file);
   }
 
-  /** A project file that ships with the build, under its file name. */
+  /** A project file that ships with the build, under its file name - and its retina version beside it (name@2x.png), if there's one. */
   private addAsset(node: VNode, file: string): string {
     const name = path.basename(file);
     const prev = this.assets.get(name.toLowerCase());
     if (prev && prev.file !== file && !(prev.data ?? fs.readFileSync(prev.file!)).equals(fs.readFileSync(file))) {
       throw this.err(node, `two different images are both named ${name} (${prev.file}, ${file}); iViewer finds images by name - rename one`);
     }
-    if (!prev) this.assets.set(name.toLowerCase(), { name, file });
+    if (prev) return name;
+    this.assets.set(name.toLowerCase(), { name, file });
+    const ext = path.extname(file);
+    const retina = `${file.slice(0, file.length - ext.length)}@2x${ext}`;
+    if (ext && !/@2x$/i.test(path.basename(file, ext)) && fs.existsSync(retina)) this.addAsset(node, retina);
     return name;
+  }
+
+  /** A slider's thumb file: iViewer draws it at its image's own size (a @2x one at half), not at the w / h given. */
+  private thumbSize(node: VNode, name: string, ref: ImageRef) {
+    if (ref.w === undefined && ref.h === undefined) return;
+    for (const n of new Set([name, name.replace(/(\.\w+)$/, '@2x$1')])) {
+      const file = this.assets.get(n.toLowerCase())?.file;
+      const px = file ? pngSize(file) : undefined;
+      if (!px) continue;
+      const half = n !== name;
+      const [w, h] = half ? [px[0] / 2, px[1] / 2] : px;
+      if ((ref.w ?? w) !== w || (ref.h ?? h) !== h) {
+        this.warner(node)(`thumb ${n}: iViewer draws a thumb at its image's own size (${px[0]}x${px[1]} px${half ? ', a @2x one at half' : ''}), not at w / h (${ref.w ?? '-'}x${ref.h ?? '-'})`);
+      }
+    }
   }
 
   /**
@@ -680,10 +711,12 @@ export class Builder {
    * readably - the first of `names` (what it's for, what it looks like) not
    * another drawing's - and drawn twice, one file under its first name
    * (names.ts). A build for a dense screen (size@3x, scaled up by iViewer)
-   * draws the image itself that sharp, and no @2x one when it's at least that.
+   * draws the image itself that sharp, and no @2x one when it's at least that
+   * - not a slider's thumb: iViewer draws that at its image's own size, so
+   * 1x and 2x whatever the build.
    */
-  private generated(node: VNode, kind: string, draw: (scale: number) => Buffer, fixedName?: string, names?: string[]): string {
-    const sc = this.opts.size?.scale ?? 1;
+  private generated(node: VNode, kind: string, draw: (scale: number) => Buffer, fixedName?: string, names?: string[], thumb = false): string {
+    const sc = thumb ? 1 : this.opts.size?.scale ?? 1;
     let data: Buffer;
     let data2: Buffer | null;
     try {
@@ -1515,13 +1548,15 @@ export class Builder {
         if (p.thumb !== undefined && p.thumbColor !== undefined) throw this.err(node, 'thumb or thumbColor, not both');
         const drawn = p.thumbColor !== undefined
           ? this.generated(node, 'thumb', (sc) => circle(p.thumbSize ?? Math.min(p.w, p.h), p.thumbColor, sc), undefined,
-            [`sliders/thumb-${Math.round(p.thumbSize ?? Math.min(p.w, p.h))}-${tone(p.thumbColor)}`])
+            [`sliders/thumb-${Math.round(p.thumbSize ?? Math.min(p.w, p.h))}-${tone(p.thumbColor)}`], true)
           : undefined;
         const ind = (state: number, img: unknown) => {
           const ref = typeof img === 'string' ? { src: img } : (img as any);
+          const src = drawn ?? (ref ? this.image(node, ref.src, true) : '');
+          if (!drawn && ref) this.thumbSize(node, src, ref);
           const x = this.E('indicator', {
             state, offsetX: ref?.offsetX ?? 0, offsetY: ref?.offsetY ?? 0, x: ref?.x ?? 0, y: ref?.y ?? 0, w: ref?.w ?? 0, h: ref?.h ?? 0, t: '',
-          }, [], drawn ?? (ref ? this.image(node, ref.src) : ''));
+          }, [], src);
           return ref?.xml ? this.withXml(x, { type: 'Slider', props: { xml: ref.xml }, children: [], $$iva: 1, source: node.source }) : x;
         };
         const thumbs = drawn || p.thumb !== undefined ? [ind(0, p.thumb), ind(1, p.activeThumb ?? p.thumb)] : [];

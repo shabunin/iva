@@ -99,7 +99,12 @@ themes get the full text block GUI Designer writes. Buttons have two states:
 
 Sliders and gauges are drawn by iViewer from images only: `bg`, `fill` and
 `thumbColor` make iva draw them (anti-aliased PNGs, `radius` for the
-corners), or give image files with `image`, `fillImage`, `thumb`.
+corners), or give image files with `image`, `fillImage`, `thumb`. iViewer
+draws a thumb at its image's own size, whatever `w` / `h` say: draw a
+`thumb` file at 1x, with a `name@2x.png` beside it for retina screens (iva
+ships any image's `@2x` with it); a thumb file whose size isn't its `w` /
+`h` is a warning. iva draws its own thumbs (`thumbColor`, a `draw.*` one)
+that way: 1x and `@2x`, whatever the build's scale (a phone's `@3x` too).
 
 ## Rounded corners, borders, icons
 

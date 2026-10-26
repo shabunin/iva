@@ -613,10 +613,14 @@ export interface SliderProps extends Geom, MeterStyle, XmlProp {
   decimals?: number;
   invert?: boolean;
   feedback?: 'momentary' | 'none';
-  /** the thumb image (and its active one) */
+  /**
+   * the thumb image (and its active one): iViewer draws it at its own size, whatever w / h say - draw a file
+   * at 1x, name@2x.png beside it for retina screens (shipped too; a draw.* one: iva draws both); a file whose
+   * size isn't its w / h: a warning
+   */
   thumb?: string | ImageRef;
   activeThumb?: string | ImageRef;
-  /** thumb colour: iva draws a round thumb */
+  /** thumb colour: iva draws a round thumb (at 1x and @2x, whatever the build's scale) */
   thumbColor?: string;
   /** drawn thumb diameter (default: the slider's thickness) */
   thumbSize?: number;
